@@ -227,6 +227,152 @@ describe("appStore delta sync", () => {
     expect(useAppStore.getState().siteLibrary.some((site) => site.id === "site-deleted")).toBe(false);
   });
 
+  it("preserves and follows up a same-record edit made during manual sync", async () => {
+    const initialSite = {
+      id: "site-manual", name: "Before", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string; name: string }> }> = [];
+    let getCount = 0;
+    let releaseFirstPush: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        getCount += 1;
+        return makeResponse({
+          ...cloneJson(baselinePayload),
+          siteLibrary: getCount >= 3 ? [cloneJson(initialSite)] : [],
+          deletedSiteIds: [], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+        });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body ?? "{}")) as { siteLibrary: Array<{ id: string; name: string }> });
+        if (pushedBodies.length === 1) {
+          return await new Promise<Response>((resolve) => { releaseFirstPush = resolve; });
+        }
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.setState({ siteLibrary: [cloneJson(initialSite)] });
+
+    const manualSync = useAppStore.getState().performManualCloudSync();
+    await vi.waitFor(() => expect(pushedBodies).toHaveLength(1));
+    useAppStore.getState().updateSiteLibraryEntry("site-manual", { name: "After" });
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    releaseFirstPush?.(makeResponse({ ok: true, conflicts: [] }));
+    await manualSync;
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-manual")?.name).toBe("After");
+
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(pushedBodies).toHaveLength(2));
+    expect(pushedBodies[1]?.siteLibrary).toEqual([expect.objectContaining({ id: "site-manual", name: "After" })]);
+  });
+
+  it("keeps a same-record edit pending when it changes during an in-flight push", async () => {
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string; name: string }> }> = [];
+    let releaseFirstPush: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        return makeResponse({ ...cloneJson(baselinePayload), deletedSiteIds: [], deletedSimulationIds: [] });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body ?? "{}")) as { siteLibrary: Array<{ id: string; name: string }> });
+        if (pushedBodies.length === 1) {
+          return await new Promise<Response>((resolve) => { releaseFirstPush = resolve; });
+        }
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.getState().addSiteByCoordinates("First", 60, 10);
+    const siteId = useAppStore.getState().siteLibrary[0]?.id as string;
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(pushedBodies).toHaveLength(1);
+
+    useAppStore.getState().updateSiteLibraryEntry(siteId, { name: "Second" });
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    releaseFirstPush?.(makeResponse({ ok: true, conflicts: [] }));
+    await vi.waitFor(() => expect(useAppStore.getState().syncBusy).toBe(false));
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(pushedBodies).toHaveLength(2));
+    await vi.waitFor(() => expect(useAppStore.getState().syncPending).toBe(false));
+
+    expect(pushedBodies[0]?.siteLibrary[0]?.name).toBe("First");
+    expect(pushedBodies[1]?.siteLibrary[0]?.name).toBe("Second");
+  });
+
+  it("automatically follows an in-flight push with a different newly dirty record", async () => {
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string; name: string }> }> = [];
+    let releaseFirstPush: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        return makeResponse({ ...cloneJson(baselinePayload), deletedSiteIds: [], deletedSimulationIds: [] });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body ?? "{}")) as { siteLibrary: Array<{ id: string; name: string }> });
+        if (pushedBodies.length === 1) {
+          return await new Promise<Response>((resolve) => { releaseFirstPush = resolve; });
+        }
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+
+    useAppStore.getState().addSiteByCoordinates("First", 60, 10);
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(pushedBodies).toHaveLength(1);
+
+    useAppStore.getState().addSiteByCoordinates("Second", 61, 11);
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    releaseFirstPush?.(makeResponse({ ok: true, conflicts: [] }));
+    await vi.waitFor(() => expect(useAppStore.getState().syncBusy).toBe(false));
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(pushedBodies).toHaveLength(2));
+    await vi.waitFor(() => expect(useAppStore.getState().syncPending).toBe(false));
+
+    expect(pushedBodies[0]?.siteLibrary.map((site) => site.name)).toEqual(["First"]);
+    expect(pushedBodies[1]?.siteLibrary.map((site) => site.name)).toEqual(["Second"]);
+  });
+
   it("stores only the completed server recovery cutoff", async () => {
     let getCount = 0;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

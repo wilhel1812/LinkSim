@@ -3,6 +3,7 @@ import {
   LIBRARY_JSON_MAX_DEPTH,
   LIBRARY_SIMULATION_MAX_BYTES,
   LIBRARY_SITE_MAX_BYTES,
+  partitionLibraryPayload,
   SIMULATION_MAX_PATHS,
   SIMULATION_MAX_SITES,
   validateLibraryPayload,
@@ -118,6 +119,70 @@ describe("Library ingestion limits", () => {
       siteLibrary: [],
       simulationPresets: [{ ...validSimulation(), updatedAt: { unsafe: true } }],
     })).toThrow("Simulation updatedAt must be a valid date string");
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [{ ...validSite(), createdAt: "not-a-date" }],
+      simulationPresets: [],
+    })).toThrow("Site createdAt must be a valid date string");
+  });
+
+  it("rejects unsupported persisted enums before normalization", () => {
+    expect(() => validateLibraryPayload({
+      siteLibrary: [{ ...validSite(), antennaMode: "phased-array" }],
+      simulationPresets: [],
+    })).toThrow("Site antenna mode is not supported");
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [],
+      simulationPresets: [{
+        ...validSimulation(),
+        snapshot: { ...validSimulation().snapshot, terrainDataset: "legacy-dem" },
+      }],
+    })).toThrow("Simulation terrain dataset is not supported");
+  });
+
+  it("partitions valid and malformed records without discarding the valid records", () => {
+    const invalidSite = { ...validSite("bad-site"), position: { lat: 91, lon: 10 } };
+    const invalidSimulation = validSimulation();
+    invalidSimulation.id = "bad-sim";
+    (invalidSimulation.snapshot as Record<string, unknown>).propagationEnvironment = {
+      radioClimate: "Moon",
+      polarization: "Vertical",
+      clutterHeightM: 1,
+      groundDielectric: 15,
+      groundConductivity: 0.005,
+      atmosphericBendingNUnits: 301,
+    };
+    const result = partitionLibraryPayload({
+      siteLibrary: [validSite(), invalidSite, null],
+      simulationPresets: [validSimulation(), invalidSimulation],
+    });
+    expect(result.siteLibrary).toHaveLength(1);
+    expect(result.simulationPresets).toHaveLength(1);
+    expect(result.rejected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "site", id: "bad-site" }),
+      expect.objectContaining({ kind: "site", id: null }),
+      expect.objectContaining({ kind: "simulation", id: "bad-sim" }),
+    ]));
+  });
+
+  it("rejects every record involved in a duplicate ID", () => {
+    const result = partitionLibraryPayload({
+      siteLibrary: [validSite(), { ...validSite(), name: "Other" }],
+      simulationPresets: [],
+    });
+    expect(result.siteLibrary).toEqual([]);
+    expect(result.rejected).toHaveLength(2);
+  });
+
+  it("quarantines malformed collection shapes", () => {
+    const result = partitionLibraryPayload({ siteLibrary: { unsafe: true }, simulationPresets: null });
+    expect(result.siteLibrary).toEqual([]);
+    expect(result.simulationPresets).toEqual([]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ kind: "site", reason: "Site Library collection must be an array." }),
+      expect.objectContaining({ kind: "simulation", reason: "Simulation Library collection must be an array." }),
+    ]);
   });
 
   it("rejects Simulation collection counts above their approved boundaries", () => {

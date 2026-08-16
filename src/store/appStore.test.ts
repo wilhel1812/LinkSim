@@ -1235,6 +1235,74 @@ describe("appStore built-in scenario defaults", () => {
   });
 });
 
+describe("appStore untrusted Library imports", () => {
+  const site = (id: string, lat: number) => ({
+    id, name: "Ambiguous", position: { lat, lon: 10 }, groundElevationM: 100,
+    antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    createdAt: "2026-08-16T00:00:00.000Z", ownerUserId: "other-user", effectiveRole: "viewer" as const,
+  });
+  const publicSimulation = (id: string) => ({
+    id, name: "Public plan", visibility: "public" as const, ownerUserId: "other-user",
+    effectiveRole: "viewer" as const, sharedWith: [], updatedAt: "2026-08-16T00:00:00.000Z",
+    snapshot: {
+      sites: [site("embedded-site", 61)], links: [], systems: [], networks: [],
+      selectedSiteId: "embedded-site", selectedLinkId: "", selectedNetworkId: "",
+      selectedCoverageResolution: "24" as const, propagationModel: "ITM" as const,
+      selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+      propagationEnvironment: useAppStore.getState().propagationEnvironment,
+      autoPropagationEnvironment: true, terrainDataset: "copernicus30" as const,
+    },
+  });
+
+  beforeEach(() => {
+    storage.mock.clear();
+    useAppStore.setState({ currentUser: null, siteLibrary: [site("existing-a", 60), site("existing-b", 62)], simulationPresets: [] });
+  });
+
+  it("loads a public Simulation without creating or relinking an orphaned owned Site", () => {
+    useAppStore.getState().importLibraryData({ simulationPresets: [publicSimulation("public-sim")] }, "merge", "public-view-only");
+    useAppStore.getState().loadSimulationPreset("public-sim");
+    expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
+    expect(useAppStore.getState().siteLibrary.map((entry) => entry.id)).toEqual(["existing-a", "existing-b"]);
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({ ownerUserId: "other-user", effectiveRole: "viewer" });
+  });
+
+  it("rejects a public ID collision with an editable local record", () => {
+    useAppStore.setState({ simulationPresets: [{ ...publicSimulation("collision"), ownerUserId: "owner-1", effectiveRole: "owner" }] });
+    expect(() => useAppStore.getState().importLibraryData(
+      { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
+    )).toThrow("conflicts with an existing local record");
+    expect(useAppStore.getState().simulationPresets[0]?.ownerUserId).toBe("owner-1");
+  });
+
+  it("relinks Sites by stable ID before comparing legacy name and coordinates", () => {
+    useAppStore.setState({
+      sites: [{ ...site("workspace-site", 63), libraryEntryId: "stable-site", name: "Stale name" }],
+      siteLibrary: [],
+    });
+    useAppStore.getState().importLibraryData({ siteLibrary: [{ ...site("stable-site", 64), name: "Current name" }] }, "merge");
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      libraryEntryId: "stable-site", name: "Current name", position: { lat: 64, lon: 10 },
+    });
+  });
+
+  it("relinks a legacy Site only through one unique exact name-and-coordinate match", () => {
+    useAppStore.setState({ sites: [{ ...site("workspace-site", 60), id: "workspace-site" }], siteLibrary: [] });
+    useAppStore.getState().importLibraryData({ siteLibrary: [{ ...site("legacy-match", 60), name: "Ambiguous" }] }, "merge");
+    expect(useAppStore.getState().sites[0]?.libraryEntryId).toBe("legacy-match");
+  });
+
+  it("does not attach ambiguous or name-only legacy matches to an existing Library Site", () => {
+    useAppStore.setState({ sites: [{ ...site("workspace-site", 60), id: "workspace-site" }], siteLibrary: [] });
+    useAppStore.getState().importLibraryData({
+      siteLibrary: [site("candidate-a", 60), site("candidate-b", 60), site("name-only", 61)],
+    }, "merge");
+    const linkedId = useAppStore.getState().sites[0]?.libraryEntryId;
+    expect(linkedId).toMatch(/^libsite-/);
+    expect(["candidate-a", "candidate-b", "name-only"]).not.toContain(linkedId);
+  });
+});
+
 describe("appStore blank simulation loading", () => {
   beforeEach(() => {
     storage.mock.clear();

@@ -1,3 +1,5 @@
+import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
+
 export const LIBRARY_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 export const LIBRARY_JSON_MAX_DEPTH = 20;
 export const LIBRARY_BATCH_MAX_RECORDS = 20;
@@ -109,6 +111,12 @@ const assertRequiredDateString = (value: unknown, label: string): void => {
   }
 };
 
+const assertEnumIfPresent = (value: unknown, allowed: readonly string[], label: string): void => {
+  if (value !== undefined && (typeof value !== "string" || !allowed.includes(value))) {
+    throw new LibraryValidationError(`${label} is not supported.`);
+  }
+};
+
 const assertSite = (value: unknown, nested = false): void => {
   const site = nested
     ? (() => {
@@ -118,6 +126,9 @@ const assertSite = (value: unknown, nested = false): void => {
         return value;
       })()
     : assertCommonRecord(value, "Site");
+  if (!nested) assertRequiredDateString(site.createdAt, "Site createdAt");
+  assertEnumIfPresent(site.antennaMode, ["omnidirectional", "directional"], "Site antenna mode");
+  assertEnumIfPresent(site.antennaTargetDetachedReason, ["target-deleted"], "Site antenna target detached reason");
   assertPosition(site.position, "Site");
   assertFiniteRequired(site, [
     "groundElevationM",
@@ -174,8 +185,14 @@ const assertNetwork = (value: unknown): void => {
 const assertSimulation = (value: unknown): void => {
   const simulation = assertCommonRecord(value, "Simulation");
   assertRequiredDateString(simulation.updatedAt, "Simulation updatedAt");
+  assertEnumIfPresent(simulation.status, ["active", "deleted"], "Simulation status");
   if (!isRecord(simulation.snapshot)) throw new LibraryValidationError("Simulation snapshot must be an object.");
   const { snapshot } = simulation;
+  assertEnumIfPresent(snapshot.propagationModel, ["ITM"], "Simulation propagation model");
+  assertEnumIfPresent(snapshot.selectedCoverageResolution, ["24", "42", "84", "168"], "Simulation coverage resolution");
+  assertEnumIfPresent(snapshot.selectedOverlayRadiusOption, ["20", "50", "100", "200"], "Simulation overlay radius");
+  assertEnumIfPresent(snapshot.terrainDataset, ["copernicus30"], "Simulation terrain dataset");
+  assertEnumIfPresent(snapshot.linkColorMode, ["manual", "auto"], "Simulation Path color mode");
   if (!Array.isArray(snapshot.sites)) throw new LibraryValidationError("Simulation snapshot Sites must be an array.");
   if (!Array.isArray(snapshot.links)) throw new LibraryValidationError("Simulation snapshot Paths must be an array.");
   if (snapshot.sites.length > SIMULATION_MAX_SITES) {
@@ -192,6 +209,35 @@ const assertSimulation = (value: unknown): void => {
   if (!Array.isArray(networks)) throw new LibraryValidationError("Simulation snapshot networks must be an array.");
   systems.forEach(assertRadioSystem);
   networks.forEach(assertNetwork);
+  if (snapshot.propagationEnvironment !== undefined) {
+    try {
+      validatePropagationEnvironment(snapshot.propagationEnvironment);
+    } catch (error) {
+      throw new LibraryValidationError(
+        `Simulation propagation environment is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  const siteIds = new Set(snapshot.sites.map((site) => isRecord(site) ? site.id : undefined));
+  const systemIds = new Set(systems.map((system) => isRecord(system) ? system.id : undefined));
+  if (siteIds.size !== snapshot.sites.length) throw new LibraryValidationError("Simulation contains duplicate Site IDs.");
+  if (systemIds.size !== systems.length) throw new LibraryValidationError("Simulation contains duplicate Radio System IDs.");
+  const pathIds = new Set(snapshot.links.map((path) => isRecord(path) ? path.id : undefined));
+  if (pathIds.size !== snapshot.links.length) throw new LibraryValidationError("Simulation contains duplicate Path IDs.");
+  for (const path of snapshot.links) {
+    const record = path as Record<string, unknown>;
+    if (!siteIds.has(record.fromSiteId) || !siteIds.has(record.toSiteId)) {
+      throw new LibraryValidationError("Simulation Path references an unknown Site ID.");
+    }
+  }
+  for (const network of networks) {
+    const record = network as Record<string, unknown>;
+    for (const membership of record.memberships as Record<string, unknown>[]) {
+      if (!siteIds.has(membership.siteId) || !systemIds.has(membership.systemId)) {
+        throw new LibraryValidationError("Simulation Network membership references an unknown ID.");
+      }
+    }
+  }
   if (encodedBytes(simulation) > LIBRARY_SIMULATION_MAX_BYTES) {
     throw new LibraryValidationError(`Simulation record exceeds ${LIBRARY_SIMULATION_MAX_BYTES} bytes.`);
   }
@@ -221,4 +267,75 @@ export const validateLibraryPayload = (value: unknown): ValidatedLibraryPayload 
   siteLibrary.forEach((site) => assertSite(site));
   simulationPresets.forEach(assertSimulation);
   return { siteLibrary, simulationPresets };
+};
+
+export type RejectedLibraryRecord = {
+  kind: "site" | "simulation";
+  id: string | null;
+  reason: string;
+  value: unknown;
+};
+
+export type PartitionedLibraryPayload = ValidatedLibraryPayload & {
+  rejected: RejectedLibraryRecord[];
+};
+
+const candidateId = (value: unknown): string | null => {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id.trim()) return null;
+  return value.id.trim();
+};
+
+export const partitionLibraryPayload = (value: unknown): PartitionedLibraryPayload => {
+  const raw = isRecord(value) ? value : {};
+  const siteCandidates = Array.isArray(raw.siteLibrary) ? raw.siteLibrary : [];
+  const simulationCandidates = Array.isArray(raw.simulationPresets) ? raw.simulationPresets : [];
+  const rejected: RejectedLibraryRecord[] = [];
+  if (raw.siteLibrary !== undefined && !Array.isArray(raw.siteLibrary)) {
+    rejected.push({ kind: "site", id: null, reason: "Site Library collection must be an array.", value: raw.siteLibrary });
+  }
+  if (raw.simulationPresets !== undefined && !Array.isArray(raw.simulationPresets)) {
+    rejected.push({ kind: "simulation", id: null, reason: "Simulation Library collection must be an array.", value: raw.simulationPresets });
+  }
+  const duplicateIds = (records: unknown[]): Set<string> => {
+    const counts = new Map<string, number>();
+    for (const record of records) {
+      const id = candidateId(record);
+      if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, count]) => count > 1).map(([id]) => id));
+  };
+  const partition = (
+    kind: "site" | "simulation",
+    records: unknown[],
+    duplicates: Set<string>,
+  ): Record<string, unknown>[] => {
+    const accepted: Record<string, unknown>[] = [];
+    for (const record of records) {
+      const id = candidateId(record);
+      if (id && duplicates.has(id)) {
+        rejected.push({ kind, id, reason: `Duplicate ${kind} ID.`, value: record });
+        continue;
+      }
+      try {
+        const validated = validateLibraryPayload({
+          siteLibrary: kind === "site" ? [record] : [],
+          simulationPresets: kind === "simulation" ? [record] : [],
+        });
+        accepted.push((kind === "site" ? validated.siteLibrary : validated.simulationPresets)[0]);
+      } catch (error) {
+        rejected.push({
+          kind,
+          id,
+          reason: error instanceof Error ? error.message : String(error),
+          value: record,
+        });
+      }
+    }
+    return accepted;
+  };
+  return {
+    siteLibrary: partition("site", siteCandidates, duplicateIds(siteCandidates)),
+    simulationPresets: partition("simulation", simulationCandidates, duplicateIds(simulationCandidates)),
+    rejected,
+  };
 };

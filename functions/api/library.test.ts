@@ -80,6 +80,8 @@ describe("api/library", () => {
       simulationPresets: [{ id: "sim-1" }],
       deletedSiteIds: ["site-deleted"],
       deletedSimulationIds: ["sim-deleted"],
+      removedSiteIds: ["site-removed"],
+      removedSimulationIds: ["sim-removed"],
     });
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
     expect(res.status).toBe(200);
@@ -90,6 +92,8 @@ describe("api/library", () => {
       simulationPresets: [{ id: "sim-1" }],
       deletedSiteIds: ["site-deleted"],
       deletedSimulationIds: ["sim-deleted"],
+      removedSiteIds: ["site-removed"],
+      removedSimulationIds: ["sim-removed"],
       isDelta: false,
     });
   });

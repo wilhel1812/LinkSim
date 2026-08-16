@@ -1,6 +1,6 @@
-import type { RadioClimate, Polarization, PropagationEnvironment } from "../types/radio";
 import type { SimulationDefaults } from "./simulationDefaults";
 import { MAX_CUSTOM_RADIO_PRESET_NAME_LENGTH } from "./simulationDefaults";
+import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
 
 export const RADIO_PRESET_SHARE_MAX_ENCODED_LENGTH = 8 * 1024;
 
@@ -13,42 +13,9 @@ export type RadioPresetShareParseResult =
   | { ok: true; preset: SharedRadioPreset }
   | { ok: false; reason: "missing" | "too_large" | "malformed" | "unsupported_version" | "invalid" };
 
-const RADIO_CLIMATES = new Set<RadioClimate>([
-  "Equatorial",
-  "Continental Subtropical",
-  "Maritime Subtropical",
-  "Desert",
-  "Continental Temperate",
-  "Maritime Temperate (Land)",
-  "Maritime Temperate (Sea)",
-]);
-const POLARIZATIONS = new Set<Polarization>(["Vertical", "Horizontal"]);
-
 const requireFinite = (value: unknown, label: string): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} must be a finite number.`);
   return value;
-};
-
-const validateEnvironment = (value: unknown): PropagationEnvironment => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Propagation environment is invalid.");
-  const raw = value as Partial<PropagationEnvironment>;
-  if (!RADIO_CLIMATES.has(raw.radioClimate as RadioClimate)) throw new Error("Radio climate is invalid.");
-  if (!POLARIZATIONS.has(raw.polarization as Polarization)) throw new Error("Polarization is invalid.");
-  const clutterHeightM = requireFinite(raw.clutterHeightM, "Clutter height");
-  const groundDielectric = requireFinite(raw.groundDielectric, "Ground dielectric");
-  const groundConductivity = requireFinite(raw.groundConductivity, "Ground conductivity");
-  const atmosphericBendingNUnits = requireFinite(raw.atmosphericBendingNUnits, "Atmospheric bending");
-  if (clutterHeightM < 0 || groundDielectric <= 0 || groundConductivity < 0 || atmosphericBendingNUnits <= 0) {
-    throw new Error("Propagation environment values are outside the supported range.");
-  }
-  return {
-    radioClimate: raw.radioClimate as RadioClimate,
-    polarization: raw.polarization as Polarization,
-    clutterHeightM,
-    groundDielectric,
-    groundConductivity,
-    atmosphericBendingNUnits,
-  };
 };
 
 export const validateSharedRadioPreset = (value: unknown): SharedRadioPreset => {
@@ -83,7 +50,7 @@ export const validateSharedRadioPreset = (value: unknown): SharedRadioPreset => 
       ...(regionCode ? { regionCode } : {}),
       rxSensitivityTargetDbm,
       environmentLossDb,
-      propagationEnvironment: validateEnvironment(defaults.propagationEnvironment),
+      propagationEnvironment: validatePropagationEnvironment(defaults.propagationEnvironment),
       autoPropagationEnvironment: defaults.autoPropagationEnvironment,
     },
   };

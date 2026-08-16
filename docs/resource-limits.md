@@ -47,3 +47,22 @@ record stays inside its encoded-byte limit.
 Failures are JSON responses: `413` for request bytes, `422` for malformed or
 over-quota content, and the existing authentication/authorization statuses for
 access failures. A rejected request does not silently discard records.
+
+## Library reads and local recovery
+
+Paginated `GET /api/library` responses can include `removedSiteIds` and
+`removedSimulationIds` when a live resource has become unreadable to a former
+reader. Clients reconcile these like deletion tombstones. Recovery pages still
+give an active record precedence when access is restored after an earlier page
+was read. If revocation is followed by deletion before the former reader's next
+sync, historical access still authorizes the deletion ID without exposing the
+deleted payload.
+
+The browser validates local, cloud, and public Library records before
+normalization. Valid persisted records continue to load when neighboring local
+records are malformed; a bounded diagnostic copy of rejected local records is
+kept in `linksim-library-quarantine-v1`. Cloud and public bundles fail closed
+instead of advancing reconciliation with malformed records. Sync comparison
+metadata is stored as a canonical SHA-256 digest in
+`linksim-sync-digest-v2`; the retired v1 full-payload signature is discarded so
+the next sync performs a safe reconciliation.

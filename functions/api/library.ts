@@ -12,7 +12,7 @@ import {
   validateLibraryPayload,
 } from "../../src/lib/libraryLimits";
 
-const phases = new Set<LibraryReadPhase>(["sites", "deleted_sites", "simulations", "deleted_simulations"]);
+const phases = new Set<LibraryReadPhase>(["sites", "deleted_sites", "removed_sites", "simulations", "deleted_simulations", "removed_simulations"]);
 type ReadCursor = { v: 1; userId: string; since?: string; cutoff: string; phase: LibraryReadPhase; afterId: string };
 
 const base64UrlEncode = (value: unknown): string => {
@@ -112,13 +112,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       simulationPresets: [...(library.simulationPresets ?? [])],
       deletedSiteIds: [...(library.deletedSiteIds ?? [])],
       deletedSimulationIds: [...(library.deletedSimulationIds ?? [])],
+      removedSiteIds: [...(library.removedSiteIds ?? [])],
+      removedSimulationIds: [...(library.removedSimulationIds ?? [])],
       syncCutoff: state.cutoff,
       isDelta: Boolean(state.since),
       ...(pageCursor ? { nextCursor: encodeCursor({ ...state, ...pageCursor }) } : {}),
     };
     const phaseCollection = state.phase === "sites" ? body.siteLibrary
       : state.phase === "simulations" ? body.simulationPresets
-        : state.phase === "deleted_sites" ? body.deletedSiteIds : body.deletedSimulationIds;
+        : state.phase === "deleted_sites" ? body.deletedSiteIds
+          : state.phase === "removed_sites" ? body.removedSiteIds
+            : state.phase === "deleted_simulations" ? body.deletedSimulationIds : body.removedSimulationIds;
     const originalRecordCount = phaseCollection.length;
     while (responseBytes(body) > LIBRARY_READ_RESPONSE_MAX_BYTES && phaseCollection.length > 0) {
       phaseCollection.pop();

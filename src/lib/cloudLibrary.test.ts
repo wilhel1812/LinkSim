@@ -55,6 +55,8 @@ describe("fetchCloudLibrary delta sync", () => {
         simulationPresets: [],
         deletedSiteIds: [],
         deletedSimulationIds: [],
+        removedSiteIds: ["site-old"],
+        removedSimulationIds: [],
         syncCutoff: "2026-08-14T10:00:00.000Z",
         nextCursor: "base-page-2",
         isDelta: false,
@@ -64,6 +66,8 @@ describe("fetchCloudLibrary delta sync", () => {
         simulationPresets: [{ id: "sim-1" }],
         deletedSiteIds: [],
         deletedSimulationIds: [],
+        removedSiteIds: [],
+        removedSimulationIds: ["sim-old"],
         syncCutoff: "2026-08-14T10:00:00.000Z",
         isDelta: false,
       }), { status: 200 }))
@@ -81,6 +85,8 @@ describe("fetchCloudLibrary delta sync", () => {
       simulationPresets: [],
       deletedSiteIds: [],
       deletedSimulationIds: ["sim-1"],
+      removedSiteIds: ["site-old"],
+      removedSimulationIds: ["sim-old"],
       isDelta: false,
       syncCutoff: "2026-08-14T10:00:01.000Z",
     });
@@ -101,10 +107,10 @@ describe("fetchCloudLibrary delta sync", () => {
     await expect(fetchCloudLibrary()).rejects.toThrow("503 Unavailable: Unavailable");
   });
 
-  it("lets an active recovery record override a deletion from the base window", async () => {
+  it("lets an active recovery record override deletion and removal signals from the base window", async () => {
     vi.mocked(globalThis.fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        siteLibrary: [], simulationPresets: [], deletedSimulationIds: ["sim-1"],
+        siteLibrary: [], simulationPresets: [], deletedSimulationIds: ["sim-1"], removedSimulationIds: ["sim-1"],
         syncCutoff: "2026-08-14T10:00:00.000Z",
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -115,13 +121,14 @@ describe("fetchCloudLibrary delta sync", () => {
     await expect(fetchCloudLibrary()).resolves.toMatchObject({
       simulationPresets: [{ id: "sim-1", status: "active" }],
       deletedSimulationIds: [],
+      removedSimulationIds: [],
       syncCutoff: "2026-08-14T10:00:01.000Z",
     });
   });
 });
 
 describe("cloudLibrary client", () => {
-  it("returns normalized arrays from API payload", async () => {
+  it("rejects malformed record collections from the API", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ siteLibrary: [{ id: "s1" }], simulationPresets: null }), {
         status: 200,
@@ -129,13 +136,7 @@ describe("cloudLibrary client", () => {
       }),
     );
 
-    const result = await fetchCloudLibrary();
-    expect(result).toEqual({
-      siteLibrary: [{ id: "s1" }],
-      simulationPresets: [],
-      deletedSiteIds: [],
-      deletedSimulationIds: [],
-    });
+    await expect(fetchCloudLibrary()).rejects.toThrow("malformed record collections");
   });
 
   it("normalizes deletion tombstones from Library responses", async () => {

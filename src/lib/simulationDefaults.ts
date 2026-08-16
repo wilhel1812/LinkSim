@@ -1,6 +1,7 @@
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import { findPresetById } from "./frequencyPlans";
 import type { PropagationEnvironment } from "../types/radio";
+import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
 
 export type SimulationDefaults = {
   frequencyPresetId: string;
@@ -80,10 +81,9 @@ const mergeDefaults = (base: SimulationDefaults, patch?: Partial<SimulationDefau
   codingRate: cleanNumber(patch?.codingRate, base.codingRate),
   rxSensitivityTargetDbm: cleanNumber(patch?.rxSensitivityTargetDbm, base.rxSensitivityTargetDbm),
   environmentLossDb: Math.max(0, cleanNumber(patch?.environmentLossDb, base.environmentLossDb)),
-  propagationEnvironment: {
-    ...base.propagationEnvironment,
-    ...(patch?.propagationEnvironment ?? {}),
-  },
+  propagationEnvironment: patch?.propagationEnvironment
+    ? validatePropagationEnvironment({ ...base.propagationEnvironment, ...patch.propagationEnvironment })
+    : base.propagationEnvironment,
   autoPropagationEnvironment:
     typeof patch?.autoPropagationEnvironment === "boolean"
       ? patch.autoPropagationEnvironment
@@ -128,7 +128,12 @@ export const normalizeUserSimulationDefaultsPreference = (
     const name = normalizeCustomRadioPresetName(rawCandidate.name);
     const nameKey = name.toLocaleLowerCase();
     if (!id || !name || ids.has(id) || names.has(nameKey) || !rawCandidate.defaults) return;
-    const normalizedDefaults = normalizeSimulationDefaults(rawCandidate.defaults);
+    let normalizedDefaults: SimulationDefaults;
+    try {
+      normalizedDefaults = normalizeSimulationDefaults(rawCandidate.defaults);
+    } catch {
+      return;
+    }
     ids.add(id);
     names.add(nameKey);
     customPresets.push({

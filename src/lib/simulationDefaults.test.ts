@@ -70,4 +70,28 @@ describe("custom radio presets", () => {
     expect(normalized.customPresets).toHaveLength(1);
     expect(normalized.customPresetId).toBe("valid");
   });
+
+  it("drops a custom preset with an unsupported propagation environment", () => {
+    const defaults = simulationDefaultsFromPreset("mt-us");
+    const normalized = normalizeUserSimulationDefaultsPreference({
+      mode: "custom",
+      presetId: "mt-us",
+      overridePresetDefaults: false,
+      customPresetId: "invalid-environment",
+      customPresets: [{
+        id: "invalid-environment",
+        name: "Invalid environment",
+        defaults: {
+          ...defaults,
+          propagationEnvironment: {
+            ...defaults.propagationEnvironment,
+            radioClimate: "Martian" as never,
+          },
+        },
+      }],
+    });
+
+    expect(normalized.mode).toBe("preset");
+    expect(normalized.customPresets).toBeUndefined();
+  });
 });
