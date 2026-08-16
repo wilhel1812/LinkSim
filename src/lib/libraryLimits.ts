@@ -1,3 +1,5 @@
+import type { Link, Site } from "../types/radio";
+import { migrateSitesAndLinksToSiteRadioDefaults } from "./linkRadio";
 import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
 import { isCompatiblePersistedTerrainDataset, normalizeTerrainDataset } from "./terrainDataset";
 
@@ -106,16 +108,46 @@ const assertNestedNamedRecord = (value: unknown, label: string): Record<string, 
 
 const encodedBytes = (value: unknown): number => textEncoder.encode(JSON.stringify(value)).byteLength;
 
+const SITE_RADIO_KEYS = ["txPowerDbm", "txGainDbi", "rxGainDbi", "cableLossDb"] as const;
+const LINK_RADIO_KEYS = SITE_RADIO_KEYS;
+
+const hasOnlyMissingOrFiniteRadioValues = (
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): boolean => keys.every((key) => record[key] === undefined
+  || (typeof record[key] === "number" && Number.isFinite(record[key])));
+
 const normalizeSimulationCompatibility = (value: unknown): unknown => {
   if (!isRecord(value) || !isRecord(value.snapshot)) return value;
-  const terrainDataset = value.snapshot.terrainDataset;
-  if (terrainDataset === undefined || !isCompatiblePersistedTerrainDataset(terrainDataset)) return value;
+  const snapshot = { ...value.snapshot };
+  const terrainDataset = snapshot.terrainDataset;
+  let changed = false;
+
+  if (terrainDataset !== undefined && isCompatiblePersistedTerrainDataset(terrainDataset)) {
+    snapshot.terrainDataset = normalizeTerrainDataset(terrainDataset);
+    changed = snapshot.terrainDataset !== terrainDataset;
+  }
+
+  if (Array.isArray(snapshot.sites)
+    && snapshot.sites.every(isRecord)
+    && Array.isArray(snapshot.links)
+    && snapshot.links.every(isRecord)
+    && snapshot.sites.some((site) => SITE_RADIO_KEYS.some((key) => site[key] === undefined))
+    && snapshot.sites.every((site) => hasOnlyMissingOrFiniteRadioValues(site, SITE_RADIO_KEYS))
+    && snapshot.links.every((link) => hasOnlyMissingOrFiniteRadioValues(link, LINK_RADIO_KEYS))) {
+    const migrated = migrateSitesAndLinksToSiteRadioDefaults(
+      snapshot.sites as Site[],
+      snapshot.links as Link[],
+    );
+    snapshot.sites = migrated.sites;
+    snapshot.links = migrated.links;
+    changed = true;
+  }
+
+  if (!changed) return value;
   return {
     ...value,
-    snapshot: {
-      ...value.snapshot,
-      terrainDataset: normalizeTerrainDataset(terrainDataset),
-    },
+    snapshot,
   };
 };
 

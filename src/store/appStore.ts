@@ -100,6 +100,16 @@ const SYNC_DIGEST_KEY = "linksim-sync-digest-v2";
 const LIBRARY_QUARANTINE_KEY = "linksim-library-quarantine-v1";
 const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
+const readStorage = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
 let hydrated = false;
 let syncTimer: number | null = null;
 let syncInFlight = false;
@@ -107,7 +117,7 @@ let localMutationRevision = 0;
 let syncedMutationRevision = 0;
 let lastSyncedPayloadDigest: string | null = (() => {
   try {
-    const digest = localStorage.getItem(SYNC_DIGEST_KEY);
+    const digest = readStorage<string | null>(SYNC_DIGEST_KEY, null);
     localStorage.removeItem(LEGACY_SYNC_SIGNATURE_KEY);
     return digest;
   } catch {
@@ -691,16 +701,6 @@ const LAST_SESSION_KEY = "linksim-last-session-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_STYLE_ID_KEY = "linksim-basemap-style-v2";
-
-const readStorage = <T,>(key: string, fallback: T): T => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-};
 
 const readStorageRawState = <T,>(key: string): { status: "ok" | "missing" | "invalid"; value: T | null; raw?: string } => {
   try {

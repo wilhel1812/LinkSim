@@ -157,6 +157,60 @@ describe("Library ingestion limits", () => {
     },
   );
 
+  it("migrates legacy nested Site radio fields before strict validation", () => {
+    const fromSite = validSite("site-from") as Record<string, unknown>;
+    const toSite = validSite("site-to") as Record<string, unknown>;
+    for (const site of [fromSite, toSite]) {
+      delete site.txPowerDbm;
+      delete site.txGainDbi;
+      delete site.rxGainDbi;
+      delete site.cableLossDb;
+      delete site.createdAt;
+    }
+    const simulation = {
+      ...validSimulation(),
+      snapshot: {
+        ...validSimulation().snapshot,
+        sites: [fromSite, toSite],
+        links: [{
+          id: "path-legacy-radio",
+          fromSiteId: "site-from",
+          toSiteId: "site-to",
+          frequencyMHz: 868,
+          txPowerDbm: 31,
+          txGainDbi: 7,
+          rxGainDbi: 9,
+          cableLossDb: 0.5,
+        }],
+      },
+    };
+
+    const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+    const sites = (validated.simulationPresets[0]?.snapshot as { sites: Array<Record<string, unknown>> }).sites;
+    expect(sites).toEqual([
+      expect.objectContaining({ id: "site-from", txPowerDbm: 31, txGainDbi: 7, rxGainDbi: 2, cableLossDb: 0.5 }),
+      expect.objectContaining({ id: "site-to", txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 9, cableLossDb: 1 }),
+    ]);
+    expect(fromSite).not.toHaveProperty("txPowerDbm");
+    expect(toSite).not.toHaveProperty("rxGainDbi");
+  });
+
+  it("does not use legacy radio migration to mask malformed nested values", () => {
+    const malformedSite = { ...validSite("site-malformed"), txPowerDbm: "22" };
+    delete (malformedSite as Record<string, unknown>).createdAt;
+    const simulation = {
+      ...validSimulation(),
+      snapshot: {
+        ...validSimulation().snapshot,
+        sites: [malformedSite],
+      },
+    };
+
+    expect(() => validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] })).toThrow(
+      "Site txPowerDbm must be a finite number",
+    );
+  });
+
   it("partitions valid and malformed records without discarding the valid records", () => {
     const invalidSite = { ...validSite("bad-site"), position: { lat: 91, lon: 10 } };
     const invalidSimulation = validSimulation();

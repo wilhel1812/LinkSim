@@ -447,4 +447,50 @@ describe("appStore delta sync", () => {
     expect(localStorage.getItem("linksim-last-fetched-at-v1")).toBe("2026-08-14T09:00:00.000Z");
     expect(useAppStore.getState().syncStatus).toBe("error");
   });
+
+  it("decodes the persisted digest and avoids an unchanged delta full push after reload", async () => {
+    localStorage.setItem("rmw-site-library-v1", JSON.stringify([]));
+    localStorage.setItem("rmw-sim-presets-v1", JSON.stringify(baselinePayload.simulationPresets));
+    localStorage.setItem("linksim-migration-default-private-v2", "1");
+
+    vi.resetModules();
+    const firstModule = await import("./appStore");
+    const { computeSyncPayloadDigest } = await import("../lib/syncDigest");
+    const normalized = firstModule.useAppStore.getState();
+    const digest = await computeSyncPayloadDigest({
+      siteLibrary: normalized.siteLibrary,
+      simulationPresets: normalized.simulationPresets,
+    });
+    localStorage.setItem("linksim-sync-digest-v2", JSON.stringify(digest));
+    localStorage.setItem("linksim-last-fetched-at-v1", "2026-08-16T10:00:00.000Z");
+    expect(localStorage.getItem("linksim-sync-digest-v2")).toBe(JSON.stringify(digest));
+
+    vi.resetModules();
+    let putCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        return makeResponse({
+          siteLibrary: [], simulationPresets: [],
+          deletedSiteIds: [], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+          isDelta: true,
+        });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        putCount += 1;
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true, isInitializing: false });
+
+    await useAppStore.getState().initializeCloudSync();
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(putCount).toBe(0);
+    expect(useAppStore.getState().syncPending).toBe(false);
+    expect(useAppStore.getState().syncStatus).toBe("synced");
+  });
 });
