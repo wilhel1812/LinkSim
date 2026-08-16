@@ -71,25 +71,4 @@ describe("mergeSrtmTiles", () => {
     expect(result[0].latStart).toBe(99);
     expect(result[0].sourceId).toBe("copernicus30");
   });
-
-  it("keeps a manual tile when a catalog-confirmed sea-level tile arrives", () => {
-    const manual = {
-      ...makeTile("N70E016", 70, 16),
-      sourceKind: "manual-upload" as const,
-      elevations: new Int16Array([12]),
-      size: 1,
-      width: 1,
-      height: 1,
-    };
-    const seaLevel = {
-      ...makeTile("N70E016", 70, 16),
-      elevations: new Int16Array([0]),
-      size: 1,
-      width: 1,
-      height: 1,
-      sourceDetail: "Catalog-confirmed ocean cell",
-    };
-
-    expect(mergeSrtmTiles([manual], [seaLevel])).toEqual([manual]);
-  });
 });

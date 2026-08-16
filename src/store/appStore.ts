@@ -37,7 +37,7 @@ import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } fr
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { longitudeBoundsForCoordinates, tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
-import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
+import { sampleSrtmElevation } from "../lib/srtm";
 import { DEFAULT_BASEMAP_STYLE_ID, BASEMAP_STYLE_REGISTRY } from "../lib/basemaps";
 import {
   clearCopernicusCache,
@@ -735,7 +735,6 @@ type AppState = {
   clearSiteDragPreview: (id?: string) => void;
   updateLink: (id: string, patch: Partial<Link>) => void;
   updateMapViewport: (patch: Partial<MapViewport>) => void;
-  ingestSrtmFiles: (files: FileList | File[]) => Promise<void>;
   recommendAndFetchTerrainForCurrentArea: (targetRadiusKm?: number) => Promise<void>;
   cancelTerrainLoad: () => void;
   loadTerrainForCoordinate: (lat: number, lon: number) => Promise<void>;
@@ -3917,47 +3916,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       }));
     },
-  ingestSrtmFiles: async (files) => {
-    set({
-      isTerrainFetching: true,
-      terrainProgressPercent: 0,
-      terrainProgressTilesLoaded: 0,
-      terrainProgressTilesTotal: 0,
-      terrainProgressBytesLoaded: 0,
-      terrainProgressBytesEstimated: 0,
-    });
-    try {
-      if (files.length > 8) {
-        throw new Error("Manual terrain ingestion is limited to 8 files at a time.");
-      }
-      const list = Array.from(files);
-      const parsed: SrtmTile[] = [];
-      for (const file of list) {
-        const tile = await parseSrtmTile(file);
-        parsed.push({
-          ...tile,
-          sourceKind: "manual-upload" as const,
-          sourceId: "manual-upload",
-          sourceLabel: "Manual upload",
-          sourceDetail: file.name,
-        });
-      }
-
-      set((state) => {
-        const nextTiles = mergeSrtmTiles(state.srtmTiles, parsed);
-        return {
-          srtmTiles: nextTiles,
-          terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics(nextTiles),
-          isTerrainFetching: false,
-          terrainProgressPercent: 0,
-        };
-      });
-      clearTerrainLossCache();
-      useCoverageStore.getState().recomputeCoverage();
-    } finally {
-      set({ isTerrainFetching: false, terrainProgressPercent: 0 });
-    }
-  },
   recommendAndFetchTerrainForCurrentArea: async (targetRadiusKm = 20) => {
     if (get().isTerrainFetching) return;
     const { sites, srtmTiles } = get();
@@ -4156,10 +4114,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     await clearCopernicusCache();
     clearTerrainLossCache();
     set((state) => {
-      const nextTiles = state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload");
       return {
-        srtmTiles: nextTiles,
-        terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics(nextTiles),
+        srtmTiles: [],
+        terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics([]),
         isTerrainFetching: false,
         isHighResTerrainLoaded: false,
         terrainLoadingStartedAtMs: 0,

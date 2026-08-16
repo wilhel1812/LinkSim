@@ -22,13 +22,7 @@ const terrainClient = vi.hoisted(() => ({
   clearCopernicusCache: vi.fn(async () => undefined),
 }));
 
-const srtmParser = vi.hoisted(() => ({ parseSrtmTile: vi.fn() }));
-
 vi.mock("../lib/copernicusTerrainClient", () => terrainClient);
-vi.mock("../lib/srtm", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/srtm")>();
-  return { ...actual, parseSrtmTile: srtmParser.parseSrtmTile };
-});
 vi.mock("../lib/coverage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverage")>();
   return { ...actual, buildCoverage: vi.fn(() => []), clearTerrainLossCache: vi.fn() };
@@ -236,48 +230,11 @@ describe("appStore GLO-30 terrain lifecycle", () => {
     expect(useAppStore.getState().isTerrainFetching).toBe(false);
   });
 
-  it("rejects more than eight manual files before parsing any file", async () => {
-    const files = Array.from({ length: 9 }, (_, index) => ({ name: `${index}.hgt` }) as File);
+  it("clears all in-memory tiles together with the active terrain cache", async () => {
+    await useAppStore.getState().clearTerrainCache();
 
-    await expect(useAppStore.getState().ingestSrtmFiles(files)).rejects.toThrow("8 files");
-    expect(srtmParser.parseSrtmTile).not.toHaveBeenCalled();
+    expect(terrainClient.clearCopernicusCache).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().srtmTiles).toEqual([]);
   });
 
-  it("parses manual files sequentially and commits only after all succeed", async () => {
-    let releaseFirst: ((value: SrtmTile) => void) | undefined;
-    srtmParser.parseSrtmTile
-      .mockReturnValueOnce(new Promise<SrtmTile>((resolve) => { releaseFirst = resolve; }))
-      .mockResolvedValueOnce(tile("N60E010"));
-    const initialTiles = useAppStore.getState().srtmTiles;
-    const loading = useAppStore.getState().ingestSrtmFiles([
-      { name: "N60E009.hgt" } as File,
-      { name: "N60E010.hgt" } as File,
-    ]);
-
-    await Promise.resolve();
-    expect(srtmParser.parseSrtmTile).toHaveBeenCalledTimes(1);
-    expect(useAppStore.getState().srtmTiles).toBe(initialTiles);
-    releaseFirst?.(tile("N60E009"));
-    await loading;
-
-    expect(srtmParser.parseSrtmTile).toHaveBeenCalledTimes(2);
-    expect(useAppStore.getState().srtmTiles.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining(["N60E009", "N60E010"]),
-    );
-  });
-
-  it("does not commit earlier manual files when a later parse fails", async () => {
-    srtmParser.parseSrtmTile
-      .mockResolvedValueOnce(tile("N60E009"))
-      .mockRejectedValueOnce(new Error("bad tile"));
-    const initialTiles = useAppStore.getState().srtmTiles;
-
-    await expect(
-      useAppStore.getState().ingestSrtmFiles([
-        { name: "N60E009.hgt" } as File,
-        { name: "bad.hgt" } as File,
-      ]),
-    ).rejects.toThrow("bad tile");
-    expect(useAppStore.getState().srtmTiles).toBe(initialTiles);
-  });
 });

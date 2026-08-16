@@ -4081,13 +4081,13 @@ export function MapView({
                     <div className="map-sim-row">
                       <div className="map-sim-row-label">Memory (Decoded)</div>
                       <div className="map-sim-row-value">
-                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, manual {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, other {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.other)}]
                       </div>
                     </div>
                     <div className="map-sim-row">
                       <div className="map-sim-row-label">Tile Counts</div>
                       <div className="map-sim-row-value">
-                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, manual {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
                       </div>
                     </div>
                     <div className="map-sim-row">
