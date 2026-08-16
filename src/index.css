@@ -431,6 +431,12 @@ button {
   text-decoration: underline;
 }
 
+.sidebar-footer-icon-links a {
+  justify-content: center;
+  min-height: 24px;
+  min-width: 24px;
+}
+
 .sidebar-panel > header {
   display: flex;
   flex-direction: column;

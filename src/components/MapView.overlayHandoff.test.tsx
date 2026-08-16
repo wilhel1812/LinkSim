@@ -361,6 +361,91 @@ describe("MapView overlay handoff", () => {
     expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
   });
 
+  it("ends a terrain-started cloud when Auto Calculate is disabled and work becomes idle", async () => {
+    useAppStore.setState({
+      mapOverlayMode: "passfail",
+      isTerrainFetching: true,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    expect(requestKey).toBeTruthy();
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+
+    act(() => {
+      useCoverageStore.getState().setAutoCalculateEnabled(false);
+      useAppStore.setState({
+        isTerrainFetching: false,
+        terrainLoadEpoch: 1,
+      });
+    });
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("ends a terrain-started cloud when the calculation topology becomes invalid", async () => {
+    useAppStore.setState({ isTerrainFetching: true });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    expect(requestKey).toBeTruthy();
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+
+    act(() => {
+      useCoverageStore.getState().setAutoCalculateEnabled(false);
+      useAppStore.setState({
+        isTerrainFetching: false,
+        terrainLoadEpoch: 1,
+        networks: [],
+        systems: [],
+        selectedNetworkId: "",
+      });
+    });
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("keeps the cloud active while a matching overlay job is still running", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+
+    act(() => useCoverageStore.getState().setAutoCalculateEnabled(false));
+    await act(async () => undefined);
+
+    expect(loadingOverlayMock.props?.loading).toBe(true);
+  });
+
   it("rebuilds cached Pass/Fail when only the saved-Path receiver pattern changes", async () => {
     useAppStore.setState({
       sites: [site, receiverSite],
