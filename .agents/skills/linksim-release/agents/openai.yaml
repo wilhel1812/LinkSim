@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Release"
+  short_description: "Prepare and monitor protected LinkSim releases"
+  default_prompt: "Use $linksim-release to prepare this LinkSim release and stop before production unless explicit approval is present."

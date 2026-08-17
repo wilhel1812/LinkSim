@@ -1,6 +1,7 @@
 from math import asin, cos, log10, radians, sin, sqrt
 
 from calculation_api.models import LinkBudgetInput, LinkBudgetResult, Node
+from calculation_api.limits import MAX_SYNC_DISTANCE_KM
 
 
 def _haversine_km(a: Node, b: Node) -> float:
@@ -33,6 +34,8 @@ def calculate_link_budget(payload: LinkBudgetInput) -> LinkBudgetResult:
         raise LookupError(f"Site not found: {payload.to_site}")
 
     distance_km = _haversine_km(from_node, to_node)
+    if distance_km > MAX_SYNC_DISTANCE_KM:
+        raise ValueError(f"Distance {distance_km:.1f} km exceeds maximum sync distance of {MAX_SYNC_DISTANCE_KM} km.")
     path_loss_db = _fspl_db(distance_km, payload.frequency_mhz)
     eirp_dbm = from_node.tx_power_dbm + from_node.tx_gain_dbi - from_node.cable_loss_db
     rx_dbm = eirp_dbm + to_node.rx_gain_dbi - path_loss_db

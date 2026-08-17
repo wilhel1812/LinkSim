@@ -1,6 +1,13 @@
-import { copyFile, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import {
+  parsePagesDeploymentUrl,
+  resolveDeploymentCommit,
+  validatePreviewBranch,
+  verifyMatchingPagesDeployment,
+} from "./pages-preview.mjs";
+import { validateCurrentStagingVersionState } from "./version-state.mjs";
 
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
@@ -197,6 +204,8 @@ async function verifyRemoteSchema(targetName, databaseName) {
   if (process.env.GITHUB_ACTIONS === "true") return;
   let resourceChangesResult;
   let simulationsResult;
+  let identityClaimsResult;
+  let identityMetaResult;
   try {
     resourceChangesResult = await run(
       wrangler,
@@ -206,6 +215,16 @@ async function verifyRemoteSchema(targetName, databaseName) {
     simulationsResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(simulations);"],
+      { capture: true },
+    );
+    identityClaimsResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(verified_identity_claims);"],
+      { capture: true },
+    );
+    identityMetaResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
       { capture: true },
     );
   } catch (err) {
@@ -241,11 +260,39 @@ async function verifyRemoteSchema(targetName, databaseName) {
     simulationColumns.has("status"),
     "Preflight failed: D1 schema missing simulations.status. Apply migration db/migrations/2026-08-04_simulation_soft_delete.sql before deploy.",
   );
+
+  const identityParsed = parseWranglerJsonPayload(identityClaimsResult.stdout);
+  assert(Array.isArray(identityParsed) && identityParsed.length > 0, "Preflight failed: unable to parse identity claims schema output.");
+  const identityRows = Array.isArray(identityParsed[0]?.results) ? identityParsed[0].results : [];
+  const identityColumns = new Set(identityRows.map((row) => String(row?.name ?? "")).filter(Boolean));
+  const missingIdentityColumns = ["normalized_email", "current_user_id", "status"].filter(
+    (column) => !identityColumns.has(column),
+  );
+  assert(
+    missingIdentityColumns.length === 0,
+    `Preflight failed: D1 identity lifecycle schema missing columns: ${missingIdentityColumns.join(", ")}. Apply migration db/migrations/2026-08-12_identity_lifecycle.sql before deploy.`,
+  );
+
+  const identityMetaParsed = parseWranglerJsonPayload(identityMetaResult.stdout);
+  const identityMetaRows = Array.isArray(identityMetaParsed?.[0]?.results) ? identityMetaParsed[0].results : [];
+  assert(
+    identityMetaRows.some((row) => row?.version === "2026-08-12-identity-lifecycle-v1"),
+    "Preflight failed: D1 identity lifecycle migration marker is missing or outdated.",
+  );
 }
 
 async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
   const { stdout } = await run("git", args, { capture: true });
   return stdout.trim();
+}
+
+async function resolveVerifiedDeploymentCommit(targetName, currentCommit) {
+  return resolveDeploymentCommit({
+    targetName,
+    currentCommit,
+    workflowCommit: process.env.DEPLOY_VERIFY_COMMIT,
+    resolveTree: async (ref) => getGitRef(["rev-parse", `${ref}^{tree}`]),
+  });
 }
 
 async function preflight(targetName, target) {
@@ -273,6 +320,14 @@ async function preflight(targetName, target) {
   }
 
   await verifyRequiredDeployEnv(targetName);
+
+  if (targetName === "staging") {
+    const versionState = validateCurrentStagingVersionState();
+    console.log(
+      `[deploy-pages-safe] Version state: production=${versionState.productionVersion} ` +
+        `staging=${versionState.stagingVersion}`,
+    );
+  }
 
   const configText = await readFile(target.configPath, "utf8");
   assert(!configText.includes("REPLACE_WITH_"), "Preflight failed: unresolved placeholders in Wrangler config.");
@@ -324,29 +379,6 @@ async function withWranglerConfig(configPath, fn) {
   }
 }
 
-async function verifyDeployment(targetName, projectName, commit) {
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    const { stdout } = await run(
-      wrangler,
-      ["pages", "deployment", "list", "--project-name", projectName],
-      { capture: true },
-    );
-    const lines = stdout.split("\n");
-    const tableRows = lines.filter((line) => line.includes("│") && line.includes("http"));
-    const top = tableRows[0] ?? "";
-    if (top.includes(commit)) {
-      return;
-    }
-    await sleep(5000);
-  }
-  const message = `Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`;
-  if (targetName === "prod-main") {
-    console.warn(`[deploy-pages-safe] ${message} Proceeding because the Pages deploy itself completed successfully.`);
-    return;
-  }
-  throw new Error(message);
-}
-
 async function main() {
   const targetName = parseArg("target");
   const target = TARGETS[targetName];
@@ -358,10 +390,30 @@ async function main() {
     );
   }
 
-  const { branch: currentBranch, commit } = await preflight(targetName, target);
-  const deployBranch = target.branch === "CURRENT" ? currentBranch : target.branch;
+  if (process.argv.includes("--verify-commit-only")) {
+    assert(
+      targetName === "prod-main",
+      "--verify-commit-only is only valid for the prod-main target.",
+    );
+    const currentCommit = await getGitRef(["rev-parse", "--short", "HEAD"]);
+    const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);
+    console.log(`[deploy-pages-safe] Production workflow commit validated: ${commit}`);
+    return;
+  }
+
+  const { branch: currentBranch, commit: currentCommit } = await preflight(targetName, target);
+  const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);
+  const requestedPreviewBranch = parseArg("branch");
+  if (requestedPreviewBranch && targetName !== "staging-preview") {
+    throw new Error("--branch is only valid for the staging-preview target.");
+  }
+  const deployBranch =
+    targetName === "staging-preview"
+      ? validatePreviewBranch(requestedPreviewBranch || currentBranch)
+      : target.branch;
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
+  let deploymentUrl = "";
 
   const rawCommitMsg = await getGitRef(["log", "-1", "--format=%s"]);
   // Cloudflare Pages API requires a pure ASCII commit message string.
@@ -373,7 +425,7 @@ async function main() {
 
   try {
     await withWranglerConfig(target.configPath, async () => {
-      await run(wrangler, [
+      const result = await run(wrangler, [
         "pages",
         "deploy",
         "dist",
@@ -383,10 +435,39 @@ async function main() {
         deployBranch,
         "--commit-message",
         commitMessage || commit,
-      ]);
+        "--commit-hash",
+        commit,
+      ], { capture: true });
+      process.stdout.write(result.stdout);
+      process.stderr.write(result.stderr);
+
+      deploymentUrl = parsePagesDeploymentUrl(
+        `${result.stdout}\n${result.stderr}`,
+        target.projectName,
+      );
+
+      if (targetName === "staging-preview") {
+        const githubOutput = (process.env.GITHUB_OUTPUT ?? "").trim();
+        if (githubOutput) await appendFile(githubOutput, `preview_url=${deploymentUrl}\n`, "utf8");
+        console.log(`[deploy-pages-safe] Preview URL: ${deploymentUrl}`);
+      }
     });
 
-    await verifyDeployment(targetName, target.projectName, commit);
+    await verifyMatchingPagesDeployment({
+      projectName: target.projectName,
+      commit,
+      branch: deployBranch,
+      deploymentUrl,
+      listDeployments: async () => {
+        const { stdout } = await run(
+          wrangler,
+          ["pages", "deployment", "list", "--project-name", target.projectName],
+          { capture: true },
+        );
+        return stdout;
+      },
+      wait: sleep,
+    });
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );

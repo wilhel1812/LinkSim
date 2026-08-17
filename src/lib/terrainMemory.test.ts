@@ -26,27 +26,24 @@ const makeTile = (
 });
 
 describe("terrainMemory", () => {
-  it("estimates retained decoded bytes for GLO-30, manual, and other tiles", () => {
+  it("estimates retained decoded bytes for GLO-30 and other tiles", () => {
     const tiles: SrtmTile[] = [
       makeTile("N60E010", "copernicus30", "auto-fetch", 3601),
       makeTile("N60E011", "copernicus90", "auto-fetch", 1201),
-      makeTile("N60E012", "manual", "manual-upload", 1201),
-      makeTile("N60E013", "other", "auto-fetch", 1201),
+      makeTile("N60E012", "other", "auto-fetch", 1201),
     ];
 
     const diagnostics = estimateTerrainMemoryDiagnostics(tiles);
 
     expect(diagnostics.tileCountsByDataset).toEqual({
       copernicus30: 1,
-      manual: 1,
       other: 2,
     });
     const legacyTileBytes = 1201 * 1201 * 2;
     expect(diagnostics.retainedBytesByDataset.copernicus30).toBe(COPERNICUS_30_TILE_DECODED_BYTES);
-    expect(diagnostics.retainedBytesByDataset.manual).toBe(legacyTileBytes);
     expect(diagnostics.retainedBytesByDataset.other).toBe(legacyTileBytes * 2);
     expect(diagnostics.retainedBytesTotal).toBe(
-      COPERNICUS_30_TILE_DECODED_BYTES + legacyTileBytes * 3,
+      COPERNICUS_30_TILE_DECODED_BYTES + legacyTileBytes * 2,
     );
   });
 

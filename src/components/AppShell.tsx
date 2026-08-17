@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
-import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe } from "../lib/cloudUser";
+import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
@@ -14,6 +14,9 @@ import {
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import { parseRadioPresetShareHash, type RadioPresetShareParseResult } from "../lib/radioPresetShare";
+import { normalizeUserSimulationDefaultsPreference } from "../lib/simulationDefaults";
+import { buildImportedRadioPresetPreference } from "../lib/radioPresetImport";
 import {
   clearUiNotifications,
   dismissUiNotification,
@@ -236,6 +239,20 @@ export function AppShell() {
   }, []);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [presetImport, setPresetImport] = useState<RadioPresetShareParseResult | null>(() => {
+    if (typeof window === "undefined") return null;
+    const parsed = parseRadioPresetShareHash(window.location.hash);
+    return parsed.ok || parsed.reason !== "missing" ? parsed : null;
+  });
+  const [presetImportName, setPresetImportName] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const parsed = parseRadioPresetShareHash(window.location.hash);
+    return parsed.ok ? parsed.preset.name : "";
+  });
+  const [presetImportMakeDefault, setPresetImportMakeDefault] = useState(false);
+  const [presetImportConflictMode, setPresetImportConflictMode] = useState<"replace" | "rename" | null>(null);
+  const [presetImportBusy, setPresetImportBusy] = useState(false);
+  const [presetImportStatus, setPresetImportStatus] = useState("");
   const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -582,6 +599,54 @@ export function AppShell() {
     clearAuthRetryTimer();
     window.location.href = buildAuthStartPath(window.location);
   }, [clearAuthRetryTimer]);
+
+  const clearPresetImport = useCallback(() => {
+    setPresetImport(null);
+    setPresetImportStatus("");
+    setPresetImportConflictMode(null);
+    if (typeof window !== "undefined" && window.location.hash.startsWith("#preset=")) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
+
+  const importSharedRadioPreset = useCallback(async () => {
+    if (!presetImport?.ok || !currentUser?.id) return;
+    const preference = normalizeUserSimulationDefaultsPreference(
+      currentUser.simulationDefaultsPreference,
+      currentUser.defaultFrequencyPresetId,
+    );
+    let importResult: ReturnType<typeof buildImportedRadioPresetPreference>;
+    try {
+      importResult = buildImportedRadioPresetPreference({
+        preference,
+        sharedPreset: presetImport.preset,
+        requestedName: presetImportName,
+        conflictMode: presetImportConflictMode,
+        makeDefault: presetImportMakeDefault,
+        createId: () => `radio-${crypto.randomUUID()}`,
+      });
+    } catch (error) {
+      setPresetImportStatus(getUiErrorMessage(error));
+      return;
+    }
+
+    setPresetImportBusy(true);
+    setPresetImportStatus("");
+    try {
+      const updated = await updateMyProfile({
+        defaultFrequencyPresetId: importResult.preference.presetId,
+        simulationDefaultsPreference: importResult.preference,
+      });
+      setCurrentUser(updated);
+      setAuthState("signed_in");
+      clearPresetImport();
+      pushNotification({ id: "radio-preset-imported", message: `Saved radio preset: ${importResult.importedName}`, tone: "info" });
+    } catch (error) {
+      setPresetImportStatus(getUiErrorMessage(error));
+    } finally {
+      setPresetImportBusy(false);
+    }
+  }, [clearPresetImport, currentUser, presetImport, presetImportConflictMode, presetImportMakeDefault, presetImportName, pushNotification, setAuthState]);
 
   const scheduleAuthRecoveryRetry = useCallback(
     (source: "timeout" | "failure"): boolean => {
@@ -1276,7 +1341,7 @@ export function AppShell() {
         }
       }
 
-      if (!exists && accessState === "readonly") {
+      if (accessState === "readonly") {
         try {
             const publicBundle = await fetchPublicSimulationLibrary({
               simulationId: resolvedSimulationId || undefined,
@@ -1289,6 +1354,7 @@ export function AppShell() {
               simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
             },
             "merge",
+            "public-view-only",
           );
           resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
           exists = Boolean(resolvedSimulationId);
@@ -2328,6 +2394,110 @@ export function AppShell() {
           </div>
         </ModalOverlay>
       ) : null}
+      {settingsRoute ? (
+        <ModalOverlay
+          aria-label="Settings"
+          className="settings-overlay"
+          onClose={closeSettings}
+          suspended={Boolean(presetImport)}
+          tier="raised"
+        >
+          <div className="library-manager-card settings-panel-wrapper">
+            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} suspended={Boolean(presetImport)} />
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {presetImport ? (
+        <ModalOverlay aria-label="Import radio preset" onClose={clearPresetImport} tier="raised">
+          <div className="library-manager-card radio-preset-import-card">
+            <div className="library-manager-header">
+              <h2>Import Radio Preset</h2>
+              <InlineCloseIconButton onClick={clearPresetImport} />
+            </div>
+            {!presetImport.ok ? (
+              <>
+                <p className="field-help field-help-error">This preset link is invalid or unsupported.</p>
+                <ActionButton onClick={clearPresetImport} type="button">Close</ActionButton>
+              </>
+            ) : (() => {
+              const preference = normalizeUserSimulationDefaultsPreference(
+                currentUser?.simulationDefaultsPreference,
+                currentUser?.defaultFrequencyPresetId,
+              );
+              const conflict = preference.customPresets?.find(
+                (preset) => preset.name.toLocaleLowerCase() === presetImport.preset.name.toLocaleLowerCase(),
+              );
+              const defaults = presetImport.preset.defaults;
+              const replacingActiveDefault = Boolean(
+                conflict && preference.mode === "custom" && preference.customPresetId === conflict.id,
+              );
+              return (
+                <>
+                  <p className="field-help">Review every value before saving an independent copy to your account.</p>
+                  <div className="panel-section compact-panel radio-preset-import-values">
+                    <strong>{presetImport.preset.name}</strong>
+                    <dl>
+                      <dt>Frequency</dt><dd>{defaults.frequencyMHz} MHz</dd>
+                      <dt>Bandwidth</dt><dd>{defaults.bandwidthKhz} kHz</dd>
+                      <dt>Spread factor</dt><dd>{defaults.spreadFactor}</dd>
+                      <dt>Coding rate</dt><dd>{defaults.codingRate}</dd>
+                      <dt>Region code</dt><dd>{defaults.regionCode || "—"}</dd>
+                      <dt>RX target</dt><dd>{defaults.rxSensitivityTargetDbm} dBm</dd>
+                      <dt>Environment loss</dt><dd>{defaults.environmentLossDb} dB</dd>
+                      <dt>Environment mode</dt><dd>{defaults.autoPropagationEnvironment ? "Automatic" : "Manual"}</dd>
+                      <dt>Radio climate</dt><dd>{defaults.propagationEnvironment.radioClimate}</dd>
+                      <dt>Polarization</dt><dd>{defaults.propagationEnvironment.polarization}</dd>
+                      <dt>Clutter height</dt><dd>{defaults.propagationEnvironment.clutterHeightM} m</dd>
+                      <dt>Ground dielectric</dt><dd>{defaults.propagationEnvironment.groundDielectric}</dd>
+                      <dt>Ground conductivity</dt><dd>{defaults.propagationEnvironment.groundConductivity}</dd>
+                      <dt>Atmospheric bending</dt><dd>{defaults.propagationEnvironment.atmosphericBendingNUnits} N-units</dd>
+                    </dl>
+                  </div>
+                  {!currentUser ? (
+                    <ActionButton onClick={handleUserSignInRequested} type="button">Sign in to save</ActionButton>
+                  ) : (
+                    <>
+                      {conflict ? (
+                        <fieldset className="resource-edit-fieldset radio-preset-conflict-options">
+                          <legend>A preset named “{conflict.name}” already exists</legend>
+                          <label>
+                            <input checked={presetImportConflictMode === "replace"} name="preset-import-conflict" onChange={() => { setPresetImportConflictMode("replace"); setPresetImportName(conflict.name); setPresetImportStatus(""); }} type="radio" />
+                            Replace the existing preset
+                          </label>
+                          <label>
+                            <input checked={presetImportConflictMode === "rename"} name="preset-import-conflict" onChange={() => { setPresetImportConflictMode("rename"); setPresetImportName(`${presetImport.preset.name} copy`); setPresetImportStatus(""); }} type="radio" />
+                            Save as a new preset
+                          </label>
+                          {replacingActiveDefault && presetImportConflictMode === "replace" ? (
+                            <p className="field-help field-help-error">This replaces your active account default and changes inheriting Simulations.</p>
+                          ) : null}
+                        </fieldset>
+                      ) : null}
+                      {(!conflict || presetImportConflictMode === "rename") ? (
+                        <label className="field-grid">
+                          <span>Preset name</span>
+                          <input maxLength={80} onChange={(event) => setPresetImportName(event.target.value)} type="text" value={presetImportName} />
+                        </label>
+                      ) : null}
+                      <label className="field-grid">
+                        <span>Use as my account default</span>
+                        <input aria-label="Use imported preset as my account default" checked={presetImportMakeDefault} onChange={(event) => setPresetImportMakeDefault(event.target.checked)} type="checkbox" />
+                      </label>
+                      <div className="radio-preset-import-actions">
+                        <ActionButton disabled={presetImportBusy || Boolean(conflict && !presetImportConflictMode)} onClick={() => void importSharedRadioPreset()} type="button">
+                          {presetImportBusy ? "Saving…" : "Save preset"}
+                        </ActionButton>
+                        <ActionButton onClick={clearPresetImport} type="button" variant="ghost">Cancel</ActionButton>
+                      </div>
+                      {presetImportStatus ? <p className="field-help field-help-error" role="alert">{presetImportStatus}</p> : null}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </ModalOverlay>
+      ) : null}
       {showShareModal ? (
         <ModalOverlay aria-label="Share simulation" onClose={closeShareModal}>
           <div className="library-manager-card">
@@ -2484,13 +2654,6 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       <UserProfilePopover onClose={() => setProfileTarget(null)} target={profileTarget} viewer={currentUser} />
-      {settingsRoute ? (
-        <ModalOverlay aria-label="Settings" onClose={closeSettings} tier="raised" className="settings-overlay">
-          <div className="library-manager-card settings-panel-wrapper">
-            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />
-          </div>
-        </ModalOverlay>
-      ) : null}
       <MapEditorPanel isMobile={isMobileViewport} />
     </main>
   );

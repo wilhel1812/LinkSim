@@ -1,68 +1,66 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const loadSearchLocations = async () => {
-  const module = await import("./geocode");
-  return module.searchLocations;
-};
+const loadSearchLocations = async () => (await import("./geocode")).searchLocations;
+const response = (id = "1") => new Response(JSON.stringify({
+  results: [{ id, label: `Place ${id}`, lat: 59.91, lon: 10.75 }],
+}), { headers: { "content-type": "application/json" } });
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { location: { origin: "https://app.example.test" } },
+    value: { location: { origin: "https://app.example.test", hostname: "app.example.test" } },
   });
   vi.stubGlobal("fetch", vi.fn());
 });
 
 describe("searchLocations", () => {
-  it("returns empty results for blank and too-short queries", async () => {
+  it("normalizes queries and rejects values outside 3-256 without fetching", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(response());
     const searchLocations = await loadSearchLocations();
-
-    await expect(searchLocations("")).resolves.toEqual([]);
     await expect(searchLocations("ab")).resolves.toEqual([]);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await expect(searchLocations("x".repeat(257))).resolves.toEqual([]);
+    await searchLocations("  O\u0308SLO   Sentrum ");
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[0])).toContain("q=%C3%B6slo+sentrum");
   });
 
-  it("uses local API and reuses in-memory cache", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: [{ id: "1", label: "Oslo", lat: 59.91, lon: 10.75 }] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-
+  it("coalesces identical in-flight calls and reuses the five-minute cache", async () => {
+    let resolve!: (value: Response) => void;
+    vi.mocked(globalThis.fetch).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     const searchLocations = await loadSearchLocations();
-    const first = await searchLocations("Oslo");
-    const second = await searchLocations("oslo");
-
-    expect(first).toEqual([{ id: "1", label: "Oslo", lat: 59.91, lon: 10.75 }]);
-    expect(second).toEqual(first);
+    const first = searchLocations("Oslo");
+    const second = searchLocations("  oslo ");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    resolve(response());
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      [{ id: "1", label: "Place 1", lat: 59.91, lon: 10.75 }],
+      [{ id: "1", label: "Place 1", lat: 59.91, lon: 10.75 }],
+    ]);
+    await searchLocations("OSLO");
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to upstream nominatim when local endpoint is unavailable", async () => {
-    vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([{ place_id: 7, display_name: "Bergen", lat: "60.39", lon: "5.32" }]), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
+  it("bounds the client cache at 300 entries", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => response(new URL(String(input)).searchParams.get("q")!));
     const searchLocations = await loadSearchLocations();
-    const results = await searchLocations("Bergen");
-
-    expect(results).toEqual([{ id: "7", label: "Bergen", lat: 60.39, lon: 5.32 }]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-    expect(String(vi.mocked(globalThis.fetch).mock.calls[1]?.[0])).toContain("nominatim.openstreetmap.org/search");
+    for (let index = 0; index < 301; index += 1) await searchLocations(`place ${String(index).padStart(3, "0")}`);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(301);
+    await searchLocations("place 000");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(302);
   });
 
-  it("surfaces local rate-limit responses without upstream fallback", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response("Too many requests", { status: 429 }));
+  it("never falls back directly to Nominatim from a production browser", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response("Not found", { status: 404 }));
     const searchLocations = await loadSearchLocations();
+    await expect(searchLocations("Bergen")).rejects.toThrow("Geocode lookup failed (404)");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[0])).not.toContain("nominatim.openstreetmap.org");
+  });
 
+  it("surfaces stable local rate-limit responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response("Too many requests", { status: 429, headers: { "retry-after": "1" } }));
+    const searchLocations = await loadSearchLocations();
     await expect(searchLocations("Trondheim")).rejects.toThrow("Search rate limit reached. Please wait a moment.");
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });

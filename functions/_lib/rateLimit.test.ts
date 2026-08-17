@@ -1,17 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { getClientAddress, takeRateLimitToken } from "./rateLimit";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "./rateLimit";
 
 describe("rate limit helpers", () => {
-  it("extracts client address from Cloudflare and forwarded headers", () => {
+  it("parses configured per-minute limits without losing route fallbacks", () => {
+    expect(parsePerMinuteLimit(undefined, 120)).toBe(120);
+    expect(parsePerMinuteLimit("", 60)).toBe(60);
+    expect(parsePerMinuteLimit("invalid", 120)).toBe(120);
+    expect(parsePerMinuteLimit("2.9", 120)).toBe(2);
+    expect(parsePerMinuteLimit("0", 120)).toBe(1);
+    expect(parsePerMinuteLimit(undefined, 120, 1)).toBe(1);
+    expect(parsePerMinuteLimit("   ", 30, 1)).toBe(1);
+    expect(parsePerMinuteLimit("7.9", 120, 1)).toBe(7);
+  });
+  it("uses only Cloudflare-established client identity", () => {
     const cfReq = new Request("https://example.test", {
-      headers: { "cf-connecting-ip": " 203.0.113.9 " },
+      headers: {
+        "cf-connecting-ip": " 203.0.113.9 ",
+        "x-forwarded-for": "198.51.100.10, 10.0.0.2",
+      },
     });
     expect(getClientAddress(cfReq)).toBe("203.0.113.9");
 
-    const fwdReq = new Request("https://example.test", {
-      headers: { "x-forwarded-for": "198.51.100.10, 10.0.0.2" },
+    const spoofedReq = new Request("https://example.test", {
+      headers: {
+        "x-forwarded-for": "198.51.100.10, 10.0.0.2",
+        "cf-access-authenticated-user-email": "attacker@example.test",
+        "user-agent": "attacker-selected",
+      },
     });
-    expect(getClientAddress(fwdReq)).toBe("198.51.100.10");
+    expect(getClientAddress(spoofedReq)).toBe("unknown");
 
     const unknownReq = new Request("https://example.test");
     expect(getClientAddress(unknownReq)).toBe("unknown");

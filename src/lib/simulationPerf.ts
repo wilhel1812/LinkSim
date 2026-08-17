@@ -1,12 +1,3 @@
-type CoveragePerfRecord = {
-  runId: string;
-  signature: string;
-  durationMs: number;
-  sampleCount: number;
-  gridSize: number;
-  effectiveRadiusKm: number;
-};
-
 type OverlayPerfRecord = {
   runId: string;
   mode: "heatmap" | "contours" | "weakest" | "passfail" | "relay" | "mesh-extension" | "terrain";
@@ -17,12 +8,8 @@ type OverlayPerfRecord = {
   pixelCount: number;
   gridSize: number;
   effectiveRadiusKm: number;
-};
-
-type PendingRunPerf = {
-  coverage?: CoveragePerfRecord;
-  overlay?: OverlayPerfRecord;
-  logged: boolean;
+  evaluatedPaths?: number;
+  refinedBlocks?: number;
 };
 
 const isPrivateIpv4Host = (host: string): boolean =>
@@ -55,60 +42,24 @@ const inDevDiagnostics =
   ) &&
   (import.meta as { env?: { MODE?: string } }).env?.MODE !== "test";
 
-const pendingByRun = new Map<string, PendingRunPerf>();
-
 const round2 = (value: number): number => Math.round(value * 100) / 100;
-
-const ensurePending = (runId: string): PendingRunPerf => {
-  const existing = pendingByRun.get(runId);
-  if (existing) return existing;
-  const created: PendingRunPerf = { logged: false };
-  pendingByRun.set(runId, created);
-  if (pendingByRun.size > 100) {
-    const oldest = pendingByRun.keys().next().value;
-    if (typeof oldest === "string") pendingByRun.delete(oldest);
-  }
-  return created;
-};
-
-const maybeLogRun = (runId: string): void => {
-  if (!inDevDiagnostics) return;
-  const pending = pendingByRun.get(runId);
-  if (!pending || pending.logged || !pending.coverage || !pending.overlay) return;
-
-  pending.logged = true;
-  console.info("[simulation-perf-run]", {
-    runId,
-    signature: pending.coverage.signature,
-    coverageComputeMs: round2(pending.coverage.durationMs),
-    overlayMode: pending.overlay.mode,
-    overlayBuildMs: round2(pending.overlay.buildDurationMs),
-    overlayEncodeMs: round2(pending.overlay.encodeDurationMs),
-    sampleCount: pending.coverage.sampleCount,
-    overlayPixelCount: pending.overlay.pixelCount,
-    overlayWidth: pending.overlay.width,
-    overlayHeight: pending.overlay.height,
-    gridSize: pending.coverage.gridSize,
-    overlayGridSize: pending.overlay.gridSize,
-    effectiveRadiusKm: pending.coverage.effectiveRadiusKm,
-    overlayRadiusKm: pending.overlay.effectiveRadiusKm,
-  });
-
-  pendingByRun.delete(runId);
-};
-
-export const recordSimulationCoveragePerf = (record: CoveragePerfRecord): void => {
-  if (!inDevDiagnostics) return;
-  const pending = ensurePending(record.runId);
-  pending.coverage = record;
-  maybeLogRun(record.runId);
-};
 
 export const recordSimulationOverlayPerf = (record: OverlayPerfRecord): void => {
   if (!inDevDiagnostics) return;
-  const pending = ensurePending(record.runId);
-  pending.overlay = record;
-  maybeLogRun(record.runId);
+  console.info("[simulation-perf-run]", {
+    runId: record.runId,
+    overlayMode: record.mode,
+    overlayBuildMs: round2(record.buildDurationMs),
+    overlayEncodeMs: round2(record.encodeDurationMs),
+    logicalSampleCount: record.pixelCount,
+    overlayPixelCount: record.pixelCount,
+    overlayWidth: record.width,
+    overlayHeight: record.height,
+    gridSize: record.gridSize,
+    effectiveRadiusKm: record.effectiveRadiusKm,
+    evaluatedPaths: record.evaluatedPaths,
+    refinedBlocks: record.refinedBlocks,
+  });
 };
 
 export const recordSimulationRunCancelled = (payload: {
@@ -120,17 +71,4 @@ export const recordSimulationRunCancelled = (payload: {
 }): void => {
   if (!inDevDiagnostics) return;
   console.info("[simulation-perf-cancelled]", payload);
-  if (payload.phase === "coverage") {
-    pendingByRun.delete(payload.runId);
-    return;
-  }
-
-  const pending = pendingByRun.get(payload.runId);
-  if (!pending) return;
-
-  // Overlay tasks can cancel and restart while the same coverage run is still active.
-  // Keep pending coverage timing so a later successful overlay can still emit a full run log.
-  if (!pending.coverage) {
-    pendingByRun.delete(payload.runId);
-  }
 };

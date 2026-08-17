@@ -11,7 +11,7 @@ vi.mock("../_lib/pathLeaderboard", () => ({
 import { onRequestGet } from "./stats";
 
 type MockTable = {
-  users: Array<{ id: string; username: string | null; avatar_url: string | null; created_at: string }>;
+  users: Array<{ id: string; username: string | null; avatar_url: string | null; avatar_thumb_key?: string | null; created_at: string }>;
   sites: Array<{ id: string; owner_user_id: string; created_at: string | null; visibility: string; payload_json: string }>;
   simulations: Array<{ id: string; owner_user_id: string; created_at: string | null; name?: string; visibility: string; payload_json: string }>;
 };
@@ -137,6 +137,35 @@ afterEach(() => {
 });
 
 describe("api/stats", () => {
+  it("uses validated internal thumbnails for rendered user lists and safely falls back", async () => {
+    const owner = "123e4567-e89b-42d3-a456-426614174000";
+    const fullKey = `users/${owner}/avatar-0123456789abcdef.webp`;
+    const thumbKey = `users/${owner}/avatar-0123456789abcdef-thumb.webp`;
+    tables.users = [
+      { id: "u1", username: "Thumb", avatar_url: `/api/avatar/${fullKey}`, avatar_thumb_key: thumbKey, created_at: "2026-02-10T04:00:00.000Z" },
+      { id: "u2", username: "Malformed", avatar_url: `/api/avatar/${fullKey}`, avatar_thumb_key: "../thumb.webp", created_at: "2026-02-10T03:00:00.000Z" },
+      { id: "u3", username: "External", avatar_url: "https://images.example.test/avatar.png", avatar_thumb_key: thumbKey, created_at: "2026-02-10T02:00:00.000Z" },
+      { id: "u4", username: "Missing", avatar_url: `/api/avatar/${fullKey}`, avatar_thumb_key: null, created_at: "2026-02-10T01:00:00.000Z" },
+    ];
+
+    const response = await onRequestGet(mkCtx());
+    const body = await response.json() as {
+      highlights: {
+        topContributors: Array<{ userId: string; avatarUrl: string }>;
+        newestMembers: Array<{ userId: string; avatarUrl: string }>;
+      };
+    };
+
+    expect(body.highlights.topContributors.find((user) => user.userId === "u1")?.avatarUrl)
+      .toBe(`/api/avatar/${thumbKey}`);
+    expect(body.highlights.newestMembers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: "u1", avatarUrl: `/api/avatar/${thumbKey}` }),
+      expect.objectContaining({ userId: "u2", avatarUrl: `/api/avatar/${fullKey}` }),
+      expect.objectContaining({ userId: "u3", avatarUrl: "https://images.example.test/avatar.png" }),
+      expect.objectContaining({ userId: "u4", avatarUrl: `/api/avatar/${fullKey}` }),
+    ]));
+  });
+
   it("returns public aggregate stats without auth", async () => {
     const res = await onRequestGet(mkCtx());
     expect(res.status).toBe(200);

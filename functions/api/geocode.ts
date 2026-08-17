@@ -1,35 +1,54 @@
-import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { readBoundedJsonResponse } from "../_lib/boundedUpstream";
+import { ApiRequestError, errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "../_lib/rateLimit";
 import type { Env } from "../_lib/types";
-
-type NominatimResult = {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-};
-
-const CACHE_TTL_SEC = 300;
+import {
+  GEOCODE_CACHE_TTL_MS,
+  GEOCODE_PROVIDER_TIMEOUT_MS,
+  GEOCODE_QUERY_MAX_CHARS,
+  GEOCODE_QUERY_MIN_CHARS,
+  GEOCODE_RESPONSE_MAX_BYTES,
+  GEOCODE_RESPONSE_MAX_DEPTH,
+  GEOCODE_RESULT_MAX_RECORDS,
+  normalizeGeocodeQuery,
+  validateNominatimResults,
+} from "../../src/lib/geocodeLimits";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const url = new URL(request.url);
-    const query = (url.searchParams.get("q") ?? "").trim();
+    const query = normalizeGeocodeQuery(url.searchParams.get("q") ?? "");
 
     if (!query) return withCors(request, json({ results: [] }));
-    if (query.length < 3) {
-      return withCors(request, json({ error: "Search query must be at least 3 characters." }, { status: 400 }));
+    if (query.length < GEOCODE_QUERY_MIN_CHARS || query.length > GEOCODE_QUERY_MAX_CHARS) {
+      return withCors(request, json({ error: "Search query must be between 3 and 256 characters." }, { status: 400 }));
     }
 
-    const normalized = query.toLowerCase();
     const cacheUrl = new URL(request.url);
     cacheUrl.search = "";
-    cacheUrl.searchParams.set("q", normalized);
+    cacheUrl.searchParams.set("q", query);
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     const cache = caches.default;
     const cached = await cache.match(cacheKey);
     if (cached) return withCors(request, cached);
+
+    const callerLimit = parsePerMinuteLimit(env.GEOCODE_RATE_LIMIT_PER_MINUTE, 60);
+    const caller = takeRateLimitToken({ key: `geocode:${getClientAddress(request)}`, limit: callerLimit });
+    if (!caller.allowed) {
+      return withCors(request, json({ error: "Search rate limit reached. Please wait a moment." }, {
+        status: 429,
+        headers: { "cache-control": "no-store", "retry-after": String(caller.retryAfterSec) },
+      }));
+    }
+    const providerGate = takeRateLimitToken({ key: "geocode:provider-cache-miss", limit: 1, windowMs: 1_000 });
+    if (!providerGate.allowed) {
+      return withCors(request, json({ error: "Search rate limit reached. Please wait a moment." }, {
+        status: 429,
+        headers: { "cache-control": "no-store", "retry-after": String(providerGate.retryAfterSec) },
+      }));
+    }
 
     const upstream = new URL("https://nominatim.openstreetmap.org/search");
     upstream.searchParams.set("q", query);
@@ -37,31 +56,55 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     upstream.searchParams.set("limit", "6");
     upstream.searchParams.set("addressdetails", "0");
 
-    const response = await fetch(upstream.toString(), {
-      headers: {
-        accept: "application/json",
-        "user-agent": "LinkSim/1.0 (https://linksim.link; geocode lookup)",
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`Geocode lookup failed (${response.status})`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GEOCODE_PROVIDER_TIMEOUT_MS);
+    let results: ReturnType<typeof validateNominatimResults>;
+    try {
+      const response = await fetch(upstream.toString(), {
+        headers: {
+          accept: "application/json",
+          "user-agent": "LinkSim/1.0 (https://linksim.link; geocode lookup)",
+        },
+        signal: controller.signal,
+      });
+      if (response.status === 429) {
+        const rawRetry = response.headers.get("retry-after") ?? "";
+        const retryAfter = /^\d{1,4}$/u.test(rawRetry) && Number(rawRetry) >= 1 && Number(rawRetry) <= 3_600 ? rawRetry : "1";
+        await response.body?.cancel().catch(() => undefined);
+        return withCors(request, json({ error: "Search rate limit reached. Please wait a moment." }, {
+          status: 429,
+          headers: { "cache-control": "no-store", "retry-after": retryAfter },
+        }));
+      }
+      if (!response.ok) throw new ApiRequestError(`Geocode lookup failed (${response.status}).`, 502, "geocode_upstream");
+      if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+        throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
+      }
+      try {
+        const { value } = await readBoundedJsonResponse<unknown>(response, {
+          maxBytes: GEOCODE_RESPONSE_MAX_BYTES,
+          maxRecords: GEOCODE_RESULT_MAX_RECORDS,
+          maxDepth: GEOCODE_RESPONSE_MAX_DEPTH,
+        });
+        results = validateNominatimResults(value);
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+        throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
+      }
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        throw new ApiRequestError("Geocode lookup timed out.", 504, "geocode_timeout");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const payload = (await response.json()) as NominatimResult[];
-    const results = payload
-      .map((item) => ({
-        id: String(item.place_id),
-        label: item.display_name,
-        lat: Number(item.lat),
-        lon: Number(item.lon),
-      }))
-      .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon));
 
     const apiResponse = json(
       { results },
       {
         headers: {
-          "cache-control": `public, max-age=${CACHE_TTL_SEC}`,
+          "cache-control": `public, max-age=${Math.floor(GEOCODE_CACHE_TTL_MS / 1_000)}`,
         },
       },
     );

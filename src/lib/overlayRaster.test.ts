@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdaptiveCoverageOverlayPixelsAsync,
   buildCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
   computeCoverageRxTargetScale,
@@ -18,6 +19,7 @@ import {
   type CoverageSampleLite,
   type TerrainBounds,
 } from "./overlayRaster";
+import { computeCoverageGridDimensions } from "./coverage";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 const bounds: TerrainBounds = {
@@ -77,6 +79,653 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("changes visible Pass/Fail pixels for directional orientation and pattern edits", async () => {
+    const dimensions = { width: 41, height: 41 };
+    const render = (site: Site) => buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      site,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+    );
+    const omni = await render(fromSite);
+    const north = await render({
+      ...fromSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const south = await render({
+      ...fromSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 180,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+
+    expect(omni).not.toBeNull();
+    expect(north).not.toBeNull();
+    expect(south).not.toBeNull();
+    expect(Array.from(north!.pixels)).not.toEqual(Array.from(omni!.pixels));
+    expect(Array.from(south!.pixels)).not.toEqual(Array.from(north!.pixels));
+  });
+
+  it("applies the selected destination receive pattern to Pass/Fail pixels", async () => {
+    const dimensions = { width: 41, height: 41 };
+    const render = (receiverSite: Site) => buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      receiverSite.antennaHeightM,
+      receiverSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+      receiverSite,
+    );
+    const toward = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 236,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const away = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 56,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+
+    expect(toward).not.toBeNull();
+    expect(away).not.toBeNull();
+    expect(Array.from(away!.pixels)).not.toEqual(Array.from(toward!.pixels));
+  });
+
+  it("applies the destination receive pattern on the second Relay leg", async () => {
+    const dimensions = { width: 25, height: 25 };
+    const render = (destination: Site) => buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      destination,
+      link,
+      environment,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+    );
+    const north = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 25,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 40,
+    });
+    const south = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 180,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 25,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 40,
+    });
+
+    expect(north).not.toBeNull();
+    expect(south).not.toBeNull();
+    expect(Array.from(north!.signalValuesDbm!)).not.toEqual(Array.from(south!.signalValuesDbm!));
+  });
+
+  it("builds Heatmap on the Pass/Fail logical grid with bounded adaptive error", async () => {
+    const dimensions = { width: 312, height: 312 };
+    let exactEvaluations = 0;
+    let adaptiveEvaluations = 0;
+    const evaluateSignal = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      const ridgeOffset = latOffset - lonOffset * 0.4 - 0.42;
+      const strongestDbm = -116 + lonOffset * 16 + Math.exp(-(ridgeOffset ** 2) / 0.006) * 11;
+      return strongestDbm;
+    };
+    const exact = await buildAdaptiveCoverageOverlayPixelsAsync({
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -118,
+      contributors: [{ id: "site-a", evaluatePoint: (lat, lon) => {
+          exactEvaluations += 1;
+          return evaluateSignal(lat, lon);
+        } }],
+      adaptive: false,
+    });
+    const adaptive = await buildAdaptiveCoverageOverlayPixelsAsync({
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -118,
+      contributors: [{ id: "site-a", evaluatePoint: (lat, lon) => {
+          adaptiveEvaluations += 1;
+          return evaluateSignal(lat, lon);
+        } }],
+      adaptive: true,
+    });
+
+    expect(exact?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(adaptive?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    const errors = Array.from(exact!.signalValuesDbm!, (value, index) =>
+      Math.abs(value - adaptive!.signalValuesDbm![index]));
+    errors.sort((left, right) => left - right);
+    expect(errors[Math.floor(errors.length * 0.5)]).toBeLessThanOrEqual(0.25);
+    expect(errors[Math.floor(errors.length * 0.99)]).toBeLessThanOrEqual(1);
+    expect(adaptiveEvaluations).toBeLessThan(exactEvaluations * 0.45);
+    expect(adaptive?.analysisStats?.totalPixels).toBe(dimensions.width * dimensions.height);
+  });
+
+  it("reuses the same canonical signal samples when switching between strongest-signal overlays", async () => {
+    const dimensions = { width: 96, height: 96 };
+    let evaluations = 0;
+    const common = {
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      rxTargetDbm: -118,
+      contributors: [{ id: "site-a", evaluatePoint: (lat: number, lon: number) => {
+        evaluations += 1;
+        return -104 + (lat - bounds.minLat) * 20 + (lon - bounds.minLon) * 10;
+      } }],
+      adaptive: true,
+      analysisCacheKey: "coverage-mode-switch-cache",
+    } as const;
+    const heatmap = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "heatmap" });
+    const firstEvaluations = evaluations;
+    const contours = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "contours" });
+
+    expect(heatmap?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(contours?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(evaluations).toBe(firstEvaluations);
+    expect(contours?.analysisStats?.evaluatedPaths).toBe(0);
+  });
+
+  it("keeps multi-contributor strongest and weakest surfaces within the accuracy gate", async () => {
+    const dimensions = { width: 96, height: 96 };
+    const contributors = [
+      { id: "a", evaluatePoint: (lat: number, lon: number) => -86 - (lat - 59.84) ** 2 * 900 - (lon - 10.64) ** 2 * 700 },
+      { id: "b", evaluatePoint: (lat: number, lon: number) => -90 - (lat - 59.96) ** 2 * 650 - (lon - 10.76) ** 2 * 850 },
+      { id: "c", evaluatePoint: (lat: number, lon: number) => -94 + (lat - bounds.minLat) * 22 - (lon - bounds.minLon) * 15 },
+      { id: "d", evaluatePoint: (lat: number, lon: number) => -82 - (lat - bounds.minLat) * 28 + (lon - bounds.minLon) * 10 },
+    ];
+    const build = (mode: "heatmap" | "weakest", adaptive: boolean) =>
+      buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds,
+        dimensions,
+        initialGridSize: 24,
+        mode,
+        rxTargetDbm: -118,
+        contributors,
+        adaptive,
+      });
+    const [exactStrongest, adaptiveStrongest, exactWeakest, adaptiveWeakest] = await Promise.all([
+      build("heatmap", false),
+      build("heatmap", true),
+      build("weakest", false),
+      build("weakest", true),
+    ]);
+    const assertAccuracy = (exact: Float32Array, adaptive: Float32Array) => {
+      const errors = Array.from(exact, (value, index) => Math.abs(value - adaptive[index]))
+        .sort((left, right) => left - right);
+      expect(errors[Math.floor(errors.length * 0.5)]).toBeLessThanOrEqual(0.25);
+      expect(errors[Math.floor(errors.length * 0.99)]).toBeLessThanOrEqual(1);
+    };
+
+    assertAccuracy(exactStrongest!.signalValuesDbm!, adaptiveStrongest!.signalValuesDbm!);
+    assertAccuracy(exactWeakest!.signalValuesDbm!, adaptiveWeakest!.signalValuesDbm!);
+  });
+
+  it("keeps strongest and weakest coverage work roughly linear from one through eight contributors", async () => {
+    const dimensions = { width: 160, height: 160 };
+    for (const mode of ["heatmap", "weakest"] as const) {
+      const evaluationsByCount: number[] = [];
+
+      for (let contributorCount = 1; contributorCount <= 8; contributorCount += 1) {
+        let evaluations = 0;
+        const contributors = Array.from({ length: contributorCount }, (_, contributorIndex) => ({
+          id: `site-${contributorIndex}`,
+          evaluatePoint: (lat: number, lon: number) => {
+            evaluations += 1;
+            if (contributorIndex === 0) {
+              const baseDbm = mode === "heatmap" ? -89 : -109;
+              return baseDbm + (lat - bounds.minLat) * 2 + (lon - bounds.minLon);
+            }
+            const frequency = 35 + contributorIndex * 3;
+            const dominatedDbm = mode === "heatmap" ? -108 : -80;
+            return dominatedDbm
+              + Math.sin((lat - bounds.minLat) * frequency * Math.PI) * 6
+              + Math.cos((lon - bounds.minLon) * frequency * Math.PI) * 6;
+          },
+        }));
+
+        const raster = await buildAdaptiveCoverageOverlayPixelsAsync({
+          bounds,
+          dimensions,
+          initialGridSize: 24,
+          mode,
+          rxTargetDbm: -118,
+          contributors,
+          adaptive: true,
+        });
+
+        expect(raster?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+        evaluationsByCount.push(evaluations);
+      }
+
+      const singleContributorWork = evaluationsByCount[0];
+      evaluationsByCount.forEach((evaluations, index) => {
+        const contributorCount = index + 1;
+        expect(evaluations).toBeLessThanOrEqual(singleContributorWork * contributorCount * 1.35);
+      });
+    }
+  });
+
+  it("keeps Heatmap scaling bounded when each added contributor wins a local area", async () => {
+    const dimensions = { width: 160, height: 160 };
+    const centers = [
+      [59.84, 10.64], [59.96, 10.76], [59.96, 10.64], [59.84, 10.76],
+      [59.90, 10.70], [59.90, 10.64], [59.90, 10.76], [59.84, 10.70],
+    ] as const;
+    const uniqueSamplesByCount: number[] = [];
+
+    for (let contributorCount = 1; contributorCount <= centers.length; contributorCount += 1) {
+      let evaluations = 0;
+      const contributors = centers.slice(0, contributorCount).map(([centerLat, centerLon], contributorIndex) => ({
+        id: `local-winner-${contributorIndex}`,
+        evaluatePoint: (lat: number, lon: number) => {
+          evaluations += 1;
+          return -82 - (lat - centerLat) ** 2 * 1_100 - (lon - centerLon) ** 2 * 850;
+        },
+      }));
+      await buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds,
+        dimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors,
+        adaptive: true,
+      });
+      uniqueSamplesByCount.push(evaluations / contributorCount);
+    }
+
+    const singleContributorSamples = uniqueSamplesByCount[0];
+    expect(Math.max(...uniqueSamplesByCount)).toBeLessThanOrEqual(singleContributorSamples * 2.5);
+  });
+
+  it("does not introduce a three-or-four Site cliff when the buffered selection hull expands", async () => {
+    const dimensions = { width: 160, height: 160 };
+    const positions = [
+      [0.25, 0.30], [0.75, 0.30], [0.50, 0.72], [0.50, 0.12],
+      [0.18, 0.55], [0.82, 0.55], [0.35, 0.82], [0.65, 0.82],
+    ] as const;
+    const distanceToSegment = (x: number, y: number, a: readonly [number, number], b: readonly [number, number]) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const lengthSquared = dx * dx + dy * dy;
+      const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / lengthSquared));
+      return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
+    };
+    const convexHull = (points: ReadonlyArray<readonly [number, number]>): Array<readonly [number, number]> => {
+      if (points.length <= 2) return [...points];
+      const sorted = [...points].sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+      const cross = (origin: readonly [number, number], a: readonly [number, number], b: readonly [number, number]) =>
+        (a[0] - origin[0]) * (b[1] - origin[1]) - (a[1] - origin[1]) * (b[0] - origin[0]);
+      const half = (input: Array<readonly [number, number]>) => {
+        const output: Array<readonly [number, number]> = [];
+        for (const point of input) {
+          while (output.length >= 2 && cross(output[output.length - 2], output[output.length - 1], point) <= 0) output.pop();
+          output.push(point);
+        }
+        output.pop();
+        return output;
+      };
+      return [...half(sorted), ...half(sorted.reverse())];
+    };
+    const bufferedHullMask = (selected: ReadonlyArray<readonly [number, number]>) => {
+      const hull = convexHull(selected);
+      return (lat: number, lon: number) => {
+        const x = lon;
+        const y = lat;
+        if (hull.length === 1) return Math.hypot(x - hull[0][0], y - hull[0][1]) <= 0.24;
+        let inside = false;
+        if (hull.length >= 3) {
+          for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index, index += 1) {
+            const currentPoint = hull[index];
+            const previousPoint = hull[previous];
+            if (
+              currentPoint[1] > y !== previousPoint[1] > y &&
+              x < ((previousPoint[0] - currentPoint[0]) * (y - currentPoint[1])) /
+                ((previousPoint[1] - currentPoint[1]) || 1e-9) + currentPoint[0]
+            ) inside = !inside;
+          }
+        }
+        if (inside) return true;
+        return hull.some((point, index) => distanceToSegment(x, y, point, hull[(index + 1) % hull.length]) <= 0.24);
+      };
+    };
+    const workByCount: number[] = [];
+
+    for (let contributorCount = 1; contributorCount <= positions.length; contributorCount += 1) {
+      let evaluations = 0;
+      const selected = positions.slice(0, contributorCount);
+      const selectionBounds = {
+        minLat: Math.min(...selected.map((position) => position[1])) - 0.24,
+        maxLat: Math.max(...selected.map((position) => position[1])) + 0.24,
+        minLon: Math.min(...selected.map((position) => position[0])) - 0.24,
+        maxLon: Math.max(...selected.map((position) => position[0])) + 0.24,
+      };
+      const contributors = selected.map(([x, y], contributorIndex) => ({
+        id: `hull-site-${contributorIndex}`,
+        evaluatePoint: (lat: number, lon: number) => {
+          evaluations += 1;
+          return -82 - Math.hypot(lon - x, lat - y) * 24;
+        },
+      }));
+      await buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds: selectionBounds,
+        dimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors,
+        pointMask: bufferedHullMask(selected),
+        adaptive: true,
+      });
+      workByCount.push(evaluations);
+    }
+
+    const singleSiteWork = workByCount[0];
+    workByCount.forEach((work, index) => {
+      expect(work).toBeLessThanOrEqual(singleSiteWork * (index + 1) * 1.4);
+    });
+  });
+
+  it("combines contributors before adapting the requested coverage surface", async () => {
+    const dimensions = { width: 192, height: 192 };
+    let evaluations = 0;
+    const contributors = [
+      {
+        id: "west",
+        evaluatePoint: (_lat: number, lon: number) => {
+          evaluations += 1;
+          return -80 - (lon - bounds.minLon) * 120;
+        },
+      },
+      {
+        id: "east",
+        evaluatePoint: (_lat: number, lon: number) => {
+          evaluations += 1;
+          return -104 + (lon - bounds.minLon) * 120;
+        },
+      },
+      {
+        id: "north",
+        evaluatePoint: (lat: number) => {
+          evaluations += 1;
+          return -92 + (lat - bounds.minLat) * 50;
+        },
+      },
+      {
+        id: "south",
+        evaluatePoint: (lat: number) => {
+          evaluations += 1;
+          return -82 - (lat - bounds.minLat) * 50;
+        },
+      },
+    ];
+
+    const raster = await buildAdaptiveCoverageOverlayPixelsAsync({
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -118,
+      contributors,
+      adaptive: true,
+    });
+
+    expect(raster?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    const productionPathBudget = computeCoverageGridDimensions(24, bounds).totalSamples * contributors.length;
+    expect(evaluations).toBeLessThanOrEqual(productionPathBudget * 1.1);
+    const center = Math.floor(dimensions.height / 2) * dimensions.width + Math.floor(dimensions.width / 2);
+    expect(raster!.signalValuesDbm![center]).toBeGreaterThan(-93);
+  });
+
+  it("keeps adaptive Pass/Fail within the accuracy gate while reducing terrain work", async () => {
+    const dimensions = { width: 120, height: 120 };
+    let exactTerrainReads = 0;
+    let adaptiveTerrainReads = 0;
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      () => {
+        exactTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "passfail", signature: "passfail-reference" },
+      { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      () => {
+        adaptiveTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "passfail", signature: "passfail-adaptive" },
+      { adaptive: true },
+    );
+
+    expect(exact).not.toBeNull();
+    expect(adaptive).not.toBeNull();
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      const exactState = Array.from(exact!.pixels.slice(offset, offset + 4)).join(",");
+      const adaptiveState = Array.from(adaptive!.pixels.slice(offset, offset + 4)).join(",");
+      if (exactState === adaptiveState) matchingPixels += 1;
+    }
+    expect(matchingPixels / (dimensions.width * dimensions.height)).toBeGreaterThanOrEqual(0.99);
+    expect(adaptiveTerrainReads).toBeLessThan(exactTerrainReads * 0.3);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.3);
+  });
+
+  it("keeps adaptive Relay signal within the error gate while reducing terrain work", async () => {
+    const dimensions = { width: 120, height: 120 };
+    let exactTerrainReads = 0;
+    let adaptiveTerrainReads = 0;
+    const exact = await buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      toSite,
+      link,
+      environment,
+      0,
+      () => {
+        exactTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "relay", signature: "relay-reference" },
+      { adaptive: false },
+    );
+    const adaptive = await buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      toSite,
+      link,
+      environment,
+      0,
+      () => {
+        adaptiveTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "relay", signature: "relay-adaptive" },
+      { adaptive: true },
+    );
+
+    expect(exact).not.toBeNull();
+    expect(adaptive).not.toBeNull();
+    const signalErrors: number[] = [];
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      signalErrors.push(Math.abs(exact!.signalValuesDbm![index] - adaptive!.signalValuesDbm![index]));
+    }
+    signalErrors.sort((left, right) => left - right);
+    const medianError = signalErrors[Math.floor(signalErrors.length * 0.5)];
+    expect(medianError).toBeLessThanOrEqual(0.5);
+    expect(signalErrors[Math.floor(signalErrors.length * 0.99)]).toBeLessThanOrEqual(2);
+    expect(adaptiveTerrainReads).toBeLessThan(exactTerrainReads * 0.3);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.3);
+  });
+
+  it("keeps adaptive Pass/Fail accurate across a narrow terrain ridge", async () => {
+    const dimensions = { width: 96, height: 96 };
+    const ridgeTerrain = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      return 105 + Math.exp(-((latOffset - lonOffset * 0.35 - 0.45) ** 2) / 0.0025) * 140;
+    };
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "ridge-reference" }, { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "ridge-adaptive" }, { adaptive: true },
+    );
+
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      if (
+        exact!.pixels[offset] === adaptive!.pixels[offset] &&
+        exact!.pixels[offset + 1] === adaptive!.pixels[offset + 1] &&
+        exact!.pixels[offset + 2] === adaptive!.pixels[offset + 2]
+      ) matchingPixels += 1;
+    }
+    expect(matchingPixels / (dimensions.width * dimensions.height)).toBeGreaterThanOrEqual(0.99);
+  });
+
+  it("keeps supersampled Pass/Fail boundaries close to the exact display-pixel result", async () => {
+    const dimensions = { width: 312, height: 312 };
+    const ridgeTerrain = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      const ridgeOffset = latOffset - lonOffset * 0.42 - 0.413;
+      return 105 + Math.exp(-(ridgeOffset ** 2) / 0.0014) * 155;
+    };
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "supersampled-ridge-reference" }, { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "supersampled-ridge-adaptive" }, { adaptive: true },
+    );
+
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      if (
+        exact!.pixels[offset] === adaptive!.pixels[offset] &&
+        exact!.pixels[offset + 1] === adaptive!.pixels[offset + 1] &&
+        exact!.pixels[offset + 2] === adaptive!.pixels[offset + 2]
+      ) matchingPixels += 1;
+    }
+    const agreement = matchingPixels / (dimensions.width * dimensions.height);
+    expect(agreement).toBeGreaterThanOrEqual(0.9999);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.45);
+  });
+
+  it("reuses cached Pass/Fail RF metrics when only the target changes", async () => {
+    const dimensions = { width: 96, height: 96 };
+    let firstReads = 0;
+    let secondReads = 0;
+    const common = [
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+    ] as const;
+    await buildSourcePassFailOverlayPixelsAsync(
+      ...common, -118, 0, () => { firstReads += 1; return 135; }, dimensions, 24, undefined,
+      { phase: "passfail", signature: "cache-first" },
+      { adaptive: true, analysisCacheKey: "passfail-target-cache" },
+    );
+    await buildSourcePassFailOverlayPixelsAsync(
+      ...common, -112, 0, () => { secondReads += 1; return 135; }, dimensions, 24, undefined,
+      { phase: "passfail", signature: "cache-second" },
+      { adaptive: true, analysisCacheKey: "passfail-target-cache" },
+    );
+
+    expect(firstReads).toBeGreaterThan(0);
+    expect(secondReads).toBeLessThan(firstReads * 0.2);
+  });
+
   it("derives a representative mesh-extension profile from selected-site medians", () => {
     const profile = deriveMeshExtensionCandidateProfile([
       { ...fromSite, antennaHeightM: 4, txPowerDbm: 18, txGainDbi: 1, rxGainDbi: 2, cableLossDb: 0.5 },
@@ -358,6 +1007,31 @@ describe("overlayRaster async builders", () => {
 
     expect(raster).not.toBeNull();
     expect(terrainReads).toBeLessThan(70_000);
+    expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
+  });
+
+  it("uses the production-style Mesh Extension analysis grid and interpolates the display raster", async () => {
+    const dimensions = { width: 48, height: 48 };
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds,
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -20,
+      environmentLossDb: 0,
+      terrainSampler,
+      dimensions,
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-canonical-grid" },
+    });
+
+    expect(raster?.width).toBe(dimensions.width);
+    expect(raster?.height).toBe(dimensions.height);
+    const analysisPoints = computeCoverageGridDimensions(6, bounds).totalSamples;
+    expect(raster?.analysisStats?.totalPixels).toBe(analysisPoints);
+    expect(raster?.analysisStats?.evaluatedPaths).toBeLessThanOrEqual(analysisPoints);
     expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
   });
 

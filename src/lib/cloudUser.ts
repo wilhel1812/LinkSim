@@ -7,8 +7,6 @@ export type CloudUser = {
   email?: string;
   bio: string;
   accessRequestNote?: string;
-  idpEmail?: string;
-  idpEmailVerified?: boolean;
   avatarUrl: string;
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;
@@ -32,8 +30,7 @@ export type ResourceChange = {
   actorUserId: string;
   actorName: string | null;
   actorAvatarUrl: string | null;
-  details?: Record<string, unknown> | null;
-  snapshot?: Record<string, unknown> | null;
+  details?: { diff?: Record<string, { before: unknown; after: unknown }> } | null;
 };
 
 export type DeletedCloudUser = {

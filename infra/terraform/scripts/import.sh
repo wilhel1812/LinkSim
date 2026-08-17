@@ -72,9 +72,20 @@ echo "${TF_DNS_RECORD_IMPORTS_JSON}" | jq -r 'to_entries[] | @base64' | while re
   terraform -chdir="${ENV_DIR}" import "module.stack.cloudflare_dns_record.records[\"${key}\"]" "${TF_ZONE_ID}/${record_id}"
 done
 
-if [[ -n "${TF_ACCESS_APP_ID:-}" && ! "${TF_ACCESS_APP_ID}" =~ ^REPLACE_WITH_ ]]; then
-  echo "[import] access app"
-  terraform -chdir="${ENV_DIR}" import module.stack.cloudflare_zero_trust_access_application.app[0] "accounts/${TF_ACCOUNT_ID}/${TF_ACCESS_APP_ID}"
+access_app_imports_json="${TF_ACCESS_APP_IMPORTS_JSON:-}"
+if [[ -z "${access_app_imports_json}" && -n "${TF_ACCESS_APP_ID:-}" && ! "${TF_ACCESS_APP_ID}" =~ ^REPLACE_WITH_ ]]; then
+  access_app_imports_json="$(jq -cn --arg id "${TF_ACCESS_APP_ID}" '{primary: $id}')"
+fi
+
+if [[ -n "${access_app_imports_json}" ]]; then
+  echo "[import] access apps"
+  echo "${access_app_imports_json}" | jq -r 'to_entries[] | @base64' | while read -r row; do
+    kv="$(decode_base64 "${row}")"
+    key="$(echo "${kv}" | jq -r '.key')"
+    app_id="$(echo "${kv}" | jq -r '.value')"
+    [[ -z "${app_id}" || "${app_id}" =~ ^REPLACE_WITH_ ]] && continue
+    terraform -chdir="${ENV_DIR}" import "module.stack.cloudflare_zero_trust_access_application.app[\"${key}\"]" "accounts/${TF_ACCOUNT_ID}/${app_id}"
+  done
 fi
 
 echo "[import] access policies"

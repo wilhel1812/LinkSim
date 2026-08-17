@@ -107,6 +107,37 @@ describe("Copernicus GLO-30 tile loading", () => {
     expect(maxActive).toBe(2);
   });
 
+  it("rejects more than 256 requested keys before catalog, cache, or tile requests", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const keys = Array.from({ length: 257 }, (_, index) =>
+      `${index < 180 ? "N00" : "N01"}E${String(index % 180).padStart(3, "0")}`,
+    );
+
+    await expect(loadCopernicus30TilesByKeys(keys)).rejects.toThrow("256 tiles");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(caches.open).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid requested keys before catalog, cache, or tile requests", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loadCopernicus30TilesByKeys(["invalid"])).rejects.toThrow("Invalid terrain tile key");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(caches.open).not.toHaveBeenCalled();
+  });
+
+  it("rejects impossible requested coordinates before catalog, cache, or tile requests", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loadCopernicus30TilesByKeys(["N90E000"])).rejects.toThrow("Invalid terrain tile key");
+    await expect(loadCopernicus30TilesByKeys(["N00E180"])).rejects.toThrow("Invalid terrain tile key");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(caches.open).not.toHaveBeenCalled();
+  });
+
   it("retries one transient response but not a permanent 404", async () => {
     const fetchMock = vi
       .fn()

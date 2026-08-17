@@ -38,6 +38,11 @@
 
 ## Implementation Rules
 
+- Before named-agent work, load only that role's approved, size-capped lessons
+  with `node scripts/ai-knowledge.mjs for-agent --agent <name>`. Do not load the
+  whole registry into agent context, and do not store raw chat transcripts or
+  personal/private memory there. Registry edits require an explicitly approved
+  Forge task and reviewed pull request; Steward may only suggest changes.
 - Prefer stabilization (consistency, hardening, tests, and UX cleanup) over net-new features unless explicitly requested.
 - Reuse or adapt existing code and UI. Never add a new UI element without approval; flag opportunities to remove or consolidate overlapping code or UI.
 - Keep terminology consistent: `Simulation`, `Site`, `Library`, `Path`, and `Channel`.
@@ -46,7 +51,51 @@
 - Any modal or popover that can open above another dialog must use `tier="raised"` in `ModalOverlay`.
 - Use `getUiErrorMessage()` from `src/lib/uiError.ts` when catching UI errors.
 
+## Native Codex Pull Request Review
+
+- Pull-request review uses the official Codex Cloud GitHub integration. Do not
+  build or operate a repository poller, local checkout adapter, review-output
+  parser, or relay account for this purpose.
+- Automatic reviews stay disabled. A maintainer explicitly requests a review
+  on the current pull request by commenting `@codex review`.
+- The official Codex bot is the transparent review author. `Sentry` is the
+  LinkSim crew role, not a separate publication identity.
+- A Codex review is advisory. It never constitutes human approval, cannot merge
+  a pull request, and cannot authorize production.
+- After a pushed fix changes the head SHA, the maintainer decides whether to
+  request another review. Agents must not spend review usage automatically.
+
+## Code Review Rules
+
+### Data and authentication boundaries
+
+- Flag changes that can expose production data or secrets to local, preview, or
+  staging environments; weaken Access audience enforcement; or deploy code that
+  depends on a D1 schema change without the required probe and migration gate.
+
+### Calculation and compatibility contracts
+
+- Flag regressions in terrain completeness, radio calculations, API contracts,
+  saved simulations, or supported deep links. Catalog-absent ocean terrain is
+  not an error, but a bare fetch failure is not proof of ocean.
+
+### Reuse and protected delivery
+
+- Flag duplicated code or UI when an existing shared implementation should be
+  reused, missing regression coverage for consequential behavior changes, and
+  any bypass of the staging-first protected release flow.
+
 ## Handoff Guarantee
 
 - A new agent must be able to continue using this file and its required linked documents only.
 - Keep durable repo policy here or in the linked source of truth; do not rely on chat-only knowledge.
+
+## AI Artifact Provenance
+
+- Treat `config/ai-agents.json` as the single source of truth for named-agent
+  identity, authority, and visible signatures.
+- Generate and validate bot-authored GitHub artifact footers through
+  `node scripts/ai-provenance.mjs`; do not hand-build provenance markers in
+  skills or workflows.
+- Validate the complete rendered artifact before publication and fail closed
+  when its identity, signature, run ID, source event, or commit SHA is invalid.

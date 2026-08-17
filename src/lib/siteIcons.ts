@@ -8,6 +8,7 @@ import {
   Radio,
   RadioReceiver,
   RadioTower,
+  SatelliteDish,
   Ship,
   Smartphone,
   SolarPanel,
@@ -18,6 +19,7 @@ import {
 
 export const SITE_ICON_KEYS = [
   "antenna",
+  "satellite-dish",
   "radio-tower",
   "house",
   "building",
@@ -41,6 +43,7 @@ export const SITE_ICON_OPTIONS: ReadonlyArray<{
   Icon: LucideIcon;
 }> = [
   { key: "antenna", label: "Antenna", Icon: Antenna },
+  { key: "satellite-dish", label: "Satellite Dish", Icon: SatelliteDish },
   { key: "radio-tower", label: "Radio Tower", Icon: RadioTower },
   { key: "house", label: "House", Icon: House },
   { key: "building", label: "Building 2", Icon: Building2 },
@@ -67,13 +70,15 @@ export const getSiteIconOption = (key: SiteIconKey) => SITE_ICON_BY_KEY.get(key)
 type SiteIconInput = {
   name: string;
   antennaHeightM: number;
+  antennaMode?: "omnidirectional" | "directional";
   iconKey?: unknown;
 };
 
 const includesKeyword = (tokens: ReadonlySet<string>, keywords: readonly string[]): boolean =>
   keywords.some((keyword) => tokens.has(keyword));
 
-export const suggestSiteIconKey = ({ name, antennaHeightM }: SiteIconInput): SiteIconKey => {
+export const suggestSiteIconKey = ({ name, antennaHeightM, antennaMode }: SiteIconInput): SiteIconKey => {
+  if (antennaMode === "directional") return "satellite-dish";
   if (Number.isFinite(antennaHeightM) && antennaHeightM >= 10) return "radio-tower";
 
   const normalizedName = name.trim().toLocaleLowerCase();

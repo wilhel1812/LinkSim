@@ -2,7 +2,7 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Site, SrtmTile } from "../types/radio";
+import type { Link, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
@@ -52,10 +52,11 @@ vi.hoisted(() => {
 });
 
 vi.mock("../lib/overlayRaster", () => ({
+  buildAdaptiveCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
   buildCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
   buildMeshExtensionOverlayPixelsAsync: vi.fn(),
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
-  buildSourcePassFailOverlayPixelsAsync: vi.fn(),
+  buildSourcePassFailOverlayPixelsAsync: overlayMock.buildCoverage,
   buildTerrainShadeOverlayPixelsAsync: vi.fn(async () => null),
   overlayPixelsToDataUrl: vi.fn(() => ({
     coordinates: [
@@ -145,6 +146,47 @@ const site: Site = {
   cableLossDb: 1,
 };
 
+const receiverSite: Site = {
+  ...site,
+  id: "site-b",
+  name: "Site B",
+  position: { lat: 60.45, lon: 10.85 },
+  antennaMode: "directional",
+  antennaAzimuthDeg: 220,
+  antennaTiltDeg: 0,
+  antennaHorizontalBeamwidthDeg: 30,
+  antennaVerticalBeamwidthDeg: 30,
+  antennaMaxAttenuationDb: 25,
+};
+
+const savedLink: Link = {
+  id: "link-a-b",
+  name: "Site A to Site B",
+  fromSiteId: site.id,
+  toSiteId: receiverSite.id,
+  frequencyMHz: 869.618,
+};
+
+const system: RadioSystem = {
+  id: "system-a",
+  name: "System A",
+  txPowerDbm: 30,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
+  antennaHeightM: 8,
+};
+
+const network: Network = {
+  id: "network-a",
+  name: "Network A",
+  frequencyMHz: 869.618,
+  bandwidthKhz: 250,
+  spreadFactor: 11,
+  codingRate: 5,
+  memberships: [{ siteId: site.id, systemId: system.id }],
+};
+
 const resolveNextRaster = async () => {
   await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
   const request = overlayMock.requests.shift();
@@ -172,6 +214,9 @@ describe("MapView overlay handoff", () => {
     });
     useAppStore.setState({
       sites: [site],
+      systems: [system],
+      networks: [network],
+      selectedNetworkId: network.id,
       links: [],
       selectedSiteId: site.id,
       selectedSiteIds: [site.id],
@@ -272,6 +317,30 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(recomputeCoverage).toHaveBeenCalledTimes(1));
   });
 
+  it("shows the actual Mesh Extension analysis grid in the existing resolution selector", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector
+      />,
+    );
+
+    const resolutionSelect = screen.getByLabelText("Simulation Resolution") as HTMLSelectElement;
+    const heatmapLabel = resolutionSelect.options[0].textContent ?? "";
+    expect(heatmapLabel).toContain("158×158");
+    expect(heatmapLabel).toContain("~25k grid points");
+    expect(heatmapLabel).not.toContain("samples");
+
+    act(() => useAppStore.getState().setMapOverlayMode("mesh-extension"));
+    await waitFor(() => {
+      const meshLabel = (screen.getByLabelText("Simulation Resolution") as HTMLSelectElement).options[0].textContent ?? "";
+      expect(meshLabel).not.toBe(heatmapLabel);
+      expect(meshLabel).toContain("~576 grid points");
+    });
+  });
+
   it("starts clouds while cold-start terrain loads before Pass/Fail is raster-ready", async () => {
     useAppStore.setState({
       mapOverlayMode: "passfail",
@@ -290,6 +359,126 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
     expect(loadingOverlayMock.props?.handoffKey).toBeTruthy();
     expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("ends a terrain-started cloud when Auto Calculate is disabled and work becomes idle", async () => {
+    useAppStore.setState({
+      mapOverlayMode: "passfail",
+      isTerrainFetching: true,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    expect(requestKey).toBeTruthy();
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+
+    act(() => {
+      useCoverageStore.getState().setAutoCalculateEnabled(false);
+      useAppStore.setState({
+        isTerrainFetching: false,
+        terrainLoadEpoch: 1,
+      });
+    });
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("ends a terrain-started cloud when the calculation topology becomes invalid", async () => {
+    useAppStore.setState({ isTerrainFetching: true });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    expect(requestKey).toBeTruthy();
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+
+    act(() => {
+      useCoverageStore.getState().setAutoCalculateEnabled(false);
+      useAppStore.setState({
+        isTerrainFetching: false,
+        terrainLoadEpoch: 1,
+        networks: [],
+        systems: [],
+        selectedNetworkId: "",
+      });
+    });
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("keeps the cloud active while a matching overlay job is still running", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+
+    act(() => useCoverageStore.getState().setAutoCalculateEnabled(false));
+    await act(async () => undefined);
+
+    expect(loadingOverlayMock.props?.loading).toBe(true);
+  });
+
+  it("rebuilds cached Pass/Fail when only the saved-Path receiver pattern changes", async () => {
+    useAppStore.setState({
+      sites: [site, receiverSite],
+      links: [savedLink],
+      selectedSiteId: site.id,
+      selectedSiteIds: [site.id],
+      selectedLinkId: savedLink.id,
+      mapOverlayMode: "passfail",
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await resolveNextRaster();
+    await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    const firstKey = loadingOverlayMock.props?.handoffKey;
+    act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(firstKey!));
+    act(() => loadingOverlayMock.props?.onCloudExited?.(firstKey!));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+
+    act(() => useAppStore.setState({
+      sites: [site, { ...receiverSite, antennaAzimuthDeg: 40 }],
+    }));
+
+    await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
+    expect(loadingOverlayMock.props?.handoffKey).not.toBe(firstKey);
   });
 
   it("retries unchanged cold-start terrain geometry after startup cancels its epoch", async () => {
@@ -398,6 +587,34 @@ describe("MapView overlay handoff", () => {
     await act(async () => undefined);
     expect(recomputeCoverage).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+  });
+
+  it("stays mounted and skips terrain fetch for an over-cap site set", async () => {
+    const recommendAndFetchTerrainForCurrentArea = vi.fn(async () => undefined);
+    const wideSites = [-100, 0, 100].map((lon, index) => ({
+      ...site,
+      id: `wide-${index}`,
+      position: { lat: 10.1, lon },
+    }));
+    useAppStore.setState({
+      sites: wideSites,
+      selectedSiteId: wideSites[0].id,
+      selectedSiteIds: wideSites.map((entry) => entry.id),
+      recommendAndFetchTerrainForCurrentArea,
+    });
+
+    expect(() =>
+      render(
+        <MapView
+          canPersist
+          isMapExpanded={false}
+          onToggleMapExpanded={() => undefined}
+          showInspector={false}
+        />,
+      ),
+    ).not.toThrow();
+    await act(async () => undefined);
+    expect(recommendAndFetchTerrainForCurrentArea).not.toHaveBeenCalled();
   });
 
   it("does not replay clouds when a completed signature is observed again", async () => {

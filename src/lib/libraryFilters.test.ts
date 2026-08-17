@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
+  canDeleteLibraryItem,
   filterAndSortLibraryItems,
   parsePersistedLibraryFilterState,
   serializeLibraryFilterState,
@@ -20,6 +21,30 @@ const items: MockItem[] = [
 const ids = (result: MockItem[]): string[] => result.map((item) => item.id);
 
 describe("libraryFilters", () => {
+  it("allows deletion only for owners and platform admins", () => {
+    expect(canDeleteLibraryItem(items[0]!, { id: "u1", isAdmin: false })).toBe(true);
+    expect(canDeleteLibraryItem(items[1]!, { id: "u1", isAdmin: false })).toBe(false);
+    expect(canDeleteLibraryItem(items[1]!, { id: "admin", isAdmin: true })).toBe(true);
+    expect(canDeleteLibraryItem(
+      { ownerUserId: "u1", effectiveRole: "viewer" },
+      { id: "u1", isAdmin: false },
+    )).toBe(false);
+  });
+
+  it("lets an explicit viewer role override a matching payload owner ID", () => {
+    const spoofed: MockItem = {
+      id: "spoofed", name: "Spoofed", ownerUserId: "u1", effectiveRole: "viewer", visibility: "public",
+    };
+    expect(ids(filterAndSortLibraryItems([spoofed], {
+      ...DEFAULT_LIBRARY_FILTER_STATE,
+      roleFilters: ["owned", "editable"],
+    }, "u1"))).toEqual([]);
+    expect(ids(filterAndSortLibraryItems([spoofed], {
+      ...DEFAULT_LIBRARY_FILTER_STATE,
+      roleFilters: ["viewOnly"],
+    }, "u1"))).toEqual(["spoofed"]);
+  });
+
   it("uses owned+collaborator default", () => {
     const result = filterAndSortLibraryItems(items, DEFAULT_LIBRARY_FILTER_STATE, "u1");
     expect(ids(result)).toEqual(["a", "b"]);

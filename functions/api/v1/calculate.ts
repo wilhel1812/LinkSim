@@ -1,11 +1,15 @@
-import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
-import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "../../_lib/rateLimit";
+import { ApiRequestError, errorResponse, handleOptions, json, readBoundedJson, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
 import { queueTerrainCalculationJob } from "./calculate.jobs";
 import {
   findEndpointNodes,
+  effectiveApiLinkGains,
+  estimateSyncSampleCount,
   haversineKm,
   MAX_SYNC_DISTANCE_KM,
+  MAX_CALCULATION_BODY_BYTES,
+  MAX_CALCULATION_JSON_DEPTH,
   normalizeCalculationRequest,
 } from "../../_lib/calculateShared";
 import { analyzeTerrainLink } from "../../_lib/terrainAnalysis";
@@ -15,19 +19,6 @@ type Context = {
   request: Request;
   env: Env;
   waitUntil?: (promise: Promise<unknown>) => void;
-};
-
-const MAX_SYNC_TERRAIN_SAMPLES = 72;
-
-const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
-  const parsed = Number(raw ?? "");
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.floor(parsed));
-};
-
-const estimateSyncSamples = (distanceKm: number): number => {
-  const byDistance = Math.ceil(distanceKm / 0.75);
-  return Math.max(24, Math.min(MAX_SYNC_TERRAIN_SAMPLES, byDistance));
 };
 
 export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
@@ -51,7 +42,10 @@ export const onRequestPost = async (ctx: Context) => {
       );
     }
 
-    const payload = normalizeCalculationRequest(await request.json());
+    const payload = normalizeCalculationRequest(await readBoundedJson<unknown>(request, {
+      maxBytes: MAX_CALCULATION_BODY_BYTES,
+      maxDepth: MAX_CALCULATION_JSON_DEPTH,
+    }));
     if (payload.input.mode === "terrain") {
       return queueTerrainCalculationJob(request, env, payload, waitUntil);
     }
@@ -96,11 +90,12 @@ export const onRequestPost = async (ctx: Context) => {
         groundElevationM: toNode.ground_elevation_m,
       },
       payload.input.frequency_mhz,
-      estimateSyncSamples(distanceKm),
+      estimateSyncSampleCount(distanceKm),
     );
 
-    const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-    const rxDbm = eirpDbm + toNode.rx_gain_dbi - terrain.totalPathLossDb;
+    const directionalGains = effectiveApiLinkGains(payload, terrain.fromGroundM, terrain.toGroundM);
+    const eirpDbm = fromNode.tx_power_dbm + directionalGains.txGainDbi - fromNode.cable_loss_db;
+    const rxDbm = eirpDbm + directionalGains.rxGainDbi - terrain.totalPathLossDb;
     const environmentLossDb = Math.max(0, payload.input.environment_loss_db);
     const rxAfterEnvLossDbm = rxDbm - environmentLossDb;
     const pass = rxAfterEnvLossDbm >= payload.input.rx_target_dbm;
@@ -135,6 +130,7 @@ export const onRequestPost = async (ctx: Context) => {
       }),
     );
   } catch (error) {
+    if (error instanceof ApiRequestError) return errorResponse(request, error);
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith("Site not found:")) {
       return withCors(request, json({ error: message }, { status: 404 }));

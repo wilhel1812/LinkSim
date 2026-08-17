@@ -13,6 +13,14 @@ export type Site = {
   txGainDbi: number;
   rxGainDbi: number;
   cableLossDb: number;
+  antennaMode?: "omnidirectional" | "directional";
+  antennaAzimuthDeg?: number;
+  antennaTiltDeg?: number;
+  antennaHorizontalBeamwidthDeg?: number;
+  antennaVerticalBeamwidthDeg?: number;
+  antennaMaxAttenuationDb?: number;
+  antennaTargetSiteId?: string;
+  antennaTargetDetachedReason?: "target-deleted";
   iconKey?: import("../lib/siteIcons").SiteIconKey;
   libraryEntryId?: string;
 };
@@ -93,7 +101,7 @@ export type SrtmTile = {
   height?: number;
   arcSecondSpacing: 1 | 3;
   elevations: Int16Array;
-  sourceKind?: "bundled" | "auto-fetch" | "manual-upload";
+  sourceKind?: "bundled" | "auto-fetch";
   sourceId?: string;
   sourceLabel?: string;
   sourceDetail?: string;

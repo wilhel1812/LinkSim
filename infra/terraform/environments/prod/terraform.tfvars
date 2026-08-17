@@ -8,7 +8,6 @@ pages_domains = ["linksim.link"]
 
 pages_env_vars_plain = {
   ACCESS_TEAM_DOMAIN                              = "skarvassbu.cloudflareaccess.com"
-  ACCESS_AUD                                      = "dcfed08418380b9ad6fa4d26cc6ba5d94274a8920764dbcb0e1917957d1825b2"
   ADMIN_USER_IDS                                  = "f35e2a08-3713-5671-9725-ba82b21f25d4"
   REGISTRATION_MODE                               = "approval_required"
   AVATAR_FALLBACK_ORIGIN                          = "https://linksim.pages.dev"
@@ -16,6 +15,8 @@ pages_env_vars_plain = {
   PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE = "600"
   CALC_API_PROXY_RATE_LIMIT_PER_MINUTE            = "120"
 }
+
+pages_access_audience_keys = ["authenticated_api"]
 
 # Keep secrets out of tfvars. Inject at runtime, for example:
 # TF_VAR_pages_env_vars_secret='{"VITE_MAPTILER_KEY":"..."}'
@@ -37,16 +38,29 @@ dns_records = {
 }
 
 # Access app configuration; app and policy IDs stay in imports.env.
-access_application = {
-  name   = "LinkSim Public App Shell"
-  domain = "linksim.link"
-  type   = "self_hosted"
-  policy_bindings = [
-    {
-      id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
-      precedence = 1
-    }
-  ]
+access_applications = {
+  primary = {
+    name   = "LinkSim Public App Shell"
+    domain = "linksim.link"
+    type   = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+        precedence = 1
+      }
+    ]
+  }
+  authenticated_api = {
+    name   = "LinkSim Authenticated API"
+    domain = "linksim.link/api/*"
+    type   = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "fd96072d-843b-4320-811a-281767b011ee"
+        precedence = 1
+      }
+    ]
+  }
 }
 
 # Import-first stubs. Populate with real policy keys/names/decisions before import.

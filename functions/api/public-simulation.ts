@@ -1,6 +1,6 @@
 import { verifyAuth } from "../_lib/auth";
 import { ensureUser, fetchPublicSimulationBundle, fetchUserProfile } from "../_lib/db";
-import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { errorResponse, handleOptions, isRevokedAuthError, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
@@ -22,7 +22,14 @@ const resolveAuth = async (
     return { authenticated: false, authState: "guest", actor: null };
   }
 
-  await ensureUser(env, auth.userId, auth.tokenPayload);
+  try {
+    await ensureUser(env, auth.userId, auth.tokenPayload);
+  } catch (error) {
+    if (isRevokedAuthError(error)) {
+      return { authenticated: false, authState: "revoked", actor: null };
+    }
+    throw error;
+  }
   const profile = await fetchUserProfile(env, auth.userId);
   if (profile?.accountState === "revoked") {
     return { authenticated: false, authState: "revoked", actor: null };

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { LinkProfileEmptyState } from "./LinkProfileChart";
+import { LinkProfileEmptyState, profileAntennaSignature } from "./LinkProfileChart";
+import type { Site } from "../types/radio";
 
 vi.hoisted(() => {
   const data = new Map<string, string>();
@@ -32,5 +33,33 @@ describe("LinkProfileEmptyState", () => {
     expect(container.querySelector(".chart-panel")).not.toHaveClass("chart-panel-empty");
     expect(screen.queryByRole("button", { name: "Reverse path direction for this view" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Full screen" })).not.toBeInTheDocument();
+  });
+
+  it("keys profile segment state by both endpoint antenna patterns and effective geometry", () => {
+    const endpoint = (id: string): Site => ({
+      id,
+      name: id,
+      position: { lat: 60, lon: 10 },
+      groundElevationM: 100,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 10,
+      antennaTiltDeg: 2,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const from = endpoint("from");
+    const to = endpoint("to");
+    const signature = profileAntennaSignature(from, to);
+
+    expect(profileAntennaSignature({ ...from, antennaAzimuthDeg: 20 }, to)).not.toBe(signature);
+    expect(profileAntennaSignature(from, { ...to, antennaTiltDeg: 5 })).not.toBe(signature);
+    expect(profileAntennaSignature({ ...from, position: { lat: 60.01, lon: 10 } }, to)).not.toBe(signature);
+    expect(profileAntennaSignature(from, { ...to, groundElevationM: 150 })).not.toBe(signature);
   });
 });

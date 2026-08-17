@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { azimuthFromToDeg, buildPanorama, destinationForDistanceKm, earthCurvatureDropM, qualityToSampling, resolvePanoramaSampling } from "./panorama";
+import { azimuthFromToDeg, buildPanorama, destinationForDistanceKm, earthCurvatureDropM, qualityToSampling, resolvePanoramaSampling, selectPanoramaNodeCandidates } from "./panorama";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 const site: Site = {
@@ -86,6 +86,43 @@ describe("panorama", () => {
     expect(result.maxAngleDeg).toBeGreaterThan(result.minAngleDeg);
   });
 
+  it("changes projected node state when the source antenna points away", () => {
+    const candidate = {
+      id: "n1",
+      name: "N1",
+      lat: 59.95,
+      lon: 10.8,
+      groundElevationM: 120,
+      antennaHeightM: 8,
+      rxGainDbi: 2,
+    };
+    const onAxisAzimuth = azimuthFromToDeg(site.position, { lat: candidate.lat, lon: candidate.lon });
+    const build = (antennaAzimuthDeg: number) => buildPanorama({
+      selectedSite: {
+        ...site,
+        txPowerDbm: 30,
+        txGainDbi: 6,
+        antennaMode: "directional",
+        antennaAzimuthDeg,
+        antennaTiltDeg: 0,
+        antennaHorizontalBeamwidthDeg: 30,
+        antennaVerticalBeamwidthDeg: 30,
+        antennaMaxAttenuationDb: 60,
+      },
+      effectiveLink: link,
+      propagationEnvironment: env,
+      rxSensitivityTargetDbm: -120,
+      environmentLossDb: 0,
+      quality: "drag" as const,
+      terrainSampler: () => 120,
+      nodeCandidates: [candidate],
+      options: { baseRadiusKm: 50, maxRadiusKm: 80 },
+    }).nodes[0].state;
+
+    expect(build(onAxisAzimuth)).toMatch(/^pass_/);
+    expect(build(onAxisAzimuth + 180)).toMatch(/^fail_/);
+  });
+
   it("supports window-focused azimuth sweeps for zoomed recompute", () => {
     const result = buildPanorama({
       selectedSite: site,
@@ -109,5 +146,28 @@ describe("panorama", () => {
     expect(result.rays.length).toBeLessThan(220);
     expect(result.rays.some((ray) => ray.azimuthDeg < 10)).toBe(true);
     expect(result.rays.some((ray) => ray.azimuthDeg > 340)).toBe(true);
+  });
+
+  it("deterministically caps candidates within 200 km by source, distance, and ID", () => {
+    const candidate = (id: string, distanceKm: number) => ({ id, name: id, lat: 0, lon: distanceKm / 6371 * 180 / Math.PI, groundElevationM: 0, antennaHeightM: 2, rxGainDbi: 2 });
+    const mqtt = Array.from({ length: 1_100 }, (_, index) => candidate(`mqtt:${String(index).padStart(4, "0")}`, index % 2 ? 10 : 20));
+    const selected = selectPanoramaNodeCandidates({ lat: 0, lon: 0 }, [candidate("lib:z", 199), candidate("sim:z", 199), candidate("mqtt:outside", 201), ...mqtt]);
+    expect(selected).toHaveLength(1_000);
+    expect(selected[0].id).toBe("sim:z");
+    expect(selected[1].id).toBe("lib:z");
+    expect(selected.some((entry) => entry.id === "mqtt:outside")).toBe(false);
+    const selectedMqtt = selected.slice(2);
+    expect(selectedMqtt[0].id).toBe("mqtt:0001");
+    expect(selectedMqtt[549].id).toBe("mqtt:1099");
+    expect(selectedMqtt[550].id).toBe("mqtt:0000");
+  });
+
+  it("includes the 200 km boundary and excludes candidates beyond it", () => {
+    const candidate = (id: string, distanceKm: number) => ({ id, name: id, lat: 0, lon: distanceKm / 6371 * 180 / Math.PI, groundElevationM: 0, antennaHeightM: 2, rxGainDbi: 2 });
+    const selected = selectPanoramaNodeCandidates(
+      { lat: 0, lon: 0 },
+      [candidate("mqtt:boundary", 200), candidate("mqtt:outside", 200.001)],
+    );
+    expect(selected.map((entry) => entry.id)).toEqual(["mqtt:boundary"]);
   });
 });

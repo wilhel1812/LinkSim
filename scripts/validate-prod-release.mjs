@@ -2,9 +2,16 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  compareBaseVersions,
+  parsePackageVersionInputs,
+  validatePackageVersionParity,
+} from "./version-state.mjs";
 
 const root = process.cwd();
 const packageJsonPath = path.join(root, "package.json");
+const packageLockPath = path.join(root, "package-lock.json");
 
 const run = (cmd, args) =>
   new Promise((resolve, reject) => {
@@ -31,18 +38,51 @@ const run = (cmd, args) =>
   });
 
 const readVersionAtRef = async (ref) => {
-  const { stdout } = await run("git", ["show", `${ref}:package.json`]);
-  const pkg = JSON.parse(stdout);
-  return String(pkg.version ?? "").trim();
+  const [{ stdout: packageContent }, { stdout: lockfileContent }] = await Promise.all([
+    run("git", ["show", `${ref}:package.json`]),
+    run("git", ["show", `${ref}:package-lock.json`]),
+  ]);
+  return validatePackageVersionParity({
+    ...parsePackageVersionInputs(packageContent, lockfileContent),
+    label: `production ref ${ref}`,
+  });
+};
+
+export const validateReleaseVersionInputs = ({
+  version,
+  lockfileVersion,
+  lockfileRootVersion,
+  previousProductionVersion,
+  hasMatchingHeadTag,
+}) => {
+  const current = validatePackageVersionParity({
+    packageVersion: version,
+    lockfileVersion,
+    lockfileRootVersion,
+    label: "release",
+  });
+  const expectedTag = `v${current}`;
+  if (!hasMatchingHeadTag) {
+    throw new Error(`Prod release gate failed: HEAD must be tagged '${expectedTag}'.`);
+  }
+  if (compareBaseVersions(current, previousProductionVersion) <= 0) {
+    throw new Error(
+      `Prod release gate failed: release version ${current} must be newer than ` +
+        `previous production ${previousProductionVersion}.`,
+    );
+  }
+  return expectedTag;
 };
 
 async function main() {
-  const pkgText = await readFile(packageJsonPath, "utf8");
-  const pkg = JSON.parse(pkgText);
-  const version = String(pkg.version ?? "").trim();
-  if (!version) {
-    throw new Error("Prod release gate failed: package.json version is missing.");
-  }
+  const versionInputs = parsePackageVersionInputs(
+    await readFile(packageJsonPath, "utf8"),
+    await readFile(packageLockPath, "utf8"),
+  );
+  const version = validatePackageVersionParity({
+    ...versionInputs,
+    label: "release",
+  });
 
   const expectedTag = `v${version}`;
   const { stdout: tagsAtHead } = await run("git", ["tag", "--points-at", "HEAD"]);
@@ -51,26 +91,25 @@ async function main() {
     .map((line) => line.trim())
     .filter(Boolean)
     .includes(expectedTag);
-  if (!hasMatchingHeadTag) {
-    throw new Error(`Prod release gate failed: HEAD must be tagged '${expectedTag}'.`);
-  }
+  const previousProductionRef =
+    String(process.env.PRODUCTION_PREVIOUS_REF ?? "").trim() || "origin/main^";
+  const previousProductionVersion = await readVersionAtRef(previousProductionRef);
+  validateReleaseVersionInputs({
+    version,
+    lockfileVersion: versionInputs.lockfileVersion,
+    lockfileRootVersion: versionInputs.lockfileRootVersion,
+    previousProductionVersion,
+    hasMatchingHeadTag,
+  });
 
-  const parentCheck = await run("git", ["rev-list", "--count", "HEAD"]);
-  const commitCount = Number.parseInt(parentCheck.stdout.trim(), 10);
-  if (!Number.isFinite(commitCount) || commitCount < 2) {
-    throw new Error("Prod release gate failed: cannot verify version bump on first commit.");
-  }
-
-  const versionAtHead = await readVersionAtRef("HEAD");
-  const versionAtParent = await readVersionAtRef("HEAD^");
-  if (versionAtHead === versionAtParent) {
-    throw new Error(`Prod release gate failed: package version was not bumped in HEAD (still ${versionAtHead}).`);
-  }
-
-  console.log(`[validate-prod-release] ok version=${version} tag=${expectedTag}`);
+  console.log(
+    `[validate-prod-release] ok version=${version} previous=${previousProductionVersion} tag=${expectedTag}`,
+  );
 }
 
-main().catch((error) => {
-  console.error(`[validate-prod-release] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`[validate-prod-release] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

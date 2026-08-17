@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "maxLoadedCharacters": 2400,
+  "entries": [
+    {
+      "id": "preserve-reporter-intent",
+      "lesson": "Preserve the reporter's stated intent; do not broaden or reinterpret the request.",
+      "affectedAgents": ["Linky", "Scout"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    },
+    {
+      "id": "ask-instead-of-inventing",
+      "lesson": "Ask one focused question when required details are missing; never invent them.",
+      "affectedAgents": ["Linky", "Scout"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    },
+    {
+      "id": "resolve-conversations-independently",
+      "lesson": "Resolve each conversation independently; one pending draft must not replace or approve another.",
+      "affectedAgents": ["Linky"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    },
+    {
+      "id": "keep-community-replies-concise",
+      "lesson": "Keep community replies concise, direct, active, and free of repeated user text or stock praise.",
+      "affectedAgents": ["Linky"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    },
+    {
+      "id": "hide-internal-scout-reports",
+      "lesson": "Keep Scout's internal report private to the crew; Linky should return only the relevant distilled answer.",
+      "affectedAgents": ["Linky", "Scout"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    },
+    {
+      "id": "ground-product-claims",
+      "lesson": "Ground current product and repository claims in evidence; state uncertainty instead of speculating.",
+      "affectedAgents": ["Linky", "Scout", "Sentry", "Forge", "Beacon", "Steward"],
+      "evidence": ["issue-1035"],
+      "humanApproval": { "by": "wilhel1812", "source": "issue-1035", "approvedAt": "2026-08-10" },
+      "status": "approved"
+    }
+  ]
+}

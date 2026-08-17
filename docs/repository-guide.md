@@ -48,7 +48,7 @@ Start the Vite development server for normal frontend work:
 npm run dev
 ```
 
-Vite reports the local URL, normally `http://localhost:5173`.
+Vite serves the local app at the fixed URL `http://localhost:5174`.
 
 Use the local edge stack when Pages Functions, D1, or R2 behavior is part of the change:
 
@@ -57,6 +57,14 @@ npm run dev:edge
 ```
 
 It serves the built app and local Cloudflare bindings at `http://localhost:8788`. Docker Compose provides equivalent `dev`, `edge`, and production-style `web` services when a container workflow is preferred.
+
+Docker Compose publishes the `dev` and `edge` services on loopback by default. To make those development services reachable from another trusted machine, opt in explicitly for that invocation:
+
+```bash
+LINKSIM_DOCKER_BIND_ADDRESS=0.0.0.0 docker compose up dev edge
+```
+
+Do not use a public bind address on an untrusted network. The standalone calculation API ignores caller-supplied forwarding headers and uses its direct peer address for rate limiting. When it is intentionally placed behind a reverse proxy, set Uvicorn's `FORWARDED_ALLOW_IPS` only to the known proxy IP address or CIDR; do not use a wildcard trust value.
 
 ## Build, Test, Smoke
 
@@ -89,6 +97,10 @@ Behavior notes:
 - If node ground elevation is omitted, the API samples terrain and uses that elevation with `2m` default antenna height
 - Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
 - Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
+- Request limits: `64 KiB` JSON body, at most `10` JSON nesting levels, `20` nodes, and `80` characters per site name
+- Distance limits: `500 km` for synchronous calculations and `2,000 km` for asynchronous terrain jobs
+- Terrain sampling limits: `72` synchronous samples and `500` asynchronous samples
+- Asynchronous terrain jobs have an absolute `5 minute` deadline; terminal job records are retained for up to `24 hours` with at most `1,000` retained
 
 Example request:
 
@@ -109,6 +121,34 @@ curl -X POST http://localhost:8788/api/v1/calculate \
     }
   }'
 ```
+
+API nodes may optionally set `antenna_mode` to `directional` and provide
+`antenna_azimuth_deg`, `antenna_tilt_deg`,
+`antenna_horizontal_beamwidth_deg`, `antenna_vertical_beamwidth_deg`, and
+`antenna_max_attenuation_db`. Omitted antenna fields preserve omnidirectional
+behavior. Site-target tracking is an editor convenience; API requests use fixed
+angles.
+
+## Terrain and Node-Feed Workload Limits
+
+LinkSim bounds terrain and live-node processing before expensive parsing,
+decompression, fetching, or rendering begins:
+
+- MeshMap JSON responses are limited to `5 MiB` and `20,000` top-level node
+  records. Direct/custom node feeds use the same bounds.
+- The 868.no snapshot reader retains its `5 MiB`, `8 second` maximum, and
+  `1 second` post-burst idle limits, with at most `5,000` SSE records.
+- Normalized node caches retain at most `20,000` nodes per source and `25,000`
+  nodes after sources are combined. Map markers retain the existing `1,000`
+  in-view ceiling.
+- Panorama considers at most `1,000` deterministic candidates within its
+  existing `200 km` range before building signatures or running RF projection.
+- Terrain enumeration and loading stop above `256` unique GLO-30 tile keys.
+  Antimeridian-crossing bounds use their wrapped short interval.
+
+Node-feed rate-limit values and keys, Copernicus fetch concurrency and retries,
+catalog-confirmed ocean handling, and calculation-job cancellation/deadlines
+remain governed by their existing endpoint contracts.
 
 ## Deploy and Release
 
@@ -160,7 +200,7 @@ npm run refresh:staging:r2
 ## Data/Service Notes
 
 - Terrain data is fetched on demand and cached client-side.
-- API proxies and geocode endpoints include method/rate-limit safeguards.
+- Browser forward location search uses the same-origin API, with bounded provider responses, a five-minute cache, configured per-caller limiting, and a per-isolate cache-miss gate.
 - In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
 - Basemap provider failures auto-fallback to CARTO with a non-blocking warning.
 

@@ -1,6 +1,7 @@
 import { computeSourceCentricRxMetrics, classifyPassFailState, type PassFailState } from "./passFailState";
-import { haversineDistanceKm } from "./geo";
+import { haversineDistanceKm, initialBearingDeg } from "./geo";
 import { normalizeFovScale, FOV_SCALE_DEFAULT } from "./panoramaView";
+import { PANORAMA_MAX_NODE_CANDIDATES, PANORAMA_MAX_NODE_DISTANCE_KM } from "./nodeFeedLimits";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import type { SiteIconKey } from "./siteIcons";
 
@@ -16,8 +17,41 @@ export type PanoramaNodeCandidate = {
   groundElevationM: number;
   antennaHeightM: number;
   rxGainDbi: number;
+  antennaMode?: Site["antennaMode"];
+  antennaAzimuthDeg?: number;
+  antennaTiltDeg?: number;
+  antennaHorizontalBeamwidthDeg?: number;
+  antennaVerticalBeamwidthDeg?: number;
+  antennaMaxAttenuationDb?: number;
   iconKey?: SiteIconKey;
 };
+
+const panoramaCandidateSourceRank = (id: string): number => {
+  if (id.startsWith("sim:")) return 0;
+  if (id.startsWith("lib:")) return 1;
+  if (id.startsWith("mqtt:")) return 2;
+  return 3;
+};
+
+export const selectPanoramaNodeCandidates = (
+  origin: { lat: number; lon: number },
+  candidates: PanoramaNodeCandidate[],
+): PanoramaNodeCandidate[] =>
+  candidates
+    .map((candidate) => ({
+      candidate,
+      distanceKm: haversineDistanceKm(origin, { lat: candidate.lat, lon: candidate.lon }),
+    }))
+    .filter(({ distanceKm }) => Number.isFinite(distanceKm) && distanceKm <= PANORAMA_MAX_NODE_DISTANCE_KM)
+    .sort((a, b) => {
+      const sourceRank = panoramaCandidateSourceRank(a.candidate.id) - panoramaCandidateSourceRank(b.candidate.id);
+      if (sourceRank !== 0) return sourceRank;
+      const distance = a.distanceKm - b.distanceKm;
+      if (distance !== 0) return distance;
+      return a.candidate.id.localeCompare(b.candidate.id);
+    })
+    .slice(0, PANORAMA_MAX_NODE_CANDIDATES)
+    .map(({ candidate }) => candidate);
 
 export type PanoramaNodeProjection = {
   id: string;
@@ -129,13 +163,7 @@ export const destinationForDistanceKm = (
 };
 
 export const azimuthFromToDeg = (from: { lat: number; lon: number }, to: { lat: number; lon: number }): number => {
-  const phi1 = toRadians(from.lat);
-  const phi2 = toRadians(to.lat);
-  const dLambda = toRadians(to.lon - from.lon);
-  const y = Math.sin(dLambda) * Math.cos(phi2);
-  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
-  const theta = Math.atan2(y, x);
-  return (toDegrees(theta) + 360) % 360;
+  return initialBearingDeg(from, to);
 };
 
 const resolveRayMaxDistanceKm = (
@@ -326,6 +354,23 @@ export const buildPanorama = (params: {
         terrainSampler,
         quality === "drag" ? 16 : 24,
         propagationEnvironment,
+        {
+          id: candidate.id,
+          name: candidate.name,
+          position: { lat: candidate.lat, lon: candidate.lon },
+          groundElevationM: candidate.groundElevationM,
+          antennaHeightM: candidate.antennaHeightM,
+          txPowerDbm: 0,
+          txGainDbi: 0,
+          rxGainDbi: candidate.rxGainDbi,
+          cableLossDb: 0,
+          antennaMode: candidate.antennaMode,
+          antennaAzimuthDeg: candidate.antennaAzimuthDeg,
+          antennaTiltDeg: candidate.antennaTiltDeg,
+          antennaHorizontalBeamwidthDeg: candidate.antennaHorizontalBeamwidthDeg,
+          antennaVerticalBeamwidthDeg: candidate.antennaVerticalBeamwidthDeg,
+          antennaMaxAttenuationDb: candidate.antennaMaxAttenuationDb,
+        },
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
       const state = classifyPassFailState(pass, metrics.terrainObstructed);

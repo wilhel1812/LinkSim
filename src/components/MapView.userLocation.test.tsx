@@ -5,7 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => ({
   easeTo: vi.fn(),
-  markerProps: [] as Array<{ latitude?: number; longitude?: number }>,
+  markerProps: [] as Array<{
+    childTestId?: string;
+    latitude?: number;
+    longitude?: number;
+    onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
+    rotationAlignment?: string;
+  }>,
   layerProps: [] as Array<{ id?: string; paint?: Record<string, unknown> }>,
   sourceProps: [] as Array<{ id?: string; data?: unknown }>,
   latestProps: null as null | {
@@ -57,12 +63,23 @@ vi.mock("react-map-gl/maplibre", async () => {
       children,
       latitude,
       longitude,
+      onDrag,
+      rotationAlignment,
     }: {
       children?: React.ReactNode;
       latitude?: number;
       longitude?: number;
+      onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
+      rotationAlignment?: string;
     }) => {
-      mapMock.markerProps.push({ latitude, longitude });
+      const childTestId = ReactMock.isValidElement(children)
+        ? (children.props as { "data-testid"?: string })["data-testid"] ?? (
+          typeof children.type === "function" && children.type.name === "DirectionalMapBeam"
+            ? "directional-map-beam"
+            : undefined
+        )
+        : undefined;
+      mapMock.markerProps.push({ childTestId, latitude, longitude, onDrag, rotationAlignment });
       return <div>{children}</div>;
     },
     Source: ({ children, ...props }: { children?: React.ReactNode; id?: string; data?: unknown }) => {
@@ -125,6 +142,7 @@ const position = (latitude: number, longitude: number, accuracy: number, timesta
 
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
+import { orientationTowardSite } from "../lib/antennaPattern";
 import { MapView } from "./MapView";
 
 const originalCancelTerrainLoad = useAppStore.getState().cancelTerrainLoad;
@@ -761,6 +779,202 @@ describe("MapView user location flow", () => {
     expect(mapMock.markerProps).toEqual(
       expect.arrayContaining([expect.objectContaining({ latitude: 61.25, longitude: 12.75 })]),
     );
+  });
+
+  it("shows a fixed educational beam sector for one selected directional Site", () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Alpha Site",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 30,
+          antennaHorizontalBeamwidthDeg: 60,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+    });
+
+    renderMapView();
+
+    const sector = screen.getByTestId("directional-map-beam");
+    expect(sector).toHaveAttribute("data-azimuth", "30");
+    expect(sector).toHaveAttribute("data-beamwidth", "60");
+    expect(sector).toHaveAttribute("aria-hidden", "true");
+    expect(mapMock.markerProps.find((props) => props.childTestId === "directional-map-beam")?.rotationAlignment).toBe("map");
+  });
+
+  it("keeps the selected directional beam attached to a pending Site drag", async () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Alpha Site",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 30,
+          antennaHorizontalBeamwidthDeg: 60,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+      srtmTiles: [],
+    });
+
+    renderMapView();
+
+    const siteMarker = mapMock.markerProps.find((props) => props.onDrag);
+    expect(siteMarker?.onDrag).toBeTypeOf("function");
+    act(() => siteMarker?.onDrag?.({ lngLat: { lat: 60.7, lng: 11.7 } }));
+
+    await waitFor(() => expect(
+      mapMock.markerProps.filter((props) => props.childTestId === "directional-map-beam").at(-1),
+    ).toMatchObject({ latitude: 60.7, longitude: 11.7 }));
+  });
+
+  it("recomputes a tracked directional beam azimuth during a pending Site drag", async () => {
+    const trackedSite = {
+      id: "site-alpha",
+      name: "Alpha Site",
+      position: { lat: 60.5, lon: 11.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional" as const,
+      antennaAzimuthDeg: 90,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaTargetSiteId: "site-beta",
+    };
+    const targetSite = {
+      id: "site-beta",
+      name: "Beta Site",
+      position: { lat: 60.5, lon: 12.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      sites: [trackedSite, targetSite],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+      srtmTiles: [],
+    });
+
+    renderMapView();
+
+    const siteMarker = mapMock.markerProps.find((props) => props.onDrag && props.latitude === 60.5);
+    expect(siteMarker?.onDrag).toBeTypeOf("function");
+    const pendingPosition = { lat: 60.7, lon: 11.7 };
+    const expectedAzimuth = orientationTowardSite(
+      { ...trackedSite, position: pendingPosition },
+      targetSite,
+    ).azimuthDeg;
+    act(() => siteMarker?.onDrag?.({ lngLat: { lat: pendingPosition.lat, lng: pendingPosition.lon } }));
+
+    await waitFor(() => expect(
+      Number(screen.getByTestId("directional-map-beam").getAttribute("data-azimuth")),
+    ).toBeCloseTo(expectedAzimuth, 6));
+  });
+
+  it("uses unsaved editor values for the map beam and hides it for multi-selection", () => {
+    const sites = [
+      {
+        id: "site-alpha",
+        name: "Alpha Site",
+        libraryEntryId: "lib-alpha",
+        position: { lat: 60.5, lon: 11.5 },
+        groundElevationM: 120,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+        antennaMode: "directional" as const,
+        antennaAzimuthDeg: 30,
+        antennaHorizontalBeamwidthDeg: 60,
+      },
+      {
+        id: "site-beta",
+        name: "Beta Site",
+        position: { lat: 60.6, lon: 11.6 },
+        groundElevationM: 140,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      },
+    ];
+    useAppStore.setState({
+      sites,
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: {
+        kind: "site",
+        resourceId: "lib-alpha",
+        isNew: false,
+        label: "Alpha Site",
+        anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+      },
+      mapEditorSiteDraft: {
+        lat: 61.25,
+        lon: 12.75,
+        groundElevationM: 130,
+        antennaMode: "directional",
+        antennaAzimuthDeg: 359,
+        antennaHorizontalBeamwidthDeg: 42,
+      },
+      mapOverlayMode: "none",
+    });
+
+    const { rerender } = renderMapView();
+
+    expect(screen.getByTestId("directional-map-beam")).toHaveAttribute("data-azimuth", "359");
+    expect(screen.getByTestId("directional-map-beam")).toHaveAttribute("data-beamwidth", "42");
+
+    act(() => useAppStore.setState({
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      selectedSiteIds: ["site-alpha", "site-beta"],
+    }));
+    rerender(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+    expect(screen.queryByTestId("directional-map-beam")).not.toBeInTheDocument();
   });
 
   it("publishes plain location failure notifications", () => {

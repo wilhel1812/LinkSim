@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "cadence": "weekly",
+  "executor": "vidda-guarded-worker",
+  "discussionIssue": 1027,
+  "preModelGuard": {
+    "requiredState": "normal",
+    "minimumRemainingPercentExclusive": 25,
+    "maximumTelemetryAgeSeconds": 600
+  },
+  "publication": {
+    "appendOnly": true,
+    "evidenceRequired": true,
+    "idempotentByAuditWindow": true,
+    "publishWhenNoSuggestion": false,
+    "signedAgent": "Steward"
+  },
+  "activation": {
+    "state": "enabled-after-live-acceptance",
+    "acceptedAt": "2026-08-10",
+    "acceptedBy": "wilhel1812",
+    "acceptedRun": "043bd069-8ef0-4086-90c2-a0f01148cb67"
+  }
+}

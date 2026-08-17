@@ -1,4 +1,5 @@
 import { handleOptions } from "../_lib/http";
+import { stripSensitiveProxyResponseHeaders } from "../_lib/proxy";
 import { getClientAddress, takeRateLimitToken } from "../_lib/rateLimit";
 import type { Env } from "../_lib/types";
 
@@ -18,13 +19,9 @@ const DATASET_TO_BUCKET: Record<string, string> = {
 const RATE_LIMIT_SOURCE_HEADER = "X-Rate-Limit-Source";
 
 const rateLimitIdentityFor = (request: Request): string => {
-  const accessEmail = (request.headers.get("cf-access-authenticated-user-email") ?? "").trim().toLowerCase();
-  if (accessEmail) return `user:${accessEmail}`;
   const clientIp = getClientAddress(request);
   if (clientIp && clientIp !== "unknown") return `ip:${clientIp}`;
-  const userAgent = (request.headers.get("user-agent") ?? "").trim().toLowerCase();
-  if (userAgent) return `ua:${userAgent}`;
-  return "anon";
+  return "unknown";
 };
 
 const addRateLimitHeaders = (headers: Headers, limiter: { allowed: boolean; remaining: number; retryAfterSec: number }, limit: number): void => {
@@ -68,7 +65,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 
   const cached = shouldUseCache ? await cache.match(cacheKey) : null;
   if (cached) {
-    const headers = new Headers(cached.headers);
+    const headers = stripSensitiveProxyResponseHeaders(new Headers(cached.headers));
     headers.set("X-Cache-Status", "HIT");
     headers.set(RATE_LIMIT_SOURCE_HEADER, "none");
     return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
@@ -97,11 +94,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   });
 
   if (response.ok) {
-    const headers = new Headers(response.headers);
+    const headers = stripSensitiveProxyResponseHeaders(new Headers(response.headers));
     headers.set("X-Cache-Status", "MISS");
     headers.set(RATE_LIMIT_SOURCE_HEADER, "none");
     headers.set("cache-control", isTileList ? "public, max-age=3600, s-maxage=21600" : "public, max-age=86400, s-maxage=604800");
-    headers.delete("set-cookie");
     addRateLimitHeaders(headers, limiter, limit);
     const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     if (shouldUseCache) {
@@ -110,7 +106,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return cacheable;
   }
 
-  const missHeaders = new Headers(response.headers);
+  const missHeaders = stripSensitiveProxyResponseHeaders(new Headers(response.headers));
   missHeaders.set("X-Cache-Status", "MISS");
   missHeaders.set(RATE_LIMIT_SOURCE_HEADER, response.status === 429 ? "upstream" : "none");
   missHeaders.set("cache-control", "no-store");

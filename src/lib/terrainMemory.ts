@@ -6,18 +6,15 @@ export type TerrainMemoryDiagnostics = {
   retainedBytesTotal: number;
   retainedBytesByDataset: {
     copernicus30: number;
-    manual: number;
     other: number;
   };
   tileCountsByDataset: {
     copernicus30: number;
-    manual: number;
     other: number;
   };
 };
 
 const datasetBucketForTile = (tile: SrtmTile): keyof TerrainMemoryDiagnostics["retainedBytesByDataset"] => {
-  if (tile.sourceKind === "manual-upload") return "manual";
   if (tile.sourceId === "copernicus30") return "copernicus30";
   return "other";
 };
@@ -33,12 +30,10 @@ export const estimateTerrainMemoryDiagnostics = (tiles: ReadonlyArray<SrtmTile>)
     retainedBytesTotal: 0,
     retainedBytesByDataset: {
       copernicus30: 0,
-      manual: 0,
       other: 0,
     },
     tileCountsByDataset: {
       copernicus30: 0,
-      manual: 0,
       other: 0,
     },
   };

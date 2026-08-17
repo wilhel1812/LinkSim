@@ -30,7 +30,9 @@ type ClientStorageRule = LocalStorageRule | CacheStorageRule | MemoryRule;
 const CLIENT_STORAGE_RULES: ClientStorageRule[] = [
   { scope: "localStorage", policy: "preserve", key: "rmw-site-library-v1" },
   { scope: "localStorage", policy: "preserve", key: "rmw-sim-presets-v1" },
-  { scope: "localStorage", policy: "preserve", key: "linksim-sync-signature-v1" },
+  { scope: "localStorage", policy: "resetOnVersionChange", key: "linksim-sync-signature-v1" },
+  { scope: "localStorage", policy: "preserve", key: "linksim-sync-digest-v2" },
+  { scope: "localStorage", policy: "preserve", key: "linksim-library-quarantine-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-last-session-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-ui-theme-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-ui-color-theme-v1" },

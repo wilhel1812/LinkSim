@@ -1,4 +1,5 @@
 import { haversineDistanceKm } from "./geo";
+import { longitudeBoundsForCoordinates, unwrapLongitudeToInterval } from "./terrainTiles";
 import type { Coordinates, Polarization } from "../types/radio";
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -64,6 +65,13 @@ type TerrainLosInput = {
   clutterHeightM?: number;
 };
 
+const shortestLongitudeSpan = (fromLon: number, toLon: number): { fromLon: number; span: number } => {
+  const bounds = longitudeBoundsForCoordinates([fromLon, toLon]);
+  const unwrappedFrom = unwrapLongitudeToInterval(fromLon, bounds);
+  const unwrappedTo = unwrapLongitudeToInterval(toLon, bounds);
+  return { fromLon: unwrappedFrom, span: unwrappedTo - unwrappedFrom };
+};
+
 export const estimateTerrainExcessLossDb = ({
   from,
   to,
@@ -87,11 +95,11 @@ export const estimateTerrainExcessLossDb = ({
     terrainSamplerAt ??
     ((lat: number, lon: number) => terrainSampler({ lat, lon }));
   const latSpan = to.lat - from.lat;
-  const lonSpan = to.lon - from.lon;
+  const longitude = shortestLongitudeSpan(from.lon, to.lon);
   for (let i = 0; i < sampleCount; i += 1) {
     const t = sampleCount <= 1 ? 0 : i / (sampleCount - 1);
     const lat = from.lat + latSpan * t;
-    const lon = from.lon + lonSpan * t;
+    const lon = longitude.fromLon + longitude.span * t;
     const terrain = sampleTerrainAt(lat, lon);
     if (terrain === null) continue;
     trace.push({
@@ -184,12 +192,12 @@ export const isTerrainLineObstructed = ({
     terrainSamplerAt ??
     ((lat: number, lon: number) => terrainSampler({ lat, lon }));
   const latSpan = to.lat - from.lat;
-  const lonSpan = to.lon - from.lon;
+  const longitude = shortestLongitudeSpan(from.lon, to.lon);
 
   for (let i = 1; i < sampleCount - 1; i += 1) {
     const t = i / (sampleCount - 1);
     const lat = from.lat + latSpan * t;
-    const lon = from.lon + lonSpan * t;
+    const lon = longitude.fromLon + longitude.span * t;
     const terrain = sampleTerrainAt(lat, lon);
     if (terrain === null) continue;
     const d1 = distanceM * t;

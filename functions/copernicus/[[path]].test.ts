@@ -73,7 +73,7 @@ describe("copernicus proxy", () => {
     );
     expect(takeRateLimitTokenMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: "proxy:copernicus:tile:user:node@linksim.test",
+        key: "proxy:copernicus:tile:ip:203.0.113.9",
         limit: 1500,
       }),
     );
@@ -99,7 +99,7 @@ describe("copernicus proxy", () => {
     expect(res.status).toBe(200);
     expect(takeRateLimitTokenMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: "proxy:copernicus:tilelist:user:node@linksim.test",
+        key: "proxy:copernicus:tilelist:ip:203.0.113.9",
         limit: 40,
       }),
     );
@@ -150,6 +150,62 @@ describe("copernicus proxy", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("x-rate-limit-source")).toBe("upstream");
     expect(res.headers.get("x-cache-status")).toBe("MISS");
+  });
+
+  it("does not use Access identity or user agent as a fallback limiter bucket", async () => {
+    getClientAddressMock.mockReturnValueOnce("unknown");
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("tif", { status: 200, headers: { "content-type": "image/tiff" } }),
+    );
+    const req = new Request(
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_10_N60_00_E009_00_DEM/Copernicus_DSM_COG_10_N60_00_E009_00_DEM.tif",
+      {
+        headers: {
+          "cf-access-authenticated-user-email": "attacker@example.test",
+          "user-agent": "attacker-selected",
+        },
+      },
+    );
+
+    await onRequest(mkCtx(req));
+
+    expect(takeRateLimitTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "proxy:copernicus:tile:unknown" }),
+    );
+  });
+
+  it("strips sensitive headers from successful and failed upstream responses", async () => {
+    const sensitiveHeaders = {
+      "set-cookie": "secret=1",
+      authorization: "Bearer secret",
+      "cf-access-authenticated-user-email": "upstream@example.test",
+      "cf-access-authenticated-user-id": "upstream-id",
+      "cf-access-authenticated-user-name": "Upstream Name",
+      "cf-access-jwt-assertion": "upstream-jwt",
+      "x-forwarded-for": "192.0.2.1",
+    };
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        new Response("tif", { status: 200, headers: { "content-type": "image/tiff", ...sensitiveHeaders } }),
+      )
+      .mockResolvedValueOnce(
+        new Response("failed", { status: 502, headers: { "content-type": "text/plain", ...sensitiveHeaders } }),
+      );
+    const requestUrl =
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_10_N60_00_E009_00_DEM/Copernicus_DSM_COG_10_N60_00_E009_00_DEM.tif";
+
+    const success = await onRequest(mkCtx(new Request(requestUrl)));
+    const failure = await onRequest(mkCtx(new Request(requestUrl)));
+
+    for (const response of [success, failure]) {
+      expect(response.headers.get("set-cookie")).toBeNull();
+      expect(response.headers.get("authorization")).toBeNull();
+      expect(response.headers.get("cf-access-authenticated-user-email")).toBeNull();
+      expect(response.headers.get("cf-access-authenticated-user-id")).toBeNull();
+      expect(response.headers.get("cf-access-authenticated-user-name")).toBeNull();
+      expect(response.headers.get("cf-access-jwt-assertion")).toBeNull();
+      expect(response.headers.get("x-forwarded-for")).toBeNull();
+    }
   });
 
   it("serves cached tile from edge cache on cache hit", async () => {

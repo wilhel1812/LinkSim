@@ -2,6 +2,8 @@
 import { act, render, screen } from "@testing-library/react";
 import { Profiler, StrictMode, type ProfilerOnRenderCallback } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MeshmapNode } from "../lib/meshtasticMqtt";
+import type { Site } from "../types/radio";
 
 const testState = vi.hoisted(() => ({
   buildPanorama: vi.fn(),
@@ -19,7 +21,7 @@ const testState = vi.hoisted(() => ({
         rxGainDbi: 2,
         cableLossDb: 1,
       },
-    ],
+    ] as Site[],
     links: [],
     selectedSiteIds: ["site-1"],
     selectedNetworkId: "network-1",
@@ -38,10 +40,10 @@ const testState = vi.hoisted(() => ({
     rxSensitivityTargetDbm: -120,
     environmentLossDb: 0,
     siteDragPreview: {},
-    siteLibrary: [],
+    siteLibrary: [] as Array<Site & { visibility?: "private" | "public" | "shared" }>,
     discoveryLibraryVisible: false,
     discoveryMqttVisible: false,
-    mapDiscoveryMqttNodes: [],
+    mapDiscoveryMqttNodes: [] as MeshmapNode[],
     terrainLoadEpoch: 1,
   },
 }));
@@ -96,7 +98,7 @@ vi.mock("../lib/latestOnlyTaskScheduler", async (importOriginal) => {
   };
 });
 
-import { PanoramaChart } from "./PanoramaChart";
+import { PanoramaChart, panoramaCandidateRfSignature } from "./PanoramaChart";
 
 const panoramaResult = (detail: boolean) => ({
   rays: [
@@ -179,6 +181,24 @@ const renderChart = (wrapper?: "strict", onRender?: ProfilerOnRenderCallback) =>
 describe("PanoramaChart scheduling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.store.sites = [
+      {
+        id: "site-1",
+        name: "Test site",
+        position: { lat: 59.91, lon: 10.75 },
+        groundElevationM: 100,
+        antennaHeightM: 10,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      },
+    ];
+    testState.store.siteDragPreview = {};
+    testState.store.siteLibrary = [];
+    testState.store.discoveryLibraryVisible = false;
+    testState.store.discoveryMqttVisible = false;
+    testState.store.mapDiscoveryMqttNodes = [];
     testState.schedulers.length = 0;
     testState.buildPanorama.mockImplementation((input) =>
       panoramaResult(input.options.windowCenterDeg != null),
@@ -265,6 +285,173 @@ describe("PanoramaChart scheduling", () => {
 
     expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
     expect(renderCount).toBeLessThanOrEqual(8);
+  });
+
+  it("rebuilds cached panoramas when source or candidate antenna settings change", async () => {
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Candidate",
+        position: { lat: 59.92, lon: 10.76 },
+      },
+    ];
+    const view = renderChart();
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
+
+    testState.store.sites = testState.store.sites.map((site) =>
+      site.id === "site-1"
+        ? { ...site, antennaMode: "directional", antennaAzimuthDeg: 90 }
+        : site,
+    );
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(4);
+
+    testState.store.sites = testState.store.sites.map((site) =>
+      site.id === "site-2"
+        ? { ...site, antennaMode: "directional", antennaTiltDeg: 12 }
+        : site,
+    );
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(6);
+  });
+
+  it("uses pending target geometry to resolve tracked source pointing", async () => {
+    testState.store.sites = [
+      {
+        ...testState.store.sites[0],
+        antennaMode: "directional",
+        antennaAzimuthDeg: 0,
+        antennaTiltDeg: 0,
+        antennaTargetSiteId: "site-2",
+      },
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Tracked target",
+        position: { lat: 59.92, lon: 10.75 },
+      },
+    ];
+    testState.store.siteDragPreview = {
+      "site-2": {
+        position: { lat: 59.91, lon: 10.77 },
+        groundElevationM: 100,
+      },
+    };
+
+    renderChart();
+
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    const input = testState.buildPanorama.mock.calls[0][0];
+    expect(input.selectedSite.antennaAzimuthDeg).toBeCloseTo(90, 1);
+    expect(input.nodeCandidates.find((candidate: { id: string }) => candidate.id === "sim:site-2")).toMatchObject({
+      lat: 59.91,
+      lon: 10.77,
+    });
+  });
+
+  it("caps candidates before panorama calculation with simulation and library priority", async () => {
+    const candidatePosition = (distanceKm: number) => ({
+      lat: 59.91 + distanceKm / 111.195,
+      lon: 10.75,
+    });
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Simulation candidate",
+        position: candidatePosition(199),
+      },
+    ];
+    testState.store.siteLibrary = [
+      {
+        ...testState.store.sites[0],
+        id: "library-1",
+        name: "Library candidate",
+        visibility: "shared",
+        position: candidatePosition(199),
+      },
+    ];
+    testState.store.discoveryLibraryVisible = true;
+    testState.store.discoveryMqttVisible = true;
+    testState.store.mapDiscoveryMqttNodes = [
+      ...Array.from({ length: 1_100 }, (_, index) => ({
+        nodeId: String(index).padStart(4, "0"),
+        lat: candidatePosition(index % 2 ? 10 : 20).lat,
+        lon: 10.75,
+      })),
+      { nodeId: "outside", lat: candidatePosition(201).lat, lon: 10.75 },
+    ];
+
+    renderChart();
+
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    const candidates = testState.buildPanorama.mock.calls[0][0].nodeCandidates as Array<{ id: string }>;
+    expect(candidates).toHaveLength(1_000);
+    expect(candidates.slice(0, 2).map((candidate) => candidate.id)).toEqual(["sim:site-2", "lib:library-1"]);
+    expect(candidates.some((candidate) => candidate.id === "mqtt:outside")).toBe(false);
+  });
+
+  it("rebuilds panoramas for successive candidate drag positions", async () => {
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Moving candidate",
+        position: { lat: 59.92, lon: 10.75 },
+      },
+    ];
+    testState.store.siteDragPreview = {
+      "site-2": { position: { lat: 59.92, lon: 10.76 }, groundElevationM: 100 },
+    };
+    const view = renderChart();
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
+
+    testState.store.siteDragPreview = {
+      "site-2": { position: { lat: 59.92, lon: 10.78 }, groundElevationM: 100 },
+    };
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(4);
+    const latestInput = testState.buildPanorama.mock.calls.at(-1)?.[0];
+    expect(latestInput.nodeCandidates.find((candidate: { id: string }) => candidate.id === "sim:site-2")).toMatchObject({
+      lat: 59.92,
+      lon: 10.78,
+    });
+  });
+
+  it("keys candidate RF work by effective geometry and receive settings", () => {
+    const candidate = {
+      id: "sim:site-2",
+      name: "Candidate",
+      lat: 59.92,
+      lon: 10.76,
+      groundElevationM: 100,
+      antennaHeightM: 10,
+      rxGainDbi: 2,
+    };
+    const signature = panoramaCandidateRfSignature(candidate);
+
+    expect(panoramaCandidateRfSignature({ ...candidate, lon: 10.78 })).not.toBe(signature);
+    expect(panoramaCandidateRfSignature({ ...candidate, groundElevationM: 120 })).not.toBe(signature);
+    expect(panoramaCandidateRfSignature({ ...candidate, rxGainDbi: 5 })).not.toBe(signature);
   });
 
   it("recreates disposed schedulers during StrictMode replay and still renders", async () => {

@@ -108,6 +108,7 @@ try {
       id: app.id,
       name: app.name,
       domain: app.domain,
+      aud: app.aud,
       self_hosted_domains: app.self_hosted_domains || [],
       policies,
     });

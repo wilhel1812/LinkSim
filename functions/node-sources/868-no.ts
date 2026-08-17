@@ -1,11 +1,14 @@
-import { getClientAddress, takeRateLimitToken } from "../_lib/rateLimit";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "../_lib/rateLimit";
 import type { Env } from "../_lib/types";
+import {
+  MESHSTELLAR_MAX_EVENTS,
+  MESHSTELLAR_MAX_STREAM_BYTES,
+  MESHSTELLAR_SNAPSHOT_IDLE_MS,
+  MESHSTELLAR_SNAPSHOT_MAX_MS,
+} from "../../src/lib/nodeFeedLimits";
 
 const UPSTREAM_URL = "https://map.868.no/events";
 const CACHE_TTL_SEC = 300;
-const SNAPSHOT_IDLE_MS = 1_000;
-const SNAPSHOT_MAX_MS = 8_000;
-const MAX_STREAM_BYTES = 5 * 1024 * 1024;
 
 type MeshstellarNode = {
   nodeId: string;
@@ -103,38 +106,115 @@ export const readMeshstellarSnapshot = async (body: ReadableStream<Uint8Array>):
   const decoder = new TextDecoder();
   const startedAt = Date.now();
   let lastDataAt = startedAt;
-  let payload = "";
+  const payloadChunks: string[] = [];
+  let pendingPayloadParts: string[] = [];
+  let pendingPayloadLength = 0;
   let bytesRead = 0;
-  try {
-    while (Date.now() - startedAt < SNAPSHOT_MAX_MS) {
-      const waitMs = payload.includes("event: update-node")
-        ? Math.max(1, SNAPSHOT_IDLE_MS - (Date.now() - lastDataAt))
-        : Math.max(1, SNAPSHOT_MAX_MS - (Date.now() - startedAt));
-      const outcome = await Promise.race([
+  let eventsRead = 0;
+  let eventHasContent = false;
+  let lineHasContent = false;
+  let pendingCr = false;
+  let sawUpdateNode = false;
+  let updateMarkerTail = "";
+  const updateMarker = "event: update-node";
+
+  const appendPayload = (text: string) => {
+    if (!text) return;
+    pendingPayloadParts.push(text);
+    pendingPayloadLength += text.length;
+    if (pendingPayloadLength >= 64 * 1024) {
+      payloadChunks.push(pendingPayloadParts.join(""));
+      pendingPayloadParts = [];
+      pendingPayloadLength = 0;
+    }
+  };
+  const countCompletedEvent = () => {
+    if (eventHasContent) {
+      eventsRead += 1;
+      if (eventsRead > MESHSTELLAR_MAX_EVENTS) throw new Error("Meshstellar snapshot exceeded the event limit");
+      eventHasContent = false;
+    }
+  };
+  const scanNewline = () => {
+    if (!lineHasContent) countCompletedEvent();
+    lineHasContent = false;
+  };
+  const scanFraming = (text: string) => {
+    if (!sawUpdateNode) {
+      const searchable = updateMarkerTail + text;
+      sawUpdateNode = searchable.includes(updateMarker);
+      updateMarkerTail = searchable.slice(-(updateMarker.length - 1));
+    }
+    for (const char of text) {
+      if (pendingCr) {
+        pendingCr = false;
+        scanNewline();
+        if (char === "\n") continue;
+      }
+      if (char === "\r") {
+        pendingCr = true;
+      } else if (char === "\n") {
+        scanNewline();
+      } else {
+        lineHasContent = true;
+        eventHasContent = true;
+      }
+    }
+  };
+  const finishFraming = () => {
+    if (pendingCr) {
+      pendingCr = false;
+      scanNewline();
+    }
+    countCompletedEvent();
+  };
+  const readWithTimeout = async (waitMs: number) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
         reader.read().then((result) => ({ type: "read" as const, result })),
-        new Promise<{ type: "timeout" }>((resolve) => setTimeout(() => resolve({ type: "timeout" }), waitMs)),
+        new Promise<{ type: "timeout" }>((resolve) => {
+          timer = setTimeout(() => resolve({ type: "timeout" }), waitMs);
+        }),
       ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+
+  try {
+    while (true) {
+      const now = Date.now();
+      const absoluteRemainingMs = MESHSTELLAR_SNAPSHOT_MAX_MS - (now - startedAt);
+      if (absoluteRemainingMs <= 0) break;
+      const idleRemainingMs = sawUpdateNode
+        ? MESHSTELLAR_SNAPSHOT_IDLE_MS - (now - lastDataAt)
+        : absoluteRemainingMs;
+      if (idleRemainingMs <= 0) break;
+      const outcome = await readWithTimeout(Math.min(absoluteRemainingMs, idleRemainingMs));
       if (outcome.type === "timeout") break;
       if (outcome.result.done) {
-        payload += decoder.decode();
+        const finalText = decoder.decode();
+        appendPayload(finalText);
+        scanFraming(finalText);
         break;
       }
       bytesRead += outcome.result.value.byteLength;
-      if (bytesRead > MAX_STREAM_BYTES) throw new Error("Meshstellar snapshot exceeded the size limit");
-      payload += decoder.decode(outcome.result.value, { stream: true });
+      if (bytesRead > MESHSTELLAR_MAX_STREAM_BYTES) throw new Error("Meshstellar snapshot exceeded the size limit");
+      const text = decoder.decode(outcome.result.value, { stream: true });
+      appendPayload(text);
+      scanFraming(text);
       lastDataAt = Date.now();
     }
   } finally {
     await reader.cancel().catch(() => undefined);
   }
+  finishFraming();
+  if (pendingPayloadParts.length) payloadChunks.push(pendingPayloadParts.join(""));
+  const payload = payloadChunks.join("");
   const nodes = parseMeshstellarSnapshot(payload);
   if (!nodes.length) throw new Error("Meshstellar returned no positioned nodes");
   return nodes;
-};
-
-const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
-  const parsed = Number(raw ?? "");
-  return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : fallback;
 };
 
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
@@ -149,7 +229,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 
   const limiter = takeRateLimitToken({
     key: `node-source:868-no:${getClientAddress(request)}`,
-    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 30),
+    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 30, 1),
   });
   if (!limiter.allowed) {
     return new Response("Rate limit reached", {

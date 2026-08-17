@@ -41,6 +41,8 @@ describe("api/deep-link-status", () => {
     verifyAuthMock.mockResolvedValueOnce(null);
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?sim=sim-1")));
     expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull();
     await expect(res.json()).resolves.toEqual({
       status: "ok",
       simulationId: "sim-1",
@@ -67,6 +69,22 @@ describe("api/deep-link-status", () => {
       isModerator: false,
       accountState: "revoked",
     });
+
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status")));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      status: "missing",
+      authenticated: false,
+      authState: "revoked",
+    });
+  });
+
+  it.each([
+    "Identity subject is no longer current",
+    "Identity is blocked by an administrator",
+  ])("reports lifecycle rejection as a revoked auth state: %s", async (message) => {
+    ensureUserMock.mockRejectedValueOnce(new Error(message));
 
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status")));
 

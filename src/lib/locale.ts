@@ -130,6 +130,25 @@ export function formatNumber(num: number): string {
   }
 }
 
+/** Compact, predictable notation for large logical grid-point counts. */
+export function formatCompactCount(value: number): string {
+  const count = Math.max(0, Math.round(value));
+  if (count < 1_000) return String(count);
+  const units = [
+    { divisor: 1_000_000_000, suffix: "G" },
+    { divisor: 1_000_000, suffix: "M" },
+    { divisor: 1_000, suffix: "k" },
+  ] as const;
+  const unit = units.find(({ divisor }) => count >= divisor)!;
+  const scaled = count / unit.divisor;
+  const maximumFractionDigits = scaled >= 10 ? 1 : 2;
+  return `${new Intl.NumberFormat("en-US", {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+    useGrouping: false,
+  }).format(scaled)}${unit.suffix}`;
+}
+
 /**
  * Format a date for display in UI (shorter format)
  */

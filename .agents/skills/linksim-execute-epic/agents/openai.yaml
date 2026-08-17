@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Execute Epic"
+  short_description: "Execute one approved epic phase safely"
+  default_prompt: "Use $linksim-execute-epic to execute this explicitly approved LinkSim epic phase."
