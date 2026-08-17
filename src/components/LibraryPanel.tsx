@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Filter, Info, MapPlus, Menu, Pencil, X } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
+  canDeleteLibraryItem,
   filterAndSortLibraryItems,
   type LibraryFilterRole,
   type LibraryFilterSource,
@@ -10,6 +11,7 @@ import {
 } from "../lib/libraryFilters";
 import { persistLibraryFilterState, readLibraryFilterState } from "../lib/libraryFilterUi";
 import { formatDate } from "../lib/locale";
+import { getUiErrorMessage } from "../lib/uiError";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { useAppStore, type LibraryTab } from "../store/appStore";
 import { ActionButton } from "./ActionButton";
@@ -65,6 +67,7 @@ const canEditResource = (
 ) =>
   Boolean(
     currentUserId &&
+      resource.effectiveRole !== "viewer" &&
       (resource.ownerUserId === currentUserId ||
         resource.effectiveRole === "owner" ||
         resource.effectiveRole === "admin" ||
@@ -108,6 +111,8 @@ export function LibraryPanel({
   const [mobileDetailOpen, setMobileDetailOpen] = useState(true);
   const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set());
   const [deleteSelection, setDeleteSelection] = useState<string[] | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const filterTriggerRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionsRef = useRef<Record<LibraryTab, number>>({ sites: 0, simulations: 0 });
@@ -546,7 +551,7 @@ export function LibraryPanel({
                 <ActionButton
                   disabled={Array.from(selectedSiteIds).some((id) => {
                     const entry = siteLibrary.find((candidate) => candidate.id === id);
-                    return !entry || !canEditResource(entry, currentUserId);
+                    return !entry || !canDeleteLibraryItem(entry, currentUser);
                   })}
                   onClick={() => setDeleteSelection(Array.from(selectedSiteIds))}
                   type="button"
@@ -726,12 +731,26 @@ export function LibraryPanel({
 
       {deleteSelection ? (
         <ConfirmActionModal
+          busy={deleteBusy}
+          error={deleteError}
           message={`Delete ${deleteSelection.length} selected Site${deleteSelection.length === 1 ? "" : "s"} from the Library? Referenced Simulation data will be detached but preserved.`}
-          onCancel={() => setDeleteSelection(null)}
+          onCancel={() => {
+            if (!deleteBusy) {
+              setDeleteError("");
+              setDeleteSelection(null);
+            }
+          }}
           onConfirm={() => {
-            deleteSiteLibraryEntries(deleteSelection);
-            setSelectedSiteIds(new Set());
-            setDeleteSelection(null);
+            if (deleteBusy) return;
+            setDeleteBusy(true);
+            setDeleteError("");
+            void deleteSiteLibraryEntries(deleteSelection)
+              .then(() => {
+                setSelectedSiteIds(new Set());
+                setDeleteSelection(null);
+              })
+              .catch((error) => setDeleteError(`Delete failed: ${getUiErrorMessage(error)}`))
+              .finally(() => setDeleteBusy(false));
           }}
           title="Delete Sites"
         />

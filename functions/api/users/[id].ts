@@ -10,6 +10,7 @@ import {
   deleteUser,
   ensureUser,
   fetchUserProfile,
+  resolveEffectiveCanonicalUserId,
   setUserRole,
   setUserApproval,
   updateUserProfile,
@@ -29,12 +30,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const me = await fetchUserProfile(env, auth.userId);
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
 
-    const targetId = typeof params.id === "string" ? params.id : "";
-    if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const requestedTargetId = typeof params.id === "string" ? params.id : "";
+    if (!requestedTargetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const targetId = await resolveEffectiveCanonicalUserId(env, requestedTargetId);
     const user = await fetchUserProfile(env, targetId);
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
 
-    if (!me.isAdmin && !("isModerator" in me && Boolean((me as { isModerator?: boolean }).isModerator)) && me.id !== targetId) {
+    if (!me.isAdmin && me.id !== targetId) {
       const canSeeEmail = user.emailPublic;
       return withCors(
         request,
@@ -78,8 +80,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
     }
 
-    const targetId = typeof params.id === "string" ? params.id : "";
-    if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const requestedTargetId = typeof params.id === "string" ? params.id : "";
+    if (!requestedTargetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const targetId = await resolveEffectiveCanonicalUserId(env, requestedTargetId);
 
     const body = (await request.json()) as {
       username?: unknown;
@@ -161,8 +164,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     if (!me.isAdmin) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
-    const targetId = typeof params.id === "string" ? params.id : "";
-    if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const requestedTargetId = typeof params.id === "string" ? params.id : "";
+    if (!requestedTargetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    const targetId = await resolveEffectiveCanonicalUserId(env, requestedTargetId);
     if (!canDeleteUserAccount(me, targetId)) {
       return withCors(request, json({ error: "Admin cannot delete own account." }, { status: 400 }));
     }

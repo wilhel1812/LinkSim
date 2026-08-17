@@ -1,6 +1,7 @@
 import { fromArrayBuffer } from "geotiff";
 import type { SrtmTile } from "../types/radio";
 import { copernicus30PathForTileKey } from "./copernicusTilePath";
+import { boundedUniqueTerrainTileKeys } from "./terrainTiles";
 
 export { copernicus30PathForTileKey } from "./copernicusTilePath";
 
@@ -407,7 +408,8 @@ export const loadCopernicus30TilesByKeys = async (
     onTileProgress?: (progress: CopernicusTileProgress) => void;
   } = {},
 ): Promise<CopernicusLoadResult> => {
-  const keys = Array.from(new Set(tileKeys));
+  throwIfAborted(options.signal);
+  const keys = boundedUniqueTerrainTileKeys(tileKeys);
   if (keys.length <= 0) {
     return { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], seaLevelTiles: [] };
   }

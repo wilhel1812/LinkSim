@@ -13,7 +13,7 @@ services:
       target: development
     command: npm run dev -- --host 0.0.0.0 --port 5173
     ports:
-      - "5173:5173"
+      - "${LINKSIM_DOCKER_BIND_ADDRESS:-127.0.0.1}:5173:5173"
     volumes:
       - .:/app
       - /app/node_modules
@@ -22,9 +22,9 @@ services:
     build:
       context: .
       target: development
-    command: sh -lc "npm run build:client && npx wrangler pages dev dist --ip 0.0.0.0 --port 8788 --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state"
+    command: sh -lc "npm run build:client && npx wrangler pages dev dist --ip 0.0.0.0 --port 8788 --d1 DB=d669aac0-37ea-4c68-9b27-ece888e1966a --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state"
     ports:
-      - "8788:8788"
+      - "${LINKSIM_DOCKER_BIND_ADDRESS:-127.0.0.1}:8788:8788"
     volumes:
       - .:/app
       - /app/node_modules

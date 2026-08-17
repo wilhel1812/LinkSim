@@ -1,11 +1,13 @@
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import { listStatsPathLeaderboardEntries } from "../_lib/pathLeaderboard";
 import type { DbVisibility, Env } from "../_lib/types";
+import { thumbnailAvatarUrl } from "../../src/lib/avatarLimits";
 
 type UserRow = {
   id: string;
   username: string | null;
   avatar_url: string | null;
+  avatar_thumb_key: string | null;
   created_at: string;
 };
 
@@ -353,7 +355,7 @@ export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handl
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const [usersResult, sitesResult, simulationsResult, longestPassingPaths] = await Promise.all([
-      env.DB.prepare("SELECT id, username, avatar_url, created_at FROM users").all<UserRow>(),
+      env.DB.prepare("SELECT id, username, avatar_url, avatar_thumb_key, created_at FROM users").all<UserRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, visibility, payload_json FROM sites").all<ResourceRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, name, visibility, payload_json FROM simulations WHERE status = 'active'").all<ResourceRow>(),
       listStatsPathLeaderboardEntries(env),
@@ -371,7 +373,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const current = contributorCounts.get(userId) ?? {
         userId,
         username: user.username?.trim() || "Unknown user",
-        avatarUrl: user.avatar_url ?? "",
+        avatarUrl: thumbnailAvatarUrl(user.avatar_url, user.avatar_thumb_key),
         contributions: 0,
       };
       current.contributions += 1;
@@ -465,7 +467,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .map((user) => ({
         userId: user.id,
         username: user.username?.trim() || "Unknown user",
-        avatarUrl: user.avatar_url ?? "",
+        avatarUrl: thumbnailAvatarUrl(user.avatar_url, user.avatar_thumb_key),
         createdAt: user.created_at,
       }));
 

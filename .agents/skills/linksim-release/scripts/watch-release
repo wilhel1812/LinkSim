@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Wait for one LinkSim release workflow and emit one compact JSON result."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import time
+from typing import Any
+
+
+def read_run(run_id: int, repository: str) -> dict[str, Any]:
+    process = subprocess.run(
+        [
+            "gh",
+            "run",
+            "view",
+            str(run_id),
+            "--repo",
+            repository,
+            "--json",
+            "status,conclusion,headSha,url,workflowName,event",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        raise RuntimeError(process.stderr.strip() or "gh run view failed")
+    data = json.loads(process.stdout or "{}")
+    if not isinstance(data, dict):
+        raise ValueError("gh run view returned non-object JSON")
+    return data
+
+
+def result_payload(
+    result: str,
+    run_id: int,
+    repository: str,
+    run: dict[str, Any],
+    started: float,
+    *,
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "result": result,
+        "repository": repository,
+        "run_id": run_id,
+        "elapsed_seconds": int(time.monotonic() - started),
+        "workflow": run.get("workflowName", ""),
+        "event": run.get("event", ""),
+        "status": run.get("status", ""),
+        "conclusion": run.get("conclusion", ""),
+        "head_sha": run.get("headSha", ""),
+        "url": run.get("url", ""),
+        **({"error": error[:500]} if error else {}),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("run_id", type=int)
+    parser.add_argument("--repo", default="wilhel1812/LinkSim")
+    parser.add_argument("--expected-sha", default="")
+    parser.add_argument("--interval", type=int, default=15)
+    parser.add_argument("--timeout", type=int, default=1800)
+    args = parser.parse_args()
+
+    if args.interval < 1 or args.timeout < 1:
+        parser.error("interval and timeout must be positive")
+
+    started = time.monotonic()
+    run: dict[str, Any] = {}
+    while True:
+        try:
+            run = read_run(args.run_id, args.repo)
+        except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+            payload = result_payload(
+                "error",
+                args.run_id,
+                args.repo,
+                run,
+                started,
+                error=str(error),
+            )
+            print(json.dumps(payload, separators=(",", ":")))
+            return 2
+
+        head_sha = str(run.get("headSha", ""))
+        if args.expected_sha and head_sha != args.expected_sha:
+            payload = result_payload(
+                "error",
+                args.run_id,
+                args.repo,
+                run,
+                started,
+                error="workflow head SHA does not match expected release commit",
+            )
+            print(json.dumps(payload, separators=(",", ":")))
+            return 2
+
+        if str(run.get("status")) == "completed":
+            result = "pass" if str(run.get("conclusion")) == "success" else "fail"
+            payload = result_payload(
+                result, args.run_id, args.repo, run, started
+            )
+            print(json.dumps(payload, separators=(",", ":")))
+            return 0 if result == "pass" else 1
+
+        if time.monotonic() - started >= args.timeout:
+            payload = result_payload(
+                "timeout", args.run_id, args.repo, run, started
+            )
+            print(json.dumps(payload, separators=(",", ":")))
+            return 2
+        time.sleep(args.interval)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

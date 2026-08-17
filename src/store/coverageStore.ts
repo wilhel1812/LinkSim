@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import {
-  buildCoverageAsync,
+  computeCalibratedOverlayGridDimensions,
   computeCoverageGridDimensions,
-  CoverageBuildCancelledError,
-  CoverageTerrainUnavailableError,
+  resolveCanonicalOverlayResolutionScale,
+  type CalibratedOverlayGridMode,
 } from "../lib/coverage";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { normalizeCoverageResolution } from "../lib/coverageResolution";
+import { resolveSimulationSitesForSelection, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
   deriveDynamicPropagationEnvironment,
 } from "../lib/propagationEnvironment";
@@ -15,12 +16,12 @@ import {
   resolveTargetOverlayRadiusKm,
 } from "../lib/simulationOverlayRadius";
 import {
-  recordSimulationCoveragePerf,
   recordSimulationRunCancelled,
 } from "../lib/simulationPerf";
+import { antennaPatternSignature } from "../lib/antennaPattern";
 import { sampleSrtmElevation } from "../lib/srtm";
-import type { Site, SrtmTile } from "../types/radio";
-import type { CoverageSample } from "../types/radio";
+import { getUiErrorMessage } from "../lib/uiError";
+import type { CoverageSample, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 
 const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
 const COVERAGE_MIN_VISIBLE_MS = 600;
@@ -108,14 +109,6 @@ export const resolveAutomaticCalculationThresholds = (
   };
 };
 
-type NetworkLike = {
-  id: string;
-  frequencyMHz?: number;
-  frequencyOverrideMHz?: number;
-  memberships?: Array<{ siteId: string; systemId: string }>;
-  [key: string]: unknown;
-};
-
 type LinkLike = {
   id: string;
   fromSiteId: string;
@@ -126,10 +119,10 @@ type LinkLike = {
 type CoverageInputs = {
   selectedCoverageResolution: "24" | "42" | "84" | "168";
   effectiveCoverageResolution: "24" | "42" | "84" | "168";
-  networks: NetworkLike[];
+  networks: Network[];
   selectedNetworkId: string;
   sites: Site[];
-  systems: unknown[];
+  systems: RadioSystem[];
   propagationModel: string;
   srtmTiles: SrtmTile[];
   links: LinkLike[];
@@ -141,13 +134,18 @@ type CoverageInputs = {
   selectedSiteIds: string[];
   isTerrainFetching: boolean;
   selectedOverlayRadiusOptionRaw: unknown;
+  mapOverlayMode: string;
 };
 
-const normalizeCoverageResolution = (raw: unknown): "24" | "42" | "84" | "168" => {
-  if (raw === "24" || raw === "42" || raw === "84" || raw === "168") return raw;
-  if (raw === "high") return "42";
-  return "24";
-};
+const normalizeCalibratedOverlayGridMode = (raw: string): CalibratedOverlayGridMode =>
+  raw === "heatmap" ||
+  raw === "weakest" ||
+  raw === "contours" ||
+  raw === "passfail" ||
+  raw === "relay" ||
+  raw === "mesh-extension"
+    ? raw
+    : "passfail";
 
 const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs => {
   const selectedCoverageResolution = normalizeCoverageResolution(appState.selectedCoverageResolution);
@@ -156,10 +154,10 @@ const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs =
   return {
     selectedCoverageResolution,
     effectiveCoverageResolution,
-    networks: (appState.networks as NetworkLike[]) ?? [],
+    networks: (appState.networks as Network[]) ?? [],
     selectedNetworkId: (appState.selectedNetworkId as string) ?? "",
     sites: (appState.sites as Site[]) ?? [],
-    systems: (appState.systems as unknown[]) ?? [],
+    systems: (appState.systems as RadioSystem[]) ?? [],
     propagationModel: (appState.propagationModel as string) ?? "",
     srtmTiles: (appState.srtmTiles as SrtmTile[]) ?? [],
     links: (appState.links as LinkLike[]) ?? [],
@@ -171,6 +169,7 @@ const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs =
     selectedSiteIds: ((appState.selectedSiteIds as string[]) ?? []).filter((id) => typeof id === "string"),
     isTerrainFetching,
     selectedOverlayRadiusOptionRaw: appState.selectedOverlayRadiusOption,
+    mapOverlayMode: String(appState.mapOverlayMode ?? "heatmap"),
   };
 };
 
@@ -185,11 +184,12 @@ const siteSignature = (site: Site): string =>
     site.txGainDbi,
     site.rxGainDbi,
     site.cableLossDb,
+    antennaPatternSignature(site),
   ].join(":");
 
 const linkSignature = (link: LinkLike): string => [link.id, link.fromSiteId, link.toSiteId].join(":");
 
-const networkSignature = (network: NetworkLike): string => {
+const networkSignature = (network: Network): string => {
   const memberships = (network.memberships ?? [])
     .map((member) => `${member.siteId}>${member.systemId}`)
     .sort()
@@ -234,6 +234,7 @@ const coverageInputSignature = (inputs: CoverageInputs): string => {
     `selectedSites=${inputs.selectedSiteIds.join(",")}`,
     `terrainFetching=${inputs.isTerrainFetching ? 1 : 0}`,
     `overlayRadius=${String(inputs.selectedOverlayRadiusOptionRaw ?? "")}`,
+    `overlayMode=${inputs.mapOverlayMode}`,
   ].join("|");
 };
 
@@ -263,6 +264,25 @@ const initializeRunState = (set: (patch: Partial<CoverageState>) => void, runId:
   });
 };
 
+const failQueuedCoverageRun = (message: string): void => {
+  coverageRerunQueued = false;
+  coverageRunInFlight = false;
+  useCoverageStore.setState({
+    coverageSamples: [],
+    isSimulationRecomputing: false,
+    simulationProgress: 0,
+    simulationProgressMode: "indeterminate",
+    simulationStepLabel: "",
+    simulationSamplesDone: 0,
+    simulationSamplesTotal: 0,
+    simulationRunToken: "",
+    completedCoverageRunToken: "",
+    calculationCycleSource: null,
+    simulationErrorMessage: message,
+  });
+  appStoreBridge?.setState({ terrainFetchStatus: message });
+};
+
 const queueCoverageRunFlush = (delay = COVERAGE_RECOMPUTE_DEBOUNCE_MS): void => {
   if (coverageRecomputeTimer !== null) {
     window.clearTimeout(coverageRecomputeTimer);
@@ -270,20 +290,10 @@ const queueCoverageRunFlush = (delay = COVERAGE_RECOMPUTE_DEBOUNCE_MS): void => 
   }
   coverageRecomputeTimer = window.setTimeout(() => {
     coverageRecomputeTimer = null;
-    void flushCoverageRunQueue();
+    void flushCoverageRunQueue().catch((error) => {
+      failQueuedCoverageRun(getUiErrorMessage(error));
+    });
   }, Math.max(0, delay));
-};
-
-const shouldSkipStaleCommit = (runSignature: string): boolean => {
-  if (!appStoreBridge) return false;
-  const latestState = appStoreBridge.getState();
-  const latestInputs = readCoverageInputs(latestState);
-  const latestSignature = coverageInputSignature(latestInputs);
-  if (latestSignature === runSignature) {
-    coverageRerunQueued = false;
-    return false;
-  }
-  return true;
 };
 
 const finalizeRunComplete = (
@@ -318,7 +328,6 @@ const runCoverageComputation = async (
   inputs: CoverageInputs,
 ): Promise<void> => {
   const startedAt = nowMs();
-  let coverageSamples: CoverageSample[] = [];
   let loggedCancellation = false;
 
   const markCancelled = (reason: string): void => {
@@ -370,7 +379,6 @@ const runCoverageComputation = async (
         : null;
     warnLongTask("auto-propagation-environment", runSignature, nowMs() - autoEnvironmentStartedAt);
 
-    const effectiveEnvironment = autoDerived?.environment ?? inputs.propagationEnvironment;
     if (autoDerived) {
       if (
         inputs.propagationEnvironmentReason !== autoDerived.reason ||
@@ -396,117 +404,33 @@ const runCoverageComputation = async (
     const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
     const effectiveOverlayRadiusKm = targetRadiusKm;
 
-    const boundsForCount = simulationAreaBoundsForSites(inputs.sites, { overlayRadiusKm: effectiveOverlayRadiusKm });
+    const countSites = resolveSimulationSitesForSelection(inputs.sites, inputs.selectedSiteIds);
+    const boundsForCount = simulationAreaBoundsForSites(countSites, { overlayRadiusKm: effectiveOverlayRadiusKm });
+    const calibratedMode = normalizeCalibratedOverlayGridMode(inputs.mapOverlayMode);
     const sampleCount = boundsForCount
-      ? computeCoverageGridDimensions(gridSize, boundsForCount, 1).totalSamples
+      ? calibratedMode === "mesh-extension"
+        ? computeCoverageGridDimensions(gridSize, boundsForCount).totalSamples
+        : computeCalibratedOverlayGridDimensions(
+            gridSize,
+            boundsForCount,
+            calibratedMode,
+            resolveCanonicalOverlayResolutionScale(boundsForCount),
+          ).totalSamples
       : 0;
     set({
       simulationProgress: 0,
-      simulationProgressMode: "determinate",
-      simulationStepLabel: "Sampling simulation grid...",
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "Preparing Simulation overlay...",
       simulationSamplesDone: 0,
       simulationSamplesTotal: sampleCount,
     });
-
-    let lastProgress = 0;
-    const buildCoverageStartedAt = nowMs();
-    coverageSamples = await buildCoverageAsync(
-      gridSize,
-      network as Parameters<typeof buildCoverageAsync>[1],
-      inputs.sites as Parameters<typeof buildCoverageAsync>[2],
-      inputs.systems as Parameters<typeof buildCoverageAsync>[3],
-      effectiveEnvironment as Parameters<typeof buildCoverageAsync>[4],
-      ({ lat, lon }: { lat: number; lon: number }) => sampleSrtmElevation(inputs.srtmTiles, lat, lon),
-      {
-        sampleMultiplier: 1,
-        terrainSamples: 20,
-        overlayRadiusKm: effectiveOverlayRadiusKm,
-        onProgress: (progress: number) => {
-          if (get().simulationRunToken !== runId) return;
-          const next = Math.round(progress * 100);
-          if (next - lastProgress >= 2 || next >= 99) {
-            lastProgress = next;
-            set({ simulationProgress: next });
-          }
-        },
-        shouldCancel: () => get().simulationRunToken !== runId,
-        requireCompleteTerrain: true,
-        terrainCacheKey: `${inputs.effectiveCoverageResolution}|${inputs.selectedNetworkId}|${inputs.propagationModel}|${inputs.terrainLoadEpoch}`,
-      },
-    );
-    const coverageComputeMs = nowMs() - buildCoverageStartedAt;
-    warnLongTask("coverage-build", runSignature, coverageComputeMs);
-
     if (get().simulationRunToken !== runId) {
-      markCancelled("token-mismatch-after-coverage-build");
+      markCancelled("token-mismatch-before-mode-finalize");
       return;
     }
-
-    if (shouldSkipStaleCommit(runSignature)) {
-      const hasQueuedRerun = coverageRerunQueued;
-      set({
-        isSimulationRecomputing: hasQueuedRerun,
-        simulationProgress: 0,
-        simulationProgressMode: "indeterminate",
-        simulationStepLabel: hasQueuedRerun ? "Preparing simulation bounds..." : "",
-        simulationSamplesDone: 0,
-        simulationSamplesTotal: 0,
-        simulationRunToken: hasQueuedRerun ? runId : "",
-      });
-      markCancelled("stale-signature-superseded");
-      return;
-    }
-
-    recordSimulationCoveragePerf({
-      runId,
-      signature: runSignature,
-      durationMs: coverageComputeMs,
-      sampleCount,
-      gridSize,
-      effectiveRadiusKm: effectiveOverlayRadiusKm,
-    });
-
-    set({
-      simulationProgressMode: "indeterminate",
-      simulationStepLabel: "Finalizing simulation overlay...",
-    });
-
-    const waitMs = Math.max(0, COVERAGE_MIN_VISIBLE_MS - (nowMs() - startedAt));
-    if (waitMs > 0) await delayMs(waitMs);
-    if (get().simulationRunToken !== runId) {
-      markCancelled("token-mismatch-before-finalize");
-      return;
-    }
-
-    finalizeRunComplete(set, get, runId, coverageSamples);
+    finalizeRunComplete(set, get, runId, []);
     lastAppliedCoverageSignature = runSignature;
-    warnLongTask("coverage-total-run", runSignature, nowMs() - startedAt);
   } catch (error) {
-    if (error instanceof CoverageBuildCancelledError) {
-      markCancelled("coverage-build-cancelled");
-      return;
-    }
-    if (error instanceof CoverageTerrainUnavailableError) {
-      const message =
-        "Simulation could not be completed because required terrain samples are unavailable.";
-      if (get().simulationRunToken === runId) {
-        set({
-          coverageSamples: [],
-          isSimulationRecomputing: false,
-          simulationProgress: 0,
-          simulationProgressMode: "indeterminate",
-          simulationStepLabel: "",
-          simulationSamplesDone: 0,
-          simulationSamplesTotal: 0,
-          simulationRunToken: "",
-          completedCoverageRunToken: "",
-          calculationCycleSource: null,
-          simulationErrorMessage: message,
-        });
-        appStoreBridge?.setState({ terrainFetchStatus: message });
-      }
-      return;
-    }
     console.error("Coverage recompute failed", error);
     if (get().simulationRunToken === runId) {
       set({
@@ -547,10 +471,7 @@ const flushCoverageRunQueue = async (): Promise<void> => {
     return;
   }
   const selectionCount = inputs.selectedSiteIds.length;
-  const selectedTerrainSites =
-    selectionCount === 1
-      ? inputs.sites.filter((site) => site.id === inputs.selectedSiteIds[0])
-      : inputs.sites;
+  const selectedTerrainSites = resolveSimulationSitesForSelection(inputs.sites, inputs.selectedSiteIds);
   const selectedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(
     selectionCount,
     inputs.selectedOverlayRadiusOptionRaw,
@@ -562,22 +483,8 @@ const flushCoverageRunQueue = async (): Promise<void> => {
     inputs.srtmTiles,
   );
   if (missingTerrainTileKeys.length > 0) {
-    coverageRerunQueued = false;
     const message = `The ${targetRadiusKm} km Simulation could not be completed because ${missingTerrainTileKeys.length} required GLO-30 terrain tile${missingTerrainTileKeys.length === 1 ? " is" : "s are"} unavailable.`;
-    useCoverageStore.setState({
-      coverageSamples: [],
-      isSimulationRecomputing: false,
-      simulationProgress: 0,
-      simulationProgressMode: "indeterminate",
-      simulationStepLabel: "",
-      simulationSamplesDone: 0,
-      simulationSamplesTotal: 0,
-      simulationRunToken: "",
-      completedCoverageRunToken: "",
-      calculationCycleSource: null,
-      simulationErrorMessage: message,
-    });
-    appStoreBridge.setState({ terrainFetchStatus: message });
+    failQueuedCoverageRun(message);
     return;
   }
   const runSignature = coverageInputSignature(inputs);

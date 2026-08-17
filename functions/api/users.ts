@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     if (!canListUsers(me)) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
-    const users = await listUsers(env);
+    const users = await listUsers(env, me.isAdmin);
     return withCors(request, json({ users }));
   } catch (error) {
     return errorResponse(request, error, 500);

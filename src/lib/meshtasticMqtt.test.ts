@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   formatPositionPrecision,
   getPositionPrecisionBounds,
   mergeMeshmapNodes,
   parseMeshmapLikeFeed,
+  fetchMeshmapNodes,
 } from "./meshtasticMqtt";
 
 describe("node feed normalization", () => {
@@ -109,5 +110,65 @@ describe("node feed normalization", () => {
       expect.objectContaining({ nodeId: "!abc123", longName: "Newer" }),
       expect.objectContaining({ nodeId: "!other" }),
     ]);
+  });
+
+  it("caps normalized sources at 20,000 and combined deduped nodes at 25,000", () => {
+    const source = Array.from({ length: 20_001 }, (_, index) => ({ nodeId: `!${String(index).padStart(5, "0")}`, lat: 60, lon: 10 }));
+    expect(parseMeshmapLikeFeed(source)).toHaveLength(20_000);
+    const left = source.slice(0, 20_000) as ReturnType<typeof parseMeshmapLikeFeed>;
+    const right = Array.from({ length: 20_000 }, (_, index) => ({ nodeId: `!r${String(index).padStart(5, "0")}`, lat: 61, lon: 11 }));
+    expect(mergeMeshmapNodes([left, right])).toHaveLength(25_000);
+  });
+
+  it("rejects oversized custom feeds and falls back only to a bounded cache", async () => {
+    const cache = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => cache.get(key) ?? null,
+      setItem: (key: string, value: string) => cache.set(key, value),
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      fetchMock.mockResolvedValueOnce(new Response("[]", { headers: { "content-length": String(5 * 1024 * 1024 + 1) } }));
+      await expect(fetchMeshmapNodes({ sourceUrl: "/declared-oversize" })).rejects.toThrow("size limit");
+
+      const chunkedOversize = () => new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(5 * 1024 * 1024));
+          controller.enqueue(new Uint8Array(1));
+        },
+      });
+      fetchMock.mockResolvedValueOnce(new Response(chunkedOversize()));
+      await expect(fetchMeshmapNodes({ sourceUrl: "/chunked-oversize" })).rejects.toThrow("size limit");
+
+      const tooMany = Array.from({ length: 20_001 }, (_, index) => ({ nodeId: `!${index}`, lat: 60, lon: 10 }));
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(tooMany)));
+      await expect(fetchMeshmapNodes({ sourceUrl: "/record-oversize" })).rejects.toThrow("record limit");
+
+      const exact = Array.from({ length: 20_000 }, (_, index) => ({ nodeId: `!cache${String(index).padStart(5, "0")}`, lat: 60, lon: 10 }));
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(exact)));
+      const fresh = await fetchMeshmapNodes({ sourceUrl: "/bounded-source" });
+      expect(fresh.nodes).toHaveLength(20_000);
+      expect(JSON.parse(cache.get("rmw-node-source-cache-v1:/bounded-source")!).nodes).toHaveLength(20_000);
+
+      fetchMock.mockResolvedValueOnce(new Response("[]", { headers: { "content-length": String(5 * 1024 * 1024 + 1) } }));
+      const fallback = await fetchMeshmapNodes({ sourceUrl: "/bounded-source" });
+      expect(fallback).toMatchObject({ fromCache: true, networkError: true });
+      expect(fallback.nodes).toHaveLength(20_000);
+
+      fetchMock.mockResolvedValueOnce(new Response(chunkedOversize()));
+      expect(await fetchMeshmapNodes({ sourceUrl: "/bounded-source" })).toMatchObject({
+        fromCache: true,
+        networkError: true,
+      });
+
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(tooMany)));
+      expect(await fetchMeshmapNodes({ sourceUrl: "/bounded-source" })).toMatchObject({
+        fromCache: true,
+        networkError: true,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -21,6 +21,17 @@ let callsSinceSweep = 0;
 
 const DEFAULT_WINDOW_MS = 60_000;
 
+export const parsePerMinuteLimit = (
+  raw: string | undefined,
+  fallback: number,
+  blankFallback = fallback,
+): number => {
+  if (raw === undefined || raw.trim() === "") return Math.max(1, Math.floor(blankFallback));
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.floor(parsed));
+};
+
 const sweepExpiredBuckets = (nowMs: number) => {
   for (const [key, bucket] of buckets.entries()) {
     if (bucket.windowStartMs + DEFAULT_WINDOW_MS * 4 < nowMs) buckets.delete(key);
@@ -32,11 +43,11 @@ const toSafeLimit = (value: number): number => {
   return Math.max(1, Math.floor(value));
 };
 
+// Pages callers may trust CF-Connecting-IP because Cloudflare establishes it.
+// Generic forwarding headers remain caller-controlled and are never identities.
 export const getClientAddress = (request: Request): string => {
   const cfIp = (request.headers.get("cf-connecting-ip") ?? "").trim();
   if (cfIp) return cfIp;
-  const forwarded = (request.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim();
-  if (forwarded) return forwarded;
   return "unknown";
 };
 

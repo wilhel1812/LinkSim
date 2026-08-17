@@ -128,6 +128,20 @@ describe("SettingsPanel", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("does not close or steal focus while suspended under another modal", () => {
+    const onClose = vi.fn();
+    const outsideButton = document.createElement("button");
+    document.body.append(outsideButton);
+    outsideButton.focus();
+    render(<SettingsPanel initialSection={null} onClose={onClose} suspended />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(outsideButton);
+    outsideButton.remove();
+  });
+
   it("clears the authenticated-session marker on explicit sign out", () => {
     mockState.currentUser = {
       id: "u1",

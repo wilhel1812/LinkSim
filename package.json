@@ -1,10 +1,11 @@
 {
   "name": "linksim",
   "private": true,
-  "version": "0.26.2",
+  "version": "0.27.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "agents:validate": "node scripts/ai-provenance.mjs validate-registry && node scripts/ai-knowledge.mjs validate",
     "build:meta": "node scripts/generate-build-info.mjs",
     "peaks:build": "node scripts/build-open-peak-index.mjs",
     "peaks:tiles:bootstrap": "node scripts/build-peak-tiles-bootstrap.mjs",
@@ -15,10 +16,11 @@
     "dev": "npm run build:meta && vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
     "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
-    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state",
+    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=d669aac0-37ea-4c68-9b27-ece888e1966a --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state",
     "build": "npm run build:bundle",
     "lint": "npm run build:meta && eslint .",
     "security:scan": "node scripts/security-scan.mjs",
+    "db:seed:local": "node scripts/seed-local-d1.mjs",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "npm run build:meta && vitest run --config config/vitest.config.ts",
     "test:ci": "npm run build:meta && vitest run --coverage --config config/vitest.config.ts",
@@ -55,7 +57,6 @@
     "clsx": "^2.1.1",
     "d3-array": "^3.2.4",
     "d3-scale": "^4.0.2",
-    "fflate": "^0.8.2",
     "geotiff": "^3.0.5",
     "jose": "^6.2.1",
     "lucide-react": "^1.7.0",
@@ -80,8 +81,8 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -90,8 +91,8 @@
     "playwright": "^1.58.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
-    "vite": "^7.3.1",
-    "vitest": "^4.0.18",
-    "wrangler": "^4.73.0"
+    "vite": "^7.3.5",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.120.1"
   }
 }

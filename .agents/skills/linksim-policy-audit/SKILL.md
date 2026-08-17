@@ -1,0 +1,79 @@
+---
+name: linksim-policy-audit
+description: Audit recurring LinkSim failures, corrections, memory drift, duplicated code or UI, and workflow friction as Steward, then suggest evidence-backed policy wording without editing anything. Use for manual or quota-gated policy reviews, recurring operational problems, inconsistent agent behavior, or proposed improvements to AGENTS.md, skills, prompts, permissions, workflows, and infrastructure safeguards.
+---
+
+# LinkSim Policy Audit
+
+Audit read-only and return suggestions only. Follow `AGENTS.md` and treat the
+current checked-in policy as authoritative until a reviewed Forge change is
+merged.
+
+## Gather evidence
+
+1. Define the audit window and sources. Prefer issues, review threads, CI runs,
+   repeated corrections, incident reports, and checked-in policy.
+2. Separate recurring evidence from one-off preference. Cite concrete events,
+   files, symbols, or artifact links; do not infer a pattern from one ambiguous
+   occurrence.
+3. Check whether current policy already covers the behavior and whether the
+   failure was policy absence, ambiguity, drift, non-compliance, or tooling.
+4. Search for overlapping rules, skills, scripts, code, and UI before proposing
+   anything new. Recommend consolidation where it reduces conflicting sources.
+5. Include quota impact, security, least privilege, provenance, maintenance,
+   and failure modes where relevant.
+6. When evidence supports a durable lesson, suggest a compact knowledge
+   registry entry with affected agents, evidence, and proposed wording. Never
+   edit the knowledge registry; an explicitly approved Forge task is required.
+
+If evidence does not support a change, report `No policy suggestion` with the
+searched evidence. Do not create work merely because the audit ran.
+
+## Form a reviewable suggestion
+
+For each supported improvement, provide:
+
+- evidence and recurrence count;
+- current policy and observed gap;
+- exact proposed wording or deterministic-tool change;
+- expected benefit and token or maintenance cost;
+- compatibility, security, and authority implications;
+- alternatives considered and why this is narrower;
+- validation and rollback approach;
+- files or systems that an approved Forge task would change.
+
+Keep facts, inferences, and recommendations visibly distinct. Never edit
+`AGENTS.md`, skills, prompts, permissions, workflows, infrastructure, the
+knowledge registry, or memory.
+Never implement the recommendation. Human acceptance followed by an explicit
+Forge task is required.
+
+## Publication gate
+
+For a scheduled audit, first confirm the shared quota guard permits a model
+call using the thresholds and durable issue in
+`config/steward-policy-audit.json`. If that configuration is disabled, its
+executor is unconfigured, telemetry is stale, or the guard is not `normal`, do
+not start a model call. Comment only when at least one evidence-backed
+improvement exists. Append through the deterministic publisher to the single
+configured `documentation` + `pending-discussion` issue; do not rewrite its
+body or create repeated issues. Publication must be idempotent, signed, and
+provenance-validated. Resolve scheduled publication identity, delivery
+identity, visible attribution, and permitted issue authority from
+`config/ai-agents.json`. Before publication, the deterministic publisher must
+compare its authenticated GitHub identity with Steward's configured
+`githubIdentity`, confirm the requested action is
+`publish-signed-suggestion`, confirm that action is allowed and not prohibited,
+and stop before publication on any mismatch. The publisher fails closed on any
+mismatch. Use `scripts/ai-provenance.mjs` to validate the registry and rendered
+artifact. The artifact must display only the
+registry-approved attribution for the configured Steward publisher. Do not
+hard-code, inherit, or claim another agent's delivery identity or authority.
+
+End every output with `Suggestion only — no policy change applied.` followed by
+the signature and marker returned by `node scripts/ai-provenance.mjs footer`;
+append both returned fields and never prescribe or hand-build either one. Fail
+closed if attribution or provenance cannot be generated. Render the complete
+comment to a file, then require
+`node scripts/ai-provenance.mjs validate-artifact --agent Steward` to pass
+before publication.

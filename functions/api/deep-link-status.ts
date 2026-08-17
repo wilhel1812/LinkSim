@@ -1,6 +1,6 @@
 import { verifyAuth } from "../_lib/auth";
 import { ensureUser, fetchUserProfile, resolveSimulationAccessForUser, resolveSimulationIdByOwnerSlug } from "../_lib/db";
-import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { errorResponse, handleOptions, isRevokedAuthError, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
@@ -14,18 +14,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     let authenticated = false;
     let authState: "guest" | "authenticated" | "revoked" = "guest";
     if (auth) {
-      await ensureUser(env, auth.userId, auth.tokenPayload);
-      const me = await fetchUserProfile(env, auth.userId);
-      if (me?.accountState === "revoked") {
+      try {
+        await ensureUser(env, auth.userId, auth.tokenPayload);
+      } catch (error) {
+        if (!isRevokedAuthError(error)) throw error;
         authState = "revoked";
-      } else {
-        authenticated = true;
-        authState = "authenticated";
-        actor = {
-          id: me?.id ?? "",
-          isAdmin: Boolean(me?.isAdmin),
-          isModerator: Boolean((me as { isModerator?: boolean } | null)?.isModerator),
-        };
+      }
+      if (authState !== "revoked") {
+        const me = await fetchUserProfile(env, auth.userId);
+        if (me?.accountState === "revoked") {
+          authState = "revoked";
+        } else {
+          authenticated = true;
+          authState = "authenticated";
+          actor = {
+            id: me?.id ?? "",
+            isAdmin: Boolean(me?.isAdmin),
+            isModerator: Boolean((me as { isModerator?: boolean } | null)?.isModerator),
+          };
+        }
       }
     }
 

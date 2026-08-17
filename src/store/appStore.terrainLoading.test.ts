@@ -189,4 +189,52 @@ describe("appStore GLO-30 terrain lifecycle", () => {
     expect(useAppStore.getState().terrainFetchStatus).not.toContain("unavailable");
     expect(useAppStore.getState().isHighResTerrainLoaded).toBe(true);
   });
+
+  it("requests only adjacent terrain keys for sites across the antimeridian", async () => {
+    useAppStore.setState({
+      sites: [
+        { ...useAppStore.getState().sites[0], id: "east", position: { lat: 10.1, lon: 179.9 } },
+        { ...useAppStore.getState().sites[0], id: "west", position: { lat: 10.2, lon: -179.9 } },
+      ],
+      srtmTiles: [],
+    });
+    terrainClient.loadCopernicus30TilesByKeys.mockResolvedValue({
+      tiles: [],
+      failedTiles: [],
+      fetchedTiles: [],
+      cacheHits: [],
+      seaLevelTiles: [],
+    });
+
+    await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
+
+    const requested = terrainClient.loadCopernicus30TilesByKeys.mock.calls[0]?.[0] as string[];
+    expect(requested.length).toBeGreaterThan(0);
+    expect(requested.every((key) => key.endsWith("E179") || key.endsWith("W180"))).toBe(true);
+  });
+
+  it("reports an over-cap terrain area without starting a request", async () => {
+    useAppStore.setState({
+      sites: [-100, 0, 100].map((lon, index) => ({
+        ...useAppStore.getState().sites[0],
+        id: `wide-${index}`,
+        position: { lat: 10.1, lon },
+      })),
+      srtmTiles: [],
+    });
+
+    await expect(useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20)).resolves.toBeUndefined();
+
+    expect(terrainClient.loadCopernicus30TilesByKeys).not.toHaveBeenCalled();
+    expect(useAppStore.getState().terrainFetchStatus).toContain("256 tiles");
+    expect(useAppStore.getState().isTerrainFetching).toBe(false);
+  });
+
+  it("clears all in-memory tiles together with the active terrain cache", async () => {
+    await useAppStore.getState().clearTerrainCache();
+
+    expect(terrainClient.clearCopernicusCache).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().srtmTiles).toEqual([]);
+  });
+
 });

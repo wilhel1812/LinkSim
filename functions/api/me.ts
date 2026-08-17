@@ -6,6 +6,12 @@ import type { Env } from "../_lib/types";
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
+const withoutInternalIdentity = <T extends Record<string, unknown>>(profile: T): Omit<T, "idpEmail" | "idpEmailVerified"> => {
+  const ordinaryProfile = { ...profile };
+  delete ordinaryProfile.idpEmail;
+  delete ordinaryProfile.idpEmailVerified;
+  return ordinaryProfile;
+};
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
@@ -22,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       request,
       json(
         {
-          user: profile,
+          user: withoutInternalIdentity(profile),
         },
         { headers: NO_STORE_HEADERS },
       ),
@@ -50,7 +56,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
       simulationDefaultsPreference?: unknown;
     };
     const user = await updateUserProfile(env, auth.userId, body);
-    return withCors(request, json({ user }, { headers: NO_STORE_HEADERS }));
+    return withCors(request, json({ user: withoutInternalIdentity(user) }, { headers: NO_STORE_HEADERS }));
   } catch (error) {
     return errorResponse(request, error, 500);
   }

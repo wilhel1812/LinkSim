@@ -162,4 +162,23 @@ describe("appStore selection recompute triggers", () => {
     useAppStore.getState().clearActiveSelection();
     expect(recomputeCoverage).toHaveBeenCalledTimes(1);
   });
+
+  it("triggers recompute when the Simulation overlay mode changes", async () => {
+    const recomputeCoverage = vi.fn();
+    vi.doMock("./coverageStore", () => ({
+      useCoverageStore: {
+        getState: () => ({ recomputeCoverage }),
+      },
+      setAppStoreBridge: vi.fn(),
+    }));
+
+    const { useAppStore } = await import("./appStore");
+    seedSelectionState(useAppStore);
+
+    useAppStore.getState().setMapOverlayMode("heatmap");
+    expect(recomputeCoverage).toHaveBeenCalledTimes(1);
+
+    useAppStore.getState().setMapOverlayMode("heatmap");
+    expect(recomputeCoverage).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,4 +1,5 @@
 import { haversineDistanceKm } from "./geo";
+import { effectiveDirectionalGainDbi, orientationBetweenPoints } from "./antennaPattern";
 import { getPathLossDb } from "./rfModels";
 import {
   atmosphericBendingNUnitsToKFactor,
@@ -39,6 +40,7 @@ export const computeSourceCentricRxMetrics = (
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
   environment?: PropagationEnvironment,
+  receiverSite?: Site,
 ): { rxDbm: number; terrainPenaltyDb: number; terrainObstructed: boolean } => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
   const kFactor = atmosphericBendingNUnitsToKFactor(environment?.atmosphericBendingNUnits ?? 301);
@@ -87,9 +89,29 @@ export const computeSourceCentricRxMetrics = (
   const txGainDbi = effectiveLink.txGainDbi ?? fromSite.txGainDbi;
   const cableLossDb = effectiveLink.cableLossDb ?? fromSite.cableLossDb;
   const rxGainDbi = effectiveLink.rxGainDbi ?? receiverRxGainDbi;
-  const eirpDbm = txPowerDbm + txGainDbi - cableLossDb;
+  const receiverGroundM = rxGround ?? receiverSite?.groundElevationM ?? fromSite.groundElevationM;
+  const txDirection = orientationBetweenPoints(
+    fromSite.position,
+    fromSite.groundElevationM + fromSite.antennaHeightM,
+    { lat, lon },
+    receiverGroundM + receiverAntennaHeightM,
+  );
+  const directionalTxGainDbi = effectiveDirectionalGainDbi(txGainDbi, fromSite, txDirection);
+  const directionalRxGainDbi = receiverSite
+    ? effectiveDirectionalGainDbi(
+        rxGainDbi,
+        receiverSite,
+        orientationBetweenPoints(
+          { lat, lon },
+          receiverGroundM + receiverAntennaHeightM,
+          fromSite.position,
+          fromSite.groundElevationM + fromSite.antennaHeightM,
+        ),
+      )
+    : rxGainDbi;
+  const eirpDbm = txPowerDbm + directionalTxGainDbi - cableLossDb;
   return {
-    rxDbm: eirpDbm + rxGainDbi - (baseLoss + terrainPenaltyDb),
+    rxDbm: eirpDbm + directionalRxGainDbi - (baseLoss + terrainPenaltyDb),
     terrainPenaltyDb,
     terrainObstructed,
   };

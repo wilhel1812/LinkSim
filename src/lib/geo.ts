@@ -3,6 +3,16 @@ import type { Coordinates } from "../types/radio";
 const EARTH_RADIUS_M = 6_371_000;
 
 const toRadians = (deg: number): number => (deg * Math.PI) / 180;
+const toDegrees = (rad: number): number => (rad * 180) / Math.PI;
+
+export const initialBearingDeg = (from: Coordinates, to: Coordinates): number => {
+  const phi1 = toRadians(from.lat);
+  const phi2 = toRadians(to.lat);
+  const deltaLambda = toRadians(to.lon - from.lon);
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
+};
 
 export const haversineDistanceKm = (a: Coordinates, b: Coordinates): number => {
   const dLat = toRadians(b.lat - a.lat);
