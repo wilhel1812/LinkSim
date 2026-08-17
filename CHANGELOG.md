@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.27.0] - 2026-08-17
+
+### Added
+- Added named, shareable radio presets with guarded import and sharing flows. (#864)
+- Added reciprocal 3D directional antennas with horizontal and vertical beamwidths, Site pointing controls, map and beam previews, and consistent use across Path, panorama, coverage, mesh, leaderboard, and calculation API results. (#1017)
+- Added the LinkSim Discord invite alongside the existing footer links. (#1030)
+
+### Changed
+- Improved Simulation overlay performance with accuracy-first adaptive analysis, consistent sampling, sharper Pass/Fail boundaries, and bounded resolution scaling. (#998)
+- Clarified LinkSim's privacy disclosures and the handling of account, location, shared-resource, and third-party service data. (#1055)
+- Removed the obsolete manual SRTM upload path now that terrain acquisition uses the managed GLO-30 pipeline. (#1076)
+
+### Fixed
+- Fixed radio preset autosave consistency and popover stacking above raised dialogs. (#864)
+- Made cloud synchronization revision-safe, validated persisted and remote records before ingestion, and reconciled removals and in-flight edits without silently losing newer work. (#1054)
+- Stopped the loading cloud from remaining visible when Auto Calculate is disabled and no matching terrain or overlay work remains. (#1043)
+
+### Security
+- Restricted resource change history and reverts to currently authorized users and limited exposed history fields. (#1049)
+- Strengthened account identity and administrator lifecycle controls, including canonical verified identities, durable deletion blocking, revocation, and privacy-safe avatar handling. (#1050)
+- Enforced credentialed same-origin API requests and verified Cloudflare Access boundaries while keeping the public application shell available. (#1048, #1062)
+- Bounded untrusted input, storage, parsing, proxy, terrain, avatar, geocoding, Library, and calculation workloads, and narrowed self-hosted and third-party proxy trust boundaries. (#1051, #1053)
+- Updated affected dependencies and hardened tracked-file secret scanning, local-only D1 seed isolation, migration ordering, required checks, and fail-closed production deployment verification. (#1044, #1052)
+
 ## [0.26.2] - 2026-08-05
 
 ### Fixed
