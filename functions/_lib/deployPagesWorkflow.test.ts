@@ -45,8 +45,9 @@ describe("Deploy LinkSim Pages workflow", () => {
   });
 
   it("does not deploy schema-changing pull requests against the shared staging database", () => {
-    expect(previewJob).toContain("Detect identity lifecycle schema change");
+    expect(previewJob).toContain("Detect shared D1 schema change");
     expect(previewJob).toContain("db/migrations/2026-08-12_identity_lifecycle.sql");
+    expect(previewJob).toContain("db/migrations/2026-08-20_site_notice.sql");
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
@@ -191,6 +192,20 @@ describe("Deploy LinkSim Pages workflow", () => {
       expect(job).toContain(`npx wrangler d1 execute ${database} --remote --file db/migrations/2026-08-12_identity_lifecycle.sql --yes`);
       expect(job).toContain(`node scripts/verify-identity-lifecycle-d1.mjs ${database} pre`);
       expect(job).toContain(`node scripts/verify-identity-lifecycle-d1.mjs ${database} post`);
+    }
+  });
+
+  it("idempotently applies and verifies the site notice schema before staging and production deploys", () => {
+    for (const [job, database, label] of [
+      [stagingJob, "linksim_staging", "staging"],
+      [productionJob, "linksim", "production"],
+    ] as const) {
+      const step = `- name: Apply ${label} Site notice migration`;
+      expect(job).toContain(step);
+      expect(job).toContain(`npx wrangler d1 execute ${database} --remote --command "SELECT revision FROM site_notice WHERE singleton = 1;"`);
+      expect(job).toContain(`npx wrangler d1 execute ${database} --remote --file db/migrations/2026-08-20_site_notice.sql --yes`);
+      expect(job).not.toContain(`if ! npx wrangler d1 execute ${database} --remote --command "SELECT revision FROM site_notice`);
+      expect(job.indexOf(step)).toBeLessThan(job.indexOf("Deploy "));
     }
   });
 

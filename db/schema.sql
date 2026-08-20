@@ -134,6 +134,29 @@ CREATE TABLE IF NOT EXISTS user_identity_audit (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS site_notice (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1)),
+  tone TEXT NOT NULL DEFAULT 'information' CHECK (tone IN ('information', 'warning', 'incident')),
+  message TEXT NOT NULL DEFAULT '' CHECK (length(message) <= 280),
+  dismissible INTEGER NOT NULL DEFAULT 0 CHECK (dismissible IN (0, 1)),
+  starts_at TEXT,
+  expires_at TEXT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_notice_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL CHECK (action IN ('publish', 'clear')),
+  actor_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  previous_json TEXT,
+  next_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sites_owner ON sites(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_sites_visibility ON sites(visibility);
 CREATE INDEX IF NOT EXISTS idx_site_roles_user ON site_roles(user_id);

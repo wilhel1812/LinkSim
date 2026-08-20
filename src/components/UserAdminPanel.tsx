@@ -33,6 +33,7 @@ import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
 import { PanelToolbar } from "./ui/PanelToolbar";
+import { SiteNoticeAdminForm } from "./SiteNoticeAdminForm";
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
@@ -553,6 +554,7 @@ export function UserAdminPanel({
     }
     return (
       <div className="user-admin-inline">
+        {canAdmin ? <SiteNoticeAdminForm /> : null}
         {canAdmin ? (
           <div className="user-manager-list">
             <div className="section-heading">
