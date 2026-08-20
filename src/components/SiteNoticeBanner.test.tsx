@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +16,7 @@ const localStorageMock = {
 vi.stubGlobal("localStorage", localStorageMock);
 Object.defineProperty(window, "localStorage", { configurable: true, value: localStorageMock });
 
+import { SITE_NOTICE_UPDATED_EVENT } from "../lib/siteNotice";
 import { SiteNoticeBanner, SiteNoticeSurface } from "./SiteNoticeBanner";
 
 beforeEach(() => {
@@ -74,5 +75,44 @@ describe("SiteNoticeBanner", () => {
     render(<SiteNoticeBanner />);
     await waitFor(() => expect(fetchPublicSiteNoticeMock).toHaveBeenCalled());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("ignores an older refresh that completes after a newer notice", async () => {
+    let resolveFirst: (notice: unknown) => void = () => undefined;
+    let resolveSecond: (notice: unknown) => void = () => undefined;
+    fetchPublicSiteNoticeMock
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+
+    render(<SiteNoticeBanner />);
+    await waitFor(() => expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event(SITE_NOTICE_UPDATED_EVENT));
+    await waitFor(() => expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveSecond({
+        tone: "warning",
+        message: "New notice",
+        dismissible: false,
+        revision: 12,
+        updatedAt: "2026-08-20T12:00:00.000Z",
+        expiresAt: null,
+      });
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("New notice");
+
+    await act(async () => {
+      resolveFirst({
+        tone: "information",
+        message: "Old notice",
+        dismissible: false,
+        revision: 11,
+        updatedAt: "2026-08-20T11:00:00.000Z",
+        expiresAt: null,
+      });
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("New notice");
+    expect(screen.queryByText("Old notice")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import { CircleAlert, CircleX, Info, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchPublicSiteNotice } from "../lib/cloudSiteNotice";
 import {
@@ -60,12 +60,17 @@ export function SiteNoticeSurface({
 
 export function SiteNoticeBanner() {
   const [notice, setNotice] = useState<PublicSiteNotice | null>(null);
+  const latestRequest = useRef(0);
 
   const load = useCallback(async () => {
+    const request = latestRequest.current + 1;
+    latestRequest.current = request;
     try {
       const next = await fetchPublicSiteNotice();
+      if (request !== latestRequest.current) return;
       setNotice(next && !isDismissed(next) ? next : null);
     } catch {
+      if (request !== latestRequest.current) return;
       setNotice(null);
     }
   }, []);

@@ -1,6 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const MAX_MESSAGE_LENGTH = 280;
@@ -59,13 +57,6 @@ VALUES (
 DROP TABLE previous_site_notice;
 `;
 
-const workingDirectory = mkdtempSync(join(tmpdir(), "linksim-site-notice-"));
-const sqlFile = join(workingDirectory, "site-notice.sql");
-try {
-  writeFileSync(sqlFile, sql, { encoding: "utf8", mode: 0o600 });
-  execFileSync(join(process.cwd(), "node_modules", ".bin", "wrangler"), [
-    "d1", "execute", databases[target], "--remote", "--file", sqlFile, "--yes",
-  ], { stdio: "inherit" });
-} finally {
-  rmSync(workingDirectory, { recursive: true, force: true });
-}
+execFileSync(join(process.cwd(), "node_modules", ".bin", "wrangler"), [
+  "d1", "execute", databases[target], "--remote", "--command", sql, "--yes",
+], { stdio: "inherit" });
