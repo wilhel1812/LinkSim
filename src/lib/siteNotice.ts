@@ -20,11 +20,15 @@ export type SiteNotice = SiteNoticeDraft & {
 
 export type PublicSiteNotice = Omit<SiteNotice, "active" | "startsAt" | "updatedBy">;
 
+const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
 const normalizeInstant = (value: unknown, label: string): string | null => {
   if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "string") throw new Error(`${label} must be a valid date and time.`);
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) throw new Error(`${label} must be a valid date and time.`);
+  if (typeof value !== "string") throw new Error(`${label} must be an ISO-8601 timestamp.`);
+  const instant = value.trim();
+  if (!ISO_INSTANT_PATTERN.test(instant)) throw new Error(`${label} must be an ISO-8601 timestamp.`);
+  const parsed = new Date(instant);
+  if (!Number.isFinite(parsed.getTime())) throw new Error(`${label} must be an ISO-8601 timestamp.`);
   return parsed.toISOString();
 };
 

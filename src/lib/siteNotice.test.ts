@@ -40,6 +40,24 @@ describe("site notice contract", () => {
     })).toThrow(`Notice message may not exceed ${SITE_NOTICE_MESSAGE_MAX_LENGTH} characters.`);
   });
 
+  it("requires timezone-bearing ISO-8601 activation and expiry timestamps", () => {
+    const base = { active: true, tone: "warning", message: "Maintenance", dismissible: true };
+    expect(() => normalizeSiteNoticeDraft({ ...base, expiresAt: "2026" })).toThrow(
+      "Notice expiry must be an ISO-8601 timestamp.",
+    );
+    expect(() => normalizeSiteNoticeDraft({ ...base, expiresAt: "08/21/2026 12:00" })).toThrow(
+      "Notice expiry must be an ISO-8601 timestamp.",
+    );
+    expect(normalizeSiteNoticeDraft({
+      ...base,
+      startsAt: "2026-08-21T12:00:00+02:00",
+      expiresAt: "2026-08-21T13:00:00+02:00",
+    })).toMatchObject({
+      startsAt: "2026-08-21T10:00:00.000Z",
+      expiresAt: "2026-08-21T11:00:00.000Z",
+    });
+  });
+
   it("honors activation and expiry windows", () => {
     const notice = {
       active: true,

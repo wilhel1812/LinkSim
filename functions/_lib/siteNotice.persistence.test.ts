@@ -56,6 +56,10 @@ describe("persisted site notices", () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it("seeds the registration notice as dismissible", async () => {
+    await expect(readPublicSiteNotice(env)).resolves.toMatchObject({ dismissible: true });
+  });
+
   it("fails open when a stored public row is malformed", async () => {
     db.database.exec("PRAGMA ignore_check_constraints = ON; UPDATE site_notice SET tone = 'future';");
     await expect(readPublicSiteNotice(env)).resolves.toBeNull();

@@ -20,7 +20,7 @@ const EMPTY_DRAFT: SiteNoticeDraft = {
   active: true,
   tone: "information",
   message: "",
-  dismissible: false,
+  dismissible: true,
   startsAt: null,
   expiresAt: null,
 };

@@ -1,6 +1,6 @@
 # Site Notice Operations
 
-LinkSim can publish one narrow banner across every application route without an application release. The notice is presentation only: it does not change authentication or account-registration policy.
+LinkSim can publish one narrow banner across every application route without an application release. The notice is presentation only: it does not change authentication or account-registration policy. New drafts default to dismissible, while administrators can turn dismissal off for a notice that must remain visible.
 
 ## Preferred path
 

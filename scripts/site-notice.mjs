@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const MAX_MESSAGE_LENGTH = 280;
+const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const databases = { staging: "linksim_staging", production: "linksim" };
 const env = process.env;
 const target = env.NOTICE_TARGET ?? "";
@@ -21,7 +22,9 @@ if (!['publish', 'clear'].includes(action)) fail("NOTICE_ACTION must be publish 
 if (!['information', 'warning', 'incident'].includes(tone)) fail("NOTICE_TONE is invalid.");
 if (action === "publish" && !message) fail("A publish action requires a message.");
 if (message.length > MAX_MESSAGE_LENGTH) fail(`Message exceeds ${MAX_MESSAGE_LENGTH} characters.`);
-if (expiresAt && !Number.isFinite(Date.parse(expiresAt))) fail("NOTICE_EXPIRES_AT must be ISO-8601.");
+if (expiresAt && (!ISO_INSTANT_PATTERN.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)))) {
+  fail("NOTICE_EXPIRES_AT must be an ISO-8601 timestamp with a timezone.");
+}
 
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const now = new Date().toISOString();

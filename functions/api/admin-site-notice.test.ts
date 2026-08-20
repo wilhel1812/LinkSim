@@ -77,6 +77,28 @@ describe("admin site notice API", () => {
     });
   });
 
+  it("returns a client error for an invalid notice draft", async () => {
+    const response = await onRequestPut(context(new Request("https://example.test/api/admin-site-notice", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        active: true,
+        tone: "future",
+        message: "Invalid notice",
+        dismissible: true,
+        startsAt: null,
+        expiresAt: null,
+      }),
+    })));
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({
+      error: "Notice tone must be information, warning, or incident.",
+      code: "invalid_site_notice",
+    });
+    expect(publishSiteNoticeMock).not.toHaveBeenCalled();
+  });
+
   it("removes the notice with an audited admin actor", async () => {
     const response = await onRequestDelete(context(new Request("https://example.test/api/admin-site-notice", {
       method: "DELETE",

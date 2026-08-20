@@ -26,7 +26,7 @@ on:
       dismissible:
         description: "Allow users to dismiss this revision"
         required: true
-        default: false
+        default: true
         type: boolean
       expires_at:
         description: "Optional ISO-8601 expiry"

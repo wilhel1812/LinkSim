@@ -188,6 +188,8 @@ button {
 .site-notice-app-content {
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
+  contain: layout paint;
   overflow: hidden;
 }
 
@@ -197,7 +199,12 @@ button {
   min-height: 100%;
 }
 
-.site-notice-app-content > .ui-gallery-page,
+.site-notice-app-content > .ui-gallery-page {
+  height: 100%;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
 .site-notice-app-content > .route-loading {
   min-height: 100%;
 }
@@ -4045,8 +4052,8 @@ html.panorama-gesture-lock body {
     --mobile-panel-height: 36vh;
     --mobile-attribution-gap: 8px;
     --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
-    height: 100dvh;
-    min-height: 100dvh;
+    height: 100%;
+    min-height: 100%;
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -4246,8 +4253,8 @@ html.panorama-gesture-lock body {
     position: fixed;
     inset: 0;
     width: 100vw;
-    height: 100dvh;
-    min-height: 100dvh;
+    height: 100%;
+    min-height: 100%;
     margin: 0;
   }
 
@@ -4321,8 +4328,8 @@ html.panorama-gesture-lock body {
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .map-inspector {
     top: auto;
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
-    height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
-    min-height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
+    height: calc(100% - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
+    min-height: calc(100% - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
     max-height: none;
   }
 

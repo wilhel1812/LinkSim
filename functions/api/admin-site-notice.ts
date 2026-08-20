@@ -1,9 +1,9 @@
 import { verifyAuth } from "../_lib/auth";
 import { assertUserAccess, ensureUser, fetchUserProfile } from "../_lib/db";
 import { clearSiteNotice, publishSiteNotice, readSiteNotice } from "../_lib/siteNotice";
-import { errorResponse, handleOptions, json, readBoundedJson, withCors } from "../_lib/http";
+import { ApiRequestError, errorResponse, handleOptions, json, readBoundedJson, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
-import type { SiteNoticeDraft } from "../../src/lib/siteNotice";
+import { normalizeSiteNoticeDraft, type SiteNoticeDraft } from "../../src/lib/siteNotice";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
@@ -33,7 +33,17 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const actorId = await requireAdmin(request, env);
     if (actorId instanceof Response) return actorId;
-    const draft = await readBoundedJson<SiteNoticeDraft>(request, { maxBytes: 4096, maxDepth: 3 });
+    const rawDraft = await readBoundedJson<unknown>(request, { maxBytes: 4096, maxDepth: 3 });
+    let draft: SiteNoticeDraft;
+    try {
+      draft = normalizeSiteNoticeDraft(rawDraft);
+    } catch (error) {
+      throw new ApiRequestError(
+        error instanceof Error ? error.message : "Site notice is invalid.",
+        422,
+        "invalid_site_notice",
+      );
+    }
     const notice = await publishSiteNotice(env, draft, { actorId, source: "admin-panel" });
     return withCors(request, json({ notice }, { headers: { "cache-control": "no-store" } }));
   } catch (error) {

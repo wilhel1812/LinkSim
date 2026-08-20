@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS site_notice_audit (
 INSERT OR IGNORE INTO site_notice
   (singleton, active, tone, message, dismissible, starts_at, expires_at, revision, updated_at, updated_by)
 VALUES
-  (1, 1, 'warning', 'LinkSim is temporarily not accepting new user registrations. We’re working on a solution.', 0, NULL, NULL, 1, '2026-08-20T00:00:00.000Z', 'migration:2026-08-20');
+  (1, 1, 'warning', 'LinkSim is temporarily not accepting new user registrations. We’re working on a solution.', 1, NULL, NULL, 1, '2026-08-20T00:00:00.000Z', 'migration:2026-08-20');
 
 INSERT INTO site_notice_audit
   (action, actor_id, source, previous_json, next_json, created_at)
