@@ -10,6 +10,7 @@ export default defineConfig({
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
       "functions/**/*.test.ts",
+      "scripts/**/*.test.mjs",
     ],
     setupFiles: ["config/test-setup.ts"],
     coverage: {

@@ -1,0 +1,70 @@
+name: Update LinkSim Site Notice
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment"
+        required: true
+        type: choice
+        options: [staging, production]
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options: [publish, clear]
+      tone:
+        description: "Tone"
+        required: true
+        default: warning
+        type: choice
+        options: [information, warning, incident]
+      message:
+        description: "Message (required for publish; maximum 280 characters)"
+        required: false
+        type: string
+      dismissible:
+        description: "Allow users to dismiss this revision"
+        required: true
+        default: true
+        type: boolean
+      expires_at:
+        description: "Optional ISO-8601 expiry"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    concurrency:
+      group: site-notice-${{ inputs.target }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout protected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target == 'production' && 'main' || 'staging' }}
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Update site notice
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NOTICE_TARGET: ${{ inputs.target }}
+          NOTICE_ACTION: ${{ inputs.action }}
+          NOTICE_TONE: ${{ inputs.tone }}
+          NOTICE_MESSAGE: ${{ inputs.message }}
+          NOTICE_DISMISSIBLE: ${{ inputs.dismissible }}
+          NOTICE_EXPIRES_AT: ${{ inputs.expires_at }}
+          NOTICE_ACTOR: ${{ github.actor }}
+          NOTICE_RUN_ID: ${{ github.run_id }}
+        run: node scripts/site-notice.mjs

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.27.1] - 2026-08-20
+
+### Added
+- Added an administrator-managed, site-wide operational notice with an audited protected-workflow fallback for updates that do not require an application release. (#1086)
+
 ## [0.27.0] - 2026-08-17
 
 ### Added

@@ -24,6 +24,7 @@ LinkSim is a web app for terrain-aware radio path planning and simulation.
 | Work with shared staging | [Staging environment](./docs/staging-environment.md) |
 | Ship a release | [Release flow](./docs/release-flow.md) |
 | Configure authentication | [Cloudflare Access and D1](./docs/cloudflare-auth-setup.md) |
+| Publish an operational notice | [Site notice operations](./docs/site-notice.md) |
 | Manage Cloudflare with Terraform | [Terraform guide](./docs/terraform-iac.md) |
 | Review ingestion safety contracts | [Resource limits](./docs/resource-limits.md) |
 | Reuse UI patterns | UI Gallery (`/ui-gallery`) |
