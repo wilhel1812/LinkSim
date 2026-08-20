@@ -33,9 +33,9 @@ export function SiteNoticeSurface({
     <div
       aria-atomic="true"
       aria-label={preview ? "Notice preview" : undefined}
-      aria-live={isIncident ? "assertive" : "polite"}
+      aria-live={preview ? "off" : isIncident ? "assertive" : "polite"}
       className={`site-notice-banner site-notice-banner-${notice.tone} ${preview ? "site-notice-banner-preview" : ""}`.trim()}
-      role={isIncident ? "alert" : "status"}
+      role={preview ? undefined : isIncident ? "alert" : "status"}
     >
       <span className="site-notice-banner-icon" aria-hidden="true">
         {notice.tone === "information" ? <Info size={16} strokeWidth={2} /> : null}

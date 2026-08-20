@@ -16,7 +16,7 @@ const localStorageMock = {
 vi.stubGlobal("localStorage", localStorageMock);
 Object.defineProperty(window, "localStorage", { configurable: true, value: localStorageMock });
 
-import { SiteNoticeBanner } from "./SiteNoticeBanner";
+import { SiteNoticeBanner, SiteNoticeSurface } from "./SiteNoticeBanner";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -24,6 +24,18 @@ beforeEach(() => {
 });
 
 describe("SiteNoticeBanner", () => {
+  it("does not announce admin preview edits as live status changes", () => {
+    render(<SiteNoticeSurface
+      notice={{ tone: "incident", message: "Preview text", dismissible: false }}
+      preview
+    />);
+
+    const preview = screen.getByLabelText("Notice preview");
+    expect(preview).toHaveAttribute("aria-live", "off");
+    expect(preview).not.toHaveAttribute("role", "alert");
+    expect(preview).not.toHaveAttribute("role", "status");
+  });
+
   it("renders and dismisses a dismissible public notice", async () => {
     fetchPublicSiteNoticeMock.mockResolvedValue({
       tone: "information",

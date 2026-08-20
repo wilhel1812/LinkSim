@@ -216,7 +216,7 @@ button {
   align-items: center;
   gap: 9px;
   min-height: 34px;
-  padding: 6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+  padding: calc(6px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
   border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   background: color-mix(in srgb, var(--surface-2) 96%, var(--bg));
   color: var(--text);

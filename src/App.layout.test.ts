@@ -32,4 +32,11 @@ describe("site notice route layout", () => {
     expect(gallery).toContain("height: 100%");
     expect(gallery).toContain("overflow-y: auto");
   });
+
+  it("keeps the site notice below the top device safe area", () => {
+    const banner = declarationsFor(".site-notice-banner");
+    expect(banner).toContain("calc(6px + env(safe-area-inset-top))");
+    expect(banner).toContain("env(safe-area-inset-right)");
+    expect(banner).toContain("env(safe-area-inset-left)");
+  });
 });
