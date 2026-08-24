@@ -18,6 +18,8 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ "$BASE_REF" = "staging" ]; then
@@ -31,9 +33,29 @@ jobs:
             if [ "$HEAD_REF" = "staging" ] || [[ "$HEAD_REF" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
               exit 0
             fi
-            echo "PR to main must come from staging, release/vX.Y.Z, or hotfix/<slug>."
+            if [[ "$HEAD_REF" =~ ^docs/[0-9]+-[a-z0-9-]+$ ]]; then
+              test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+              exit 0
+            fi
+            echo "PR to main must come from staging, release/vX.Y.Z, hotfix/<slug>, or same-repository docs/<id>-<slug>."
             exit 1
           fi
+
+      - name: Checkout documentation pull request head
+        if: github.base_ref == 'main' && startsWith(github.head_ref, 'docs/')
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Require a documentation-only diff
+        if: github.base_ref == 'main' && startsWith(github.head_ref, 'docs/')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node scripts/docs-only-policy.mjs require \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --mode three-dot
 
   enforce-staging:
     name: PR Branch Policy / enforce-staging

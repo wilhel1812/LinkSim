@@ -6,6 +6,8 @@
 - Before changing code, review the relevant open GitHub Issue(s), then read:
   1. `docs/release-flow.md`
   2. `docs/milestone-release-checklist.md`
+- For documentation intended to reach `main` without an application release,
+  also read `docs/documentation-delivery.md` and use its narrow protected lane.
 - If instructions conflict, use this precedence:
   1. explicit user instruction in the current thread
   2. this `AGENTS.md`
