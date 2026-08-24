@@ -1,5 +1,22 @@
 # Documentation-only delivery
 
+## Activation state
+
+This lane is staged but unavailable until all of these gates are complete:
+
+1. The classifier, Pages job conditions, and trusted
+   `Docs Branch Policy / enforce-main-docs` workflow are released to `main`.
+2. A qualifying `main` pull request proves that exact check context succeeds.
+3. Branch protection is explicitly updated to require the trusted check.
+4. A later protected policy pull request adds `docs/<issue-id>-<slug>` to the
+   allowed `main` head branches in `docs/release-flow.md` and the existing PR
+   branch-policy workflow.
+
+Do not open or merge a `docs/*` -> `main` pull request before all four gates are
+recorded complete. This staged rollout preserves the currently required
+`PR Branch Policy / enforce-main` check while the new trusted context is being
+installed.
+
 Use this lane only for repository documentation that can change independently
 of a LinkSim application version. Documentation that defines or changes the
 public API, describes unreleased behavior, or must match a specific deployed
@@ -21,6 +38,8 @@ The classifier disables rename detection so a move is evaluated as both the
 removed path and the added path.
 
 ## Delivery sequence
+
+After the activation gates are complete:
 
 1. Create `docs/<issue-id>-<slug>` from current `origin/main`.
 2. Change only allowed documentation paths.

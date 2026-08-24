@@ -12,8 +12,6 @@
 - `staging`: integration branch for accepted issue work.
 - `main`: production branch only.
 - `hotfix/<slug>`: production incident branch (only when explicitly approved).
-- `docs/<issue-id>-<slug>`: documentation-only branch from `main`; governed by
-  `docs/documentation-delivery.md`.
 
 ## Delivery sequence
 1. Local test
@@ -64,17 +62,6 @@
   - `release/vX.Y.Z` (approved normal-release fallback for a current or immediately preceding documented direct `staging` -> `main` squash-history conflict)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
-
-## Documentation-only delivery
-
-- Follow `docs/documentation-delivery.md` for repository documentation that can
-  change independently of an application version.
-- Documentation-only PRs keep required CI, review, provenance, and protected
-  human merge controls, but do not select an application SemVer, create a
-  release tag, or deploy Pages.
-- After a documentation-only merge to `main`, sync the exact documentation to
-  `staging` through a protected `chore/sync-docs-to-staging` PR.
-- Mixed or unclassifiable diffs stay in the normal release flow.
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).

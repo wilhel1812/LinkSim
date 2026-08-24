@@ -7,8 +7,10 @@ const readRepositoryFile = (path: string) =>
 
 const deployWorkflow = readRepositoryFile(".github/workflows/deploy-pages.yml");
 const branchWorkflow = readRepositoryFile(".github/workflows/pr-branch-policy.yml");
+const docsBranchWorkflow = readRepositoryFile(
+  ".github/workflows/docs-branch-policy.yml",
+);
 const policyScript = readRepositoryFile("scripts/docs-only-policy.mjs");
-const releaseFlow = readRepositoryFile("docs/release-flow.md");
 
 describe("documentation-only delivery workflow", () => {
   it("classifies every deploy event without workflow-level path filters", () => {
@@ -26,26 +28,38 @@ describe("documentation-only delivery workflow", () => {
     expect(deployWorkflow.match(/!cancelled\(\)/g)).toHaveLength(3);
   });
 
-  it("uses trusted base policy for same-repository docs issue branches", () => {
+  it("stages a distinct trusted check without removing the existing required main check", () => {
     expect(branchWorkflow).toContain("  pull_request:\n");
-    expect(branchWorkflow).toContain("pull_request_target:");
-    expect(branchWorkflow).toContain("      - staging");
     expect(branchWorkflow).toContain("      - main");
-    expect(branchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
-    expect(branchWorkflow).toContain('test "$HEAD_REPO" = "$GITHUB_REPOSITORY"');
-    expect(branchWorkflow).toContain("ref: ${{ github.event.pull_request.base.sha }}");
-    expect(branchWorkflow).toContain("persist-credentials: false");
-    expect(branchWorkflow).not.toContain("ref: ${{ github.event.pull_request.head.sha }}");
-    expect(branchWorkflow).toContain("node scripts/docs-only-policy.mjs require");
+    expect(branchWorkflow).not.toContain("pull_request_target:");
+    expect(branchWorkflow).not.toContain("^docs/[0-9]+-[a-z0-9-]+$");
+
+    expect(docsBranchWorkflow).toContain("pull_request_target:");
+    expect(docsBranchWorkflow).toContain(
+      "name: Docs Branch Policy / enforce-main-docs",
+    );
+    expect(docsBranchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
+    expect(docsBranchWorkflow).toContain(
+      'test "$HEAD_REPO" = "$GITHUB_REPOSITORY"',
+    );
+    expect(docsBranchWorkflow).toContain(
+      "ref: ${{ github.event.pull_request.base.sha }}",
+    );
+    expect(docsBranchWorkflow).toContain("persist-credentials: false");
+    expect(docsBranchWorkflow).not.toContain(
+      "ref: ${{ github.event.pull_request.head.sha }}",
+    );
+    expect(docsBranchWorkflow).toContain("node scripts/docs-only-policy.mjs require");
   });
 
   it("uses no-renames diffing so moves expose both removed and added paths", () => {
     expect(policyScript).toContain('"--no-renames"');
   });
 
-  it("links the protected lane from the release source of truth", () => {
-    expect(releaseFlow).toContain("docs/documentation-delivery.md");
-    expect(releaseFlow).toContain("docs/<issue-id>-<slug>");
-    expect(releaseFlow).toContain("chore/sync-docs-to-staging");
+  it("documents the required activation ordering", () => {
+    const delivery = readRepositoryFile("docs/documentation-delivery.md");
+    expect(delivery).toContain("Docs Branch Policy / enforce-main-docs");
+    expect(delivery).toContain("Branch protection is explicitly updated");
+    expect(delivery).toContain("Do not open or merge a `docs/*`");
   });
 });
