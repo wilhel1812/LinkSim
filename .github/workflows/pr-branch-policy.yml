@@ -4,8 +4,11 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, edited]
     branches:
-      - main
       - staging
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+    branches:
+      - main
 
 jobs:
   enforce:
@@ -41,19 +44,21 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout documentation pull request head
+      - name: Checkout trusted base policy
         if: github.base_ref == 'main' && startsWith(github.head_ref, 'docs/')
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Require a documentation-only diff
+      - name: Require a documentation-only diff with trusted policy
         if: github.base_ref == 'main' && startsWith(github.head_ref, 'docs/')
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          git cat-file -e "${HEAD_SHA}^{commit}"
           node scripts/docs-only-policy.mjs require \
             --base "$BASE_SHA" --head "$HEAD_SHA" --mode three-dot
 

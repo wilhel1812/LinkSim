@@ -67,6 +67,7 @@ jobs:
   deploy-staging-preview:
     needs: classify_changes
     if: |
+      !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'
@@ -199,6 +200,7 @@ jobs:
   deploy-staging:
     needs: classify_changes
     if: |
+      !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
@@ -280,6 +282,7 @@ jobs:
   deploy-prod-main:
     needs: classify_changes
     if: |
+      !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||

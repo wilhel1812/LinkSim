@@ -23,11 +23,19 @@ describe("documentation-only delivery workflow", () => {
     expect(
       deployWorkflow.match(/needs\.classify_changes\.outputs\.docs_only != 'true'/g),
     ).toHaveLength(3);
+    expect(deployWorkflow.match(/!cancelled\(\)/g)).toHaveLength(3);
   });
 
-  it("permits only same-repository docs issue branches to use the main lane", () => {
+  it("uses trusted base policy for same-repository docs issue branches", () => {
+    expect(branchWorkflow).toContain("  pull_request:\n");
+    expect(branchWorkflow).toContain("pull_request_target:");
+    expect(branchWorkflow).toContain("      - staging");
+    expect(branchWorkflow).toContain("      - main");
     expect(branchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
     expect(branchWorkflow).toContain('test "$HEAD_REPO" = "$GITHUB_REPOSITORY"');
+    expect(branchWorkflow).toContain("ref: ${{ github.event.pull_request.base.sha }}");
+    expect(branchWorkflow).toContain("persist-credentials: false");
+    expect(branchWorkflow).not.toContain("ref: ${{ github.event.pull_request.head.sha }}");
     expect(branchWorkflow).toContain("node scripts/docs-only-policy.mjs require");
   });
 

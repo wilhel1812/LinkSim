@@ -83,8 +83,19 @@ const runCli = (args) => {
   if (command !== "classify" && command !== "require") {
     throw new Error("Usage: docs-only-policy.mjs <classify|require> --base SHA --head SHA --mode <two-dot|three-dot>");
   }
-  const options = parseOptions(rest);
-  const result = classifyDocumentationPaths(changedPathsBetween(options));
+  let result;
+  try {
+    const options = parseOptions(rest);
+    result = classifyDocumentationPaths(changedPathsBetween(options));
+  } catch (error) {
+    if (command !== "classify") throw error;
+    result = { docsOnly: false, changedPaths: [], disallowedPaths: [] };
+    writeGitHubOutput(result);
+    console.error(
+      `[docs-only-policy] classification unavailable; deployment required: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return;
+  }
   writeGitHubOutput(result);
 
   if (result.docsOnly) {

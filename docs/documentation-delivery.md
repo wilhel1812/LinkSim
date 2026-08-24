@@ -44,6 +44,9 @@ removed path and the added path.
 
 - Mixed, empty, malformed, or unclassifiable diffs cannot use `docs/*` ->
   `main` and do not bypass deployment.
+- Direct-to-`main` authorization runs the classifier and workflow from the
+  trusted base branch; pull-request content is fetched only as diff data and is
+  never executed by that check.
 - Manual deployment dispatches always remain deployment-eligible.
 - Required workflows run normally; job-level conditions skip only Pages
   deployment jobs after successful classification.
