@@ -11,6 +11,10 @@ import { getPathLossDb } from "./rfModels";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { interpolateHeatmapColor } from "../themes/heatmapColors";
 import { createLruCache } from "./lruCache";
+import {
+  buildDenseCoverageTargetContourFeaturesAsync,
+  type ContourLineFeatureCollection,
+} from "./coverageContour";
 
 export type TerrainBounds = {
   minLat: number;
@@ -49,6 +53,7 @@ export type OverlayRasterPixels = {
   maxAreaKm2?: number;
   analysisStats?: OverlayAnalysisStats;
   signalValuesDbm?: Float32Array;
+  targetContour?: ContourLineFeatureCollection;
 };
 
 export type OverlayAnalysisStats = {
@@ -70,6 +75,7 @@ export type OverlayRasterDataUrl = {
   maxDbm?: number;
   minAreaKm2?: number;
   maxAreaKm2?: number;
+  targetContour?: ContourLineFeatureCollection;
 };
 
 export type MeshExtensionCandidateProfile = {
@@ -723,13 +729,15 @@ export const buildAdaptiveCoverageOverlayPixelsAsync = async (
           valuesDbm: new Float32Array(totalPixels).fill(Number.NaN),
         };
   let evaluatedPaths = 0;
-  const colorContext = contextForProgressRange(context, 90, 100);
+  const isContourMode = mode === "contours";
+  const analysisProgressEnd = isContourMode ? 85 : 90;
+  const colorContext = contextForProgressRange(context, analysisProgressEnd, isContourMode ? 90 : 100);
   const adaptiveSeedGridSize = Math.max(4, Math.round(initialGridSize / 4));
   let refinedBlocks = 0;
   const filledPixels = totalPixels;
   if (!reuseCachedMetrics) {
     const evaluated = new Uint8Array(totalPixels);
-    const analysisContext = contextForProgressRange(context, 0, 90);
+    const analysisContext = contextForProgressRange(context, 0, analysisProgressEnd);
     const evaluate = (index: number): number => {
       if (!evaluated[index]) {
         evaluated[index] = 1;
@@ -820,25 +828,37 @@ export const buildAdaptiveCoverageOverlayPixelsAsync = async (
     const lat = latByRow[y];
     const lon = lonByCol[x];
     if (pointMask && !pointMask(lat, lon)) return;
-    let isTargetContour = false;
-    if (mode === "contours") {
-      const rightValue = x < width - 1 ? signalValuesDbm[index + 1] : Number.NaN;
-      const downValue = y < height - 1 ? signalValuesDbm[index + width] : Number.NaN;
-      const crossesRight = Number.isFinite(rightValue) && (valueDbm - rxTargetDbm) * (rightValue - rxTargetDbm) <= 0;
-      const crossesDown = Number.isFinite(downValue) && (valueDbm - rxTargetDbm) * (downValue - rxTargetDbm) <= 0;
-      isTargetContour = Math.abs(valueDbm - rxTargetDbm) <= 1.25 || crossesRight || crossesDown;
-    }
-    const [r, g, b] = coverageColorFixed(
-      isTargetContour ? rxTargetDbm : valueDbm,
-      rxTargetDbm,
-      scale,
-    );
+    const [r, g, b] = coverageColorFixed(valueDbm, rxTargetDbm, scale);
     const px = index * 4;
     pixels[px] = r;
     pixels[px + 1] = g;
     pixels[px + 2] = b;
-    pixels[px + 3] = isTargetContour ? 230 : 180;
+    pixels[px + 3] = 180;
   }, colorContext);
+
+  const targetContour = isContourMode
+    ? await buildDenseCoverageTargetContourFeaturesAsync(
+        {
+          height,
+          latByRow,
+          lonByCol,
+          pointMask,
+          targetDbm: rxTargetDbm,
+          valuesDbm: signalValuesDbm,
+          width,
+        },
+        (total, runner, progressStartPercent, progressEndPercent) =>
+          runCooperativeLoop(
+            total,
+            runner,
+            contextForProgressRange(
+              context,
+              90 + progressStartPercent * 0.1,
+              90 + progressEndPercent * 0.1,
+            ),
+          ),
+      )
+    : undefined;
 
   return {
     width,
@@ -848,6 +868,7 @@ export const buildAdaptiveCoverageOverlayPixelsAsync = async (
     minDbm: scale.min,
     maxDbm: scale.max,
     signalValuesDbm,
+    targetContour,
     analysisStats: { evaluatedPaths, refinedBlocks, filledPixels, totalPixels },
   };
 };
@@ -1952,5 +1973,6 @@ export const overlayPixelsToDataUrl = (raster: OverlayRasterPixels): OverlayRast
     maxDbm: raster.maxDbm,
     minAreaKm2: raster.minAreaKm2,
     maxAreaKm2: raster.maxAreaKm2,
+    targetContour: raster.targetContour,
   };
 };
