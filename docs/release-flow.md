@@ -27,8 +27,10 @@
 
 3. Production
 - Promote only after explicit user approval.
-- Open PR `staging` -> `main` first (direct path — branch policy allows `staging` as head branch).
-- If GitHub reports conflicts because prior production releases were squash-merged, use the approved fallback: create `release/vX.Y.Z` from `main`, squash-merge `origin/staging`, resolve conflicts by keeping the verified staging release tree, tag `vX.Y.Z`, then PR `release/vX.Y.Z` -> `main`.
+- Open a direct `staging` -> `main` promotion PR by default (branch policy allows `staging` as the head branch).
+- If a direct promotion reports `CONFLICTING` or `DIRTY` because of prior squash-release history, use the approved `release/vX.Y.Z` exact-tree fallback.
+- If the immediately preceding production promotion already documented that condition, begin with the fallback instead of opening a disposable preflight PR. Record the prior release evidence in the fallback PR. Resume direct-promotion preflights only after a documented branch-history reconciliation or explicit maintainer direction.
+- For the exact-tree fallback, create `release/vX.Y.Z` from `main`, squash-merge `origin/staging`, resolve conflicts by keeping the verified staging release tree, tag `vX.Y.Z`, then PR `release/vX.Y.Z` -> `main`. The fallback must preserve the verified staging tree exactly and satisfy all existing tag, SemVer, protected-approval, deployment, and post-deploy verification gates.
 - CI automatically deploys to production on every merge to `main`. Monitor the `Deploy LinkSim Pages / deploy-prod-main` GitHub Actions job and report the commit SHA when complete.
 - Note: the CI deploy job validates that the release tag exists, the `main` HEAD tree matches the tag tree, and the release SemVer is newer than the previous production version.
 - After production deploy, continue all new work from updated `origin/staging`.
@@ -57,7 +59,7 @@
 - PRs into `main` must come from:
   - `staging` (default normal release path — branch policy explicitly allows this)
   - `hotfix/<slug>` (approved production incidents only)
-  - `release/vX.Y.Z` (approved normal-release fallback when direct `staging` -> `main` conflicts)
+  - `release/vX.Y.Z` (approved normal-release fallback for a current or immediately preceding documented direct `staging` -> `main` squash-history conflict)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
 
@@ -99,7 +101,7 @@
   1. complete milestone issues on `staging`
   2. verify milestone behavior on https://staging.linksim.link
   3. freeze milestone scope at release sign-off (no new feature merges into `staging`)
-  4. promote with a single `staging` -> `main` PR
+  4. promote with one normal production PR, using either the default direct `staging` -> `main` path or the approved exact-tree fallback
   5. deploy production from the merged `main` commit
 - Promotion must use the same verified release tree. With GitHub squash merges, commit SHAs can differ; the production gate verifies that `main` HEAD matches the `vX.Y.Z` tag tree before deploy.
 - If any code changes after staging sign-off, restart staging verification before production.
@@ -110,7 +112,7 @@
   - `CHANGELOG.md` includes a human-readable entry for the release
   - the already-selected `package.json` version is still intentional and newer than production
   - `docs/milestone-release-checklist.md` is completed
-- PR body requirement for normal promotion (`staging` -> `main`):
+- PR body requirement for normal promotion (`staging` -> `main` or approved `release/vX.Y.Z` -> `main` fallback):
   - include the checked line:
     - `- [x] Milestone release checklist completed: docs/milestone-release-checklist.md`
 
