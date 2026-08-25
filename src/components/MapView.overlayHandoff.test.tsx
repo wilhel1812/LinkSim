@@ -6,14 +6,22 @@ import type { Link, Network, RadioSystem, Site, SrtmTile } from "../types/radio"
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
+  type TargetContour = {
+    type: "FeatureCollection";
+    features: Array<{
+      type: "Feature";
+      properties: { targetDbm: number };
+      geometry: { type: "LineString"; coordinates: Array<[number, number]> };
+    }>;
+  };
   const requests: Array<{
-    resolve: (value: { width: number; height: number; pixels: Uint8ClampedArray }) => void;
+    resolve: (value: { width: number; height: number; pixels: Uint8ClampedArray; targetContour?: TargetContour }) => void;
   }> = [];
   return {
     requests,
     buildCoverage: vi.fn(
       () =>
-        new Promise<{ width: number; height: number; pixels: Uint8ClampedArray }>((resolve) => {
+        new Promise<{ width: number; height: number; pixels: Uint8ClampedArray; targetContour?: TargetContour }>((resolve) => {
           requests.push({ resolve });
         }),
     ),
@@ -34,7 +42,7 @@ const loadingOverlayMock = vi.hoisted(() => ({
 
 const layerMock = vi.hoisted(() => ({
   coveragePaint: null as null | Record<string, unknown>,
-  props: [] as Array<{ beforeId?: string; id?: string }>,
+  props: [] as Array<{ beforeId?: string; id?: string; paint?: Record<string, unknown> }>,
 }));
 
 vi.hoisted(() => {
@@ -58,13 +66,14 @@ vi.mock("../lib/overlayRaster", () => ({
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
   buildSourcePassFailOverlayPixelsAsync: overlayMock.buildCoverage,
   buildTerrainShadeOverlayPixelsAsync: vi.fn(async () => null),
-  overlayPixelsToDataUrl: vi.fn(() => ({
+  overlayPixelsToDataUrl: vi.fn((raster: { targetContour?: unknown }) => ({
     coordinates: [
       [10, 61],
       [11, 61],
       [11, 60],
       [10, 60],
     ],
+    targetContour: raster.targetContour,
     url: `data:image/mock-${++overlayMock.encodedRasterCount}`,
   })),
   OverlayTaskCancelledError: class OverlayTaskCancelledError extends Error {},
@@ -187,7 +196,19 @@ const network: Network = {
   memberships: [{ siteId: site.id, systemId: system.id }],
 };
 
-const resolveNextRaster = async () => {
+const targetContour = {
+  type: "FeatureCollection" as const,
+  features: [{
+    type: "Feature" as const,
+    properties: { targetDbm: -120 },
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [[10.25, 60.25], [10.75, 60.75]] as Array<[number, number]>,
+    },
+  }],
+};
+
+const resolveNextRaster = async (includeTargetContour = false) => {
   await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
   const request = overlayMock.requests.shift();
   if (!request) throw new Error("Expected a pending overlay raster request");
@@ -196,6 +217,7 @@ const resolveNextRaster = async () => {
       width: 1,
       height: 1,
       pixels: new Uint8ClampedArray([255, 0, 0, 255]),
+      targetContour: includeTargetContour ? targetContour : undefined,
     });
   });
 };
@@ -289,11 +311,26 @@ describe("MapView overlay handoff", () => {
     expect(replacementKey).not.toBe(firstKey);
     expect(layerMock.coveragePaint?.["raster-opacity"]).toBe(0);
 
+    await resolveNextRaster(true);
+    expect(screen.queryByTestId("coverage-target-contour-source")).not.toBeInTheDocument();
+
     act(() => loadingOverlayMock.props?.onCloudReady?.(replacementKey!));
     expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(replacementKey!));
+    act(() => loadingOverlayMock.props?.onCloudExited?.(replacementKey!));
+    await waitFor(() => expect(screen.getByTestId("coverage-target-contour-source")).toBeInTheDocument());
+    expect(layerMock.props.find((props) => props.id === "coverage-target-contour-halo-layer")?.beforeId).toBe(
+      "link-lines-casing",
+    );
+    expect(layerMock.props.find((props) => props.id === "coverage-target-contour-line-layer")?.beforeId).toBe(
+      "link-lines-casing",
+    );
+    expect(
+      layerMock.props.find((props) => props.id === "coverage-target-contour-line-layer")?.paint?.["line-color"],
+    ).toBeTruthy();
   });
 
   it("starts the initial automatic calculation without waiting for interaction", async () => {

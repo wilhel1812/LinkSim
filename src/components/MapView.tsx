@@ -79,6 +79,7 @@ import {
   buildTerrainShadeOverlayPixelsAsync,
   overlayPixelsToDataUrl,
   OverlayTaskCancelledError,
+  type OverlayRasterDataUrl,
   type OverlayRasterPixels,
 } from "../lib/overlayRaster";
 import { overlayTaskBudgetForMode } from "../lib/overlayTaskBudget";
@@ -237,6 +238,42 @@ const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProp
   };
 };
 
+const targetContourHaloLayer = (
+  color: string,
+  fadedForCloud: boolean,
+  hidden: boolean,
+): LayerProps => ({
+  beforeId: LINK_LAYER_ANCHOR_ID,
+  id: "coverage-target-contour-halo-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 2.5,
+    "line-opacity": fadedForCloud || hidden ? 0 : 0.82,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
+    },
+  },
+});
+
+const targetContourLineLayer = (
+  color: string,
+  fadedForCloud: boolean,
+  hidden: boolean,
+): LayerProps => ({
+  beforeId: LINK_LAYER_ANCHOR_ID,
+  id: "coverage-target-contour-line-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 1.2,
+    "line-opacity": fadedForCloud || hidden ? 0 : 0.96,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
+    },
+  },
+});
+
 const terrainRasterPaint = {
   "raster-opacity": 0.62,
   "raster-contrast": 0.16,
@@ -321,14 +358,7 @@ type TerrainBounds = {
   maxLon: number;
 };
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number; weakestDbm?: number };
-type OverlayRaster = {
-  url: string;
-  coordinates: [[number, number], [number, number], [number, number], [number, number]];
-  minDbm?: number;
-  maxDbm?: number;
-  minAreaKm2?: number;
-  maxAreaKm2?: number;
-};
+type OverlayRaster = OverlayRasterDataUrl;
 
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
@@ -4248,6 +4278,29 @@ export function MapView({
           >
             <Layer
               {...coverageRasterLayer(
+                simulationOverlayFadedForCloud,
+                simulationOverlayHidden,
+              )}
+            />
+          </Source>
+        ) : null}
+
+        {coverageOverlay?.targetContour?.features.length ? (
+          <Source
+            data={coverageOverlay.targetContour}
+            id="coverage-target-contour-source"
+            type="geojson"
+          >
+            <Layer
+              {...targetContourHaloLayer(
+                variant.cssVars["--bg"] ?? linkColor,
+                simulationOverlayFadedForCloud,
+                simulationOverlayHidden,
+              )}
+            />
+            <Layer
+              {...targetContourLineLayer(
+                variant.cssVars["--muted"] ?? selectedLinkColor,
                 simulationOverlayFadedForCloud,
                 simulationOverlayHidden,
               )}
