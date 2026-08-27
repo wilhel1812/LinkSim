@@ -22,6 +22,13 @@ import type { HolidayThemeKey, UiColorTheme } from "../../../themes/types";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import { InfoTip } from "../../InfoTip";
 import { Button } from "../../ui/Button";
+import {
+  MAX_CUSTOM_BASEMAP_SOURCES,
+  customBasemapStyleId,
+  normalizeUserBasemapPreferences,
+  type CustomBasemapSource,
+} from "../../../lib/basemapPreferences";
+import { DEFAULT_BASEMAP_STYLE_ID } from "../../../lib/basemaps";
 
 type PreferencesSectionProps = {
   me: CloudUser | null;
@@ -41,8 +48,133 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
     me?.id ?? null,
     me?.defaultFrequencyPresetId ?? null,
     me?.simulationDefaultsPreference ?? null,
+    me?.basemapPreferences ?? null,
   ]);
   return <PreferencesSectionContent key={preferenceKey} me={me} onMeUpdated={onMeUpdated} />;
+}
+
+type BasemapDraft = {
+  id: string;
+  name: string;
+  kind: "style" | "raster-xyz";
+  lightUrl: string;
+  darkUrl: string;
+  attribution: string;
+  attributionUrl: string;
+  maxZoom: number;
+  tileSize: 256 | 512;
+};
+
+const emptyBasemapDraft = (): BasemapDraft => ({
+  id: "", name: "", kind: "style", lightUrl: "", darkUrl: "", attribution: "", attributionUrl: "", maxZoom: 18, tileSize: 256,
+});
+
+function CustomBasemapManager({ me, onMeUpdated }: PreferencesSectionProps) {
+  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
+  const setBasemapStyleId = useAppStore((state) => state.setBasemapStyleId);
+  const sources = normalizeUserBasemapPreferences(me?.basemapPreferences).customSources;
+  const [managedId, setManagedId] = useState("");
+  const [draft, setDraft] = useState<BasemapDraft>(emptyBasemapDraft);
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const editSource = (source: CustomBasemapSource) => {
+    setManagedId(source.id);
+    setDraft({
+      id: source.id, name: source.name, kind: source.kind, lightUrl: source.lightUrl,
+      darkUrl: source.darkUrl ?? "", attribution: source.attribution, attributionUrl: source.attributionUrl ?? "",
+      maxZoom: source.kind === "raster-xyz" ? source.maxZoom : 18,
+      tileSize: source.kind === "raster-xyz" ? source.tileSize : 256,
+    });
+    setStatus("");
+  };
+
+  const persist = async (nextSources: CustomBasemapSource[], success: string) => {
+    setSaving(true);
+    setStatus("");
+    try {
+      const basemapPreferences = normalizeUserBasemapPreferences({ version: 1, customSources: nextSources }, { strict: true });
+      const updated = await updateMyProfile({ basemapPreferences });
+      onMeUpdated(updated);
+      setCurrentUser(updated);
+      setAuthState("signed_in");
+      setStatus(success);
+      return true;
+    } catch (error) {
+      setStatus(getUiErrorMessage(error));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    const id = managedId || `map-${crypto.randomUUID()}`;
+    const source = draft.kind === "style"
+      ? { id, name: draft.name, kind: "style" as const, lightUrl: draft.lightUrl, darkUrl: draft.darkUrl || undefined, attribution: draft.attribution, attributionUrl: draft.attributionUrl || undefined }
+      : { id, name: draft.name, kind: "raster-xyz" as const, lightUrl: draft.lightUrl, darkUrl: draft.darkUrl || undefined, attribution: draft.attribution, attributionUrl: draft.attributionUrl || undefined, maxZoom: draft.maxZoom, tileSize: draft.tileSize };
+    const next = managedId ? sources.map((candidate) => candidate.id === managedId ? source : candidate) : [...sources, source];
+    if (await persist(next, managedId ? "Custom map updated." : "Custom map created.")) {
+      setManagedId(id);
+      setDraft((current) => ({ ...current, id }));
+    }
+  };
+
+  const deleteManaged = async () => {
+    if (!managedId) return;
+    if (await persist(sources.filter((source) => source.id !== managedId), "Custom map deleted.")) {
+      if (basemapStyleId === customBasemapStyleId(managedId)) setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
+      setManagedId("");
+      setDraft(emptyBasemapDraft());
+    }
+  };
+
+  const testConnection = async () => {
+    setStatus("Testing connection…");
+    const testUrl = draft.kind === "raster-xyz"
+      ? draft.lightUrl.replaceAll("{z}", "0").replaceAll("{x}", "0").replaceAll("{y}", "0")
+      : draft.lightUrl;
+    try {
+      const response = await fetch(testUrl, { method: "GET", mode: "cors" });
+      setStatus(response.ok ? "Connection succeeded." : `Connection returned HTTP ${response.status}.`);
+    } catch (error) {
+      setStatus(`Connection test failed: ${getUiErrorMessage(error)}`);
+    }
+  };
+
+  return (
+    <div className="autosave-field custom-basemap-manager">
+      <label className="autosave-field-label" htmlFor="pref-custom-basemap-manager">
+        <span>Custom maps <InfoTip text="Add a MapLibre style URL or raster XYZ tile template. Definitions sync to your account; the selected map stays on this device." /></span>
+      </label>
+      <select id="pref-custom-basemap-manager" className="locale-select" value={managedId} onChange={(event) => {
+        const source = sources.find((candidate) => candidate.id === event.target.value);
+        if (source) editSource(source); else { setManagedId(""); setDraft(emptyBasemapDraft()); setStatus(""); }
+      }}>
+        <option value="">Create a custom map</option>
+        {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+      </select>
+      <label className="field-grid"><span>Name</span><input aria-label="Custom map name" maxLength={80} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+      <label className="field-grid"><span>Source type</span><select aria-label="Custom map source type" className="locale-select" value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value as BasemapDraft["kind"] })}><option value="style">MapLibre style URL</option><option value="raster-xyz">Raster XYZ</option></select></label>
+      <label className="field-grid"><span>Light URL</span><input aria-label="Custom map light URL" maxLength={2048} value={draft.lightUrl} onChange={(event) => setDraft({ ...draft, lightUrl: event.target.value })} /></label>
+      <label className="field-grid"><span>Dark URL</span><input aria-label="Custom map dark URL" maxLength={2048} placeholder="Optional — reuses light URL" value={draft.darkUrl} onChange={(event) => setDraft({ ...draft, darkUrl: event.target.value })} /></label>
+      <label className="field-grid"><span>Attribution</span><input aria-label="Custom map attribution" maxLength={300} value={draft.attribution} onChange={(event) => setDraft({ ...draft, attribution: event.target.value })} /></label>
+      <label className="field-grid"><span>Attribution URL</span><input aria-label="Custom map attribution URL" maxLength={2048} value={draft.attributionUrl} onChange={(event) => setDraft({ ...draft, attributionUrl: event.target.value })} /></label>
+      {draft.kind === "raster-xyz" ? <>
+        <label className="field-grid"><span>Max zoom</span><input aria-label="Custom map max zoom" min={0} max={24} type="number" value={draft.maxZoom} onChange={(event) => setDraft({ ...draft, maxZoom: Number(event.target.value) })} /></label>
+        <label className="field-grid"><span>Tile size</span><select aria-label="Custom map tile size" className="locale-select" value={draft.tileSize} onChange={(event) => setDraft({ ...draft, tileSize: Number(event.target.value) as 256 | 512 })}><option value={256}>256</option><option value={512}>512</option></select></label>
+      </> : null}
+      <p className="field-help">Requests go directly from your browser. HTTP sources are normally blocked on hosted LinkSim. Complete URLs, including query tokens, are stored in private LinkSim profile data and are visible to LinkSim database operators; this is not a secret vault.</p>
+      <div className="custom-radio-preset-actions">
+        <Button aria-label={managedId ? "Save custom map" : "Create custom map"} disabled={saving || (!managedId && sources.length >= MAX_CUSTOM_BASEMAP_SOURCES)} onClick={() => void saveDraft()} type="button"><Plus aria-hidden="true" size={14} /> {managedId ? "Save" : "Create"}</Button>
+        <Button disabled={saving || !draft.lightUrl} onClick={() => void testConnection()} type="button" variant="ghost">Test connection</Button>
+        {managedId ? <Button aria-label={`Delete custom map: ${draft.name}`} disabled={saving} onClick={() => void deleteManaged()} type="button" variant="danger"><Trash2 aria-hidden="true" size={14} /> Delete</Button> : null}
+      </div>
+      {status ? <p className="field-help" role="status">{status}</p> : null}
+    </div>
+  );
 }
 
 function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps) {
@@ -312,6 +444,8 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
           </select>
           <div className="field-help">Device-only preference — not synced across devices.</div>
         </div>
+
+        <CustomBasemapManager me={me} onMeUpdated={onMeUpdated} />
 
         <div className="autosave-field">
           <label className="autosave-field-label" htmlFor="pref-color-theme">

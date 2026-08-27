@@ -38,10 +38,13 @@ import {
   BASEMAP_CATEGORIES,
   DEFAULT_BASEMAP_STYLE_ID,
   getCategoryForStyleId,
-  getCartoFallbackStyle,
+  getLocalFallbackStyle,
+  getOpenFreeMapFallbackStyle,
   getDefaultStyleIdForCategory,
   getStylesForCategory,
+  nextBasemapFallbackStage,
   resolveBasemapSelection,
+  transformCartoRequest,
   type BasemapCategory,
 } from "../lib/basemaps";
 import {
@@ -467,6 +470,7 @@ type MapViewProps = {
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
   onPublishNotice?: (notice: { id: string; message: string; tone: "info" | "warning" | "error"; persistent: boolean }) => void;
+  onRenderedBasemapChange?: (attribution: { text: string; url: string }) => void;
 };
 
 type MarkerActionButtonProps = {
@@ -696,8 +700,10 @@ export function MapView({
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
   onPublishNotice,
+  onRenderedBasemapChange,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
+  const currentUser = useAppStore((state) => state.currentUser);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
@@ -847,7 +853,7 @@ export function MapView({
     existingId: string;
     existingName: string;
   } | null>(null);
-  const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
+  const [basemapFallbackStage, setBasemapFallbackStage] = useState<"selected" | "openfreemap" | "local">("selected");
   const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
   const [isUserLocationActive, setIsUserLocationActive] = useState(false);
   const [userLocationFix, setUserLocationFix] = useState<UserLocationFix | null>(null);
@@ -3247,13 +3253,19 @@ export function MapView({
     );
   }
 
-  const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
-    [basemapStyleId, theme, colorTheme],
+  const customBasemapSources = useMemo(
+    () => currentUser?.basemapPreferences?.customSources ?? [],
+    [currentUser?.basemapPreferences?.customSources],
   );
-  const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const resolvedBasemap = useMemo(
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, customBasemapSources),
+    [basemapStyleId, colorTheme, customBasemapSources, theme],
+  );
+  const openFreeMapFallbackStyle = useMemo(() => getOpenFreeMapFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const localFallbackStyle = useMemo(() => getLocalFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const transformMapRequest = useCallback((url: string) => transformCartoRequest(url), []);
   // Themed styles show an official style URL + a translucent color overlay using the app's terrain token.
-  const themedOverlay = resolvedBasemap.isThemed
+  const themedOverlay = basemapFallbackStage !== "local" && ((basemapFallbackStage === "openfreemap" && !(theme === "dark" && colorTheme === "blue")) || resolvedBasemap.isThemed)
     ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
     : null;
   const userLocationAccuracyGeoJson = useMemo(
@@ -3266,7 +3278,16 @@ export function MapView({
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
     () => getCategoryForStyleId(basemapStyleId),
   );
-  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory), [selectedCategory]);
+  useEffect(() => {
+    if (currentUser && basemapStyleId.startsWith("custom:") && !customBasemapSources.some((source) => `custom:${source.id}` === basemapStyleId)) {
+      setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
+      setSelectedCategory("street");
+      setBasemapFallbackStage("selected");
+      return;
+    }
+    setSelectedCategory(getCategoryForStyleId(basemapStyleId));
+  }, [basemapStyleId, currentUser, customBasemapSources, setBasemapStyleId]);
+  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory, customBasemapSources), [customBasemapSources, selectedCategory]);
   const globalCategoryStyles = useMemo(
     () => categoryStyles.filter((s) => !s.regional),
     [categoryStyles],
@@ -3276,6 +3297,8 @@ export function MapView({
     [categoryStyles],
   );
   const providerMaxZoom = useMemo(() => {
+    if (basemapFallbackStage !== "selected") return basemapFallbackStage === "local" ? 24 : 22;
+    if (resolvedBasemap.maxZoom !== 22) return resolvedBasemap.maxZoom;
     switch (resolvedBasemap.provider) {
       case "kartverket":
         return 20;
@@ -3284,7 +3307,18 @@ export function MapView({
       default:
         return 22;
     }
-  }, [resolvedBasemap.provider]);
+  }, [basemapFallbackStage, resolvedBasemap.maxZoom, resolvedBasemap.provider]);
+
+  useEffect(() => {
+    if (!onRenderedBasemapChange) return;
+    if (basemapFallbackStage === "selected") {
+      onRenderedBasemapChange({ text: resolvedBasemap.attribution, url: resolvedBasemap.attributionUrl });
+    } else if (basemapFallbackStage === "openfreemap") {
+      onRenderedBasemapChange({ text: "© OpenStreetMap contributors", url: "https://openfreemap.org/" });
+    } else {
+      onRenderedBasemapChange({ text: "Local background", url: "" });
+    }
+  }, [basemapFallbackStage, onRenderedBasemapChange, resolvedBasemap.attribution, resolvedBasemap.attributionUrl]);
   const { isMultiSelectMode, setIsMultiSelectMode, fitControlActive, clearFitControlActive, zoomBy, fitToNodes } = useMapControls({
     activeViewState,
     fitBottomInset,
@@ -3389,8 +3423,9 @@ export function MapView({
   );
   const inspectorLines: string[] = [];
   if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
-  if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
-  if (useFallbackMapStyle) inspectorLines.push("Base map provider failed. Auto-switched to CARTO fallback style.");
+  if (resolvedBasemap.fallbackReason && basemapFallbackStage === "selected") inspectorLines.push(resolvedBasemap.fallbackReason);
+  if (basemapFallbackStage === "openfreemap") inspectorLines.push("Base map provider failed. Temporarily showing the OpenFreeMap LinkSim style.");
+  if (basemapFallbackStage === "local") inspectorLines.push("Online base maps failed. Showing the local background while LinkSim overlays remain available.");
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
@@ -3742,15 +3777,15 @@ export function MapView({
                   onChange={(event) => {
                     const nextCategory = event.target.value as BasemapCategory;
                     setSelectedCategory(nextCategory);
-                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory);
+                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory, customBasemapSources);
                     setBasemapStyleId(nextStyleId);
-                    setUseFallbackMapStyle(false);
+                    setBasemapFallbackStage("selected");
                     setMapProviderWarning(null);
                   }}
                   value={selectedCategory}
                 >
                   {BASEMAP_CATEGORIES.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
+                    <option disabled={cat.id === "custom" && customBasemapSources.length === 0} key={cat.id} value={cat.id}>
                       {cat.label}
                     </option>
                   ))}
@@ -3762,7 +3797,7 @@ export function MapView({
                   className="locale-select"
                   onChange={(event) => {
                     setBasemapStyleId(event.target.value);
-                    setUseFallbackMapStyle(false);
+                    setBasemapFallbackStage("selected");
                     setMapProviderWarning(null);
                   }}
                   value={resolvedBasemap.styleId}
@@ -4184,21 +4219,19 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
+        mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
+        transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
         onError={() => {
-          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
-            setUseFallbackMapStyle(true);
-            setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
-            setInteractionViewState({
-              longitude: activeViewState.longitude,
-              latitude: activeViewState.latitude,
-              zoom: Math.min(activeViewState.zoom, 20),
-            });
-            setMapProviderWarning(
-              `${resolvedBasemap.providerLabel} failed (network, quota, or style error).`,
-            );
-          }
+          if (basemapFallbackStage === "local") return;
+          const nextStage = nextBasemapFallbackStage(basemapFallbackStage, resolvedBasemap.styleId);
+          setBasemapFallbackStage(nextStage);
+          setInteractionViewState({
+            longitude: activeViewState.longitude,
+            latitude: activeViewState.latitude,
+            zoom: Math.min(activeViewState.zoom, 20),
+          });
+          setMapProviderWarning(`${basemapFallbackStage === "selected" ? resolvedBasemap.providerLabel : "OpenFreeMap"} failed (network, quota, or style error).`);
         }}
         interactiveLayerIds={["link-lines"]}
         onClick={onMapClick}

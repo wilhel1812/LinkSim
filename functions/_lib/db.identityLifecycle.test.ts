@@ -55,7 +55,7 @@ class SqliteD1 {
       CREATE TABLE users (
         id TEXT PRIMARY KEY, username TEXT, email TEXT, username_set_at TEXT, bio TEXT, access_request_note TEXT,
         idp_email TEXT, idp_email_verified INTEGER NOT NULL DEFAULT 0, avatar_url TEXT, email_public INTEGER,
-        default_frequency_preset_id TEXT, simulation_defaults_preference_json TEXT, avatar_object_key TEXT,
+        default_frequency_preset_id TEXT, simulation_defaults_preference_json TEXT, basemap_preferences_json TEXT, avatar_object_key TEXT,
         avatar_thumb_key TEXT, avatar_hash TEXT, avatar_bytes INTEGER, avatar_content_type TEXT,
         is_admin INTEGER NOT NULL DEFAULT 0, is_moderator INTEGER NOT NULL DEFAULT 0,
         is_approved INTEGER NOT NULL DEFAULT 0, approved_at TEXT, approved_by_user_id TEXT, created_at TEXT, updated_at TEXT
@@ -148,12 +148,12 @@ const seedCanonicalAccount = (database: SqliteD1) => {
   database.db.exec(`
     INSERT INTO users
       (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified,
-       avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json,
+       avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json,
        avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type,
        is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
       VALUES (
         'old-subject', 'Chosen Operator', 'profile@example.net', '2026-01-02', 'Profile bio', 'Access note',
-        'user@example.com', 1, '/api/avatar/users/opaque/avatar.webp', 0, 'preset-1', '{"frequencyMHz":146.52}',
+        'user@example.com', 1, '/api/avatar/users/opaque/avatar.webp', 0, 'preset-1', '{"frequencyMHz":146.52}', '{"version":1,"customSources":[{"id":"field","name":"Field map","kind":"style","lightUrl":"https://maps.test/style.json","attribution":"Field data"}]}',
         'users/opaque/avatar.webp', 'users/opaque/avatar-thumb.webp', 'avatar-hash', 1234, 'image/webp',
         1, 1, '2026-01-01', 'old-subject', '2025-12-15', '2026-01-03'
       );
@@ -195,7 +195,7 @@ describe("authoritative identity lifecycle", () => {
     ]);
     expect(database.db.prepare(`
       SELECT username, email, username_set_at, bio, access_request_note, avatar_url, email_public,
-             default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key,
+             default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json, avatar_object_key,
              avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, created_at
       FROM users WHERE id = 'new-subject'
     `).get()).toEqual({
@@ -208,6 +208,7 @@ describe("authoritative identity lifecycle", () => {
       email_public: 0,
       default_frequency_preset_id: "preset-1",
       simulation_defaults_preference_json: '{"frequencyMHz":146.52}',
+      basemap_preferences_json: '{"version":1,"customSources":[{"id":"field","name":"Field map","kind":"style","lightUrl":"https://maps.test/style.json","attribution":"Field data"}]}',
       avatar_object_key: "users/opaque/avatar.webp",
       avatar_thumb_key: "users/opaque/avatar-thumb.webp",
       avatar_hash: "avatar-hash",

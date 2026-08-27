@@ -77,6 +77,7 @@ export function Sidebar({
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
+  const currentUser = useAppStore((state) => state.currentUser);
   const pendingSiteLibraryDraft = useAppStore((state) => state.pendingSiteLibraryDraft);
   const clearPendingSiteLibraryDraft = useAppStore((state) => state.clearPendingSiteLibraryDraft);
   const pendingSiteLibraryOpenEntryId = useAppStore((state) => state.pendingSiteLibraryOpenEntryId);
@@ -93,8 +94,8 @@ export function Sidebar({
   );
   const openLibrary = useAppStore((state) => state.openLibrary);
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
-    [basemapStyleId, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, currentUser?.basemapPreferences?.customSources ?? []),
+    [basemapStyleId, colorTheme, currentUser?.basemapPreferences?.customSources, theme],
   );
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),

@@ -1,6 +1,6 @@
 # Privacy Notice
 
-Last updated: 2026-08-16
+Last updated: 2026-08-27
 
 This document describes how LinkSim handles user data.
 
@@ -12,6 +12,7 @@ This document describes how LinkSim handles user data.
   - email and identity-provider email
   - optional bio
   - optional avatar metadata/object keys
+  - private custom map definitions, including complete style/tile URLs and attribution
 - Access and moderation:
   - role/status (pending/user/moderator/admin)
   - approval timestamps and approver IDs
@@ -22,13 +23,15 @@ This document describes how LinkSim handles user data.
 
 ## Sensitive information warning
 
-Do not store secrets in LinkSim content (sites, simulations, notes, profile fields), including:
+Do not store secrets in LinkSim content (sites, simulations, notes, or ordinary profile fields), including:
 - passwords
 - API keys/tokens
 - private keys
 - confidential credentials
 
 Visibility/access settings are collaboration controls, not a secure secret vault.
+
+Custom map definitions may include browser-safe query tokens required by a tile provider. LinkSim stores the complete URLs in private profile data. LinkSim database operators can read those URLs, and the browser sends them directly to the selected provider. Do not use credentials that require secret-vault protection.
 
 ## Why data is processed
 
@@ -52,6 +55,7 @@ Visibility/access settings are collaboration controls, not a secure secret vault
 
 - When a user saves a Site created from a map position, the browser sends the exact coordinates directly to the OpenStreetMap Nominatim service to suggest a Site name.
 - LinkSim permits profile avatar URLs hosted outside LinkSim. Viewing one of these avatars makes the viewer's browser request the image directly from its host, which discloses the viewer's IP address and User-Agent to that host. LinkSim suppresses the HTTP referrer for these image requests.
+- Selecting or testing a built-in or custom map makes the browser request styles, tiles, sprites, and fonts directly from that provider. The provider receives normal request metadata and any query token stored in the URL. HTTP custom sources are normally blocked as mixed content on hosted LinkSim.
 
 ### Public statistics and service metadata
 

@@ -1,4 +1,5 @@
 import type { UserSimulationDefaultsPreference } from "./simulationDefaults";
+import type { UserBasemapPreferences } from "./basemapPreferences";
 
 export type CloudUser = {
   id: string;
@@ -11,6 +12,7 @@ export type CloudUser = {
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;
   simulationDefaultsPreference?: UserSimulationDefaultsPreference | null;
+  basemapPreferences?: UserBasemapPreferences | null;
   isAdmin: boolean;
   isModerator?: boolean;
   isApproved: boolean;
@@ -263,6 +265,7 @@ export const updateMyProfile = async (patch: {
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;
   simulationDefaultsPreference?: UserSimulationDefaultsPreference | null;
+  basemapPreferences?: UserBasemapPreferences | null;
 }): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>("/api/me", {
     method: "PATCH",

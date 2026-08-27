@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CARTO_KEY,
   DEFAULT_BASEMAP_STYLE_ID,
-  getCartoFallbackStyle,
+  getLocalFallbackStyle,
+  getOpenFreeMapFallbackStyle,
   getStylesForCategory,
+  nextBasemapFallbackStage,
+  transformCartoRequest,
   resolveBasemapSelection,
 } from "./basemaps";
+import type { CustomBasemapSource } from "./basemapPreferences";
 
 describe("resolveBasemapSelection — defaults and fallback", () => {
   it("resolves the default style without fallback", () => {
@@ -17,6 +22,34 @@ describe("resolveBasemapSelection — defaults and fallback", () => {
     const result = resolveBasemapSelection("unknown-style-xyz", "light", "blue");
     expect(result.styleId).toBe(DEFAULT_BASEMAP_STYLE_ID);
     expect(result.fallbackReason).not.toBeNull();
+  });
+});
+
+describe("custom basemap resolution", () => {
+  const sources: CustomBasemapSource[] = [
+    { id: "style", name: "My style", kind: "style", lightUrl: "https://maps.test/light.json", darkUrl: "https://maps.test/dark.json", attribution: "My data", attributionUrl: "https://maps.test/credits" },
+    { id: "raster", name: "My raster", kind: "raster-xyz", lightUrl: "https://tiles.test/{z}/{x}/{y}.png", darkUrl: "https://tiles.test/{z}/{x}/{y}.png", attribution: "Raster data", maxZoom: 17, tileSize: 512 },
+  ];
+
+  it("resolves account sources with theme URL, attribution, and raster metadata", () => {
+    expect(resolveBasemapSelection("custom:style", "dark", "blue", sources)).toMatchObject({ style: "https://maps.test/dark.json", attribution: "My data", provider: "custom" });
+    const raster = resolveBasemapSelection("custom:raster", "light", "blue", sources);
+    expect(raster.maxZoom).toBe(17);
+    expect((raster.style as unknown as { sources: { customRaster: { tiles: string[]; tileSize: number } } }).sources.customRaster).toMatchObject({ tiles: ["https://tiles.test/{z}/{x}/{y}.png"], tileSize: 512 });
+    expect(getStylesForCategory("custom", sources).map((entry) => entry.id)).toEqual(["custom:style", "custom:raster"]);
+  });
+
+  it("falls back without persisting when an account source was deleted elsewhere", () => {
+    const result = resolveBasemapSelection("custom:missing", "light", "blue", sources);
+    expect(result.styleId).toBe(DEFAULT_BASEMAP_STYLE_ID);
+    expect(result.fallbackReason).toContain("Unknown basemap style");
+  });
+});
+
+describe("CARTO availability", () => {
+  it("keeps CARTO styles selectable only when the deployment shared key exists", () => {
+    const carto = getStylesForCategory("street").find((entry) => entry.id === "street-positron");
+    expect(carto).toMatchObject({ requiresKey: true, available: CARTO_KEY.length > 0, provider: "carto" });
   });
 });
 
@@ -56,16 +89,14 @@ describe("MapTiler Topo dark auto-switch", () => {
 });
 
 describe("Street category dark auto-switch", () => {
-  it("street-positron resolves to dark-matter in dark mode", () => {
-    const result = resolveBasemapSelection("street-positron", "dark", "blue");
-    expect(result.styleId).toBe("street-positron");
-    expect(result.style).toContain("dark-matter");
+  it("LinkSim pairs OpenFreeMap Positron light with Fiord dark", () => {
+    expect(resolveBasemapSelection("street-linksim", "light", "blue").style).toContain("openfreemap.org/styles/positron");
+    expect(resolveBasemapSelection("street-linksim", "dark", "blue").style).toContain("openfreemap.org/styles/fiord");
   });
 
-  it("street-positron resolves to positron in light mode", () => {
-    const result = resolveBasemapSelection("street-positron", "light", "blue");
-    expect(result.style).toContain("positron");
-    expect(result.style).not.toContain("dark");
+  it("lists all five untinted OpenFreeMap styles", () => {
+    const ids = getStylesForCategory("street").filter((entry) => entry.provider === "openfreemap").map((entry) => entry.id);
+    expect(ids).toEqual(expect.arrayContaining(["street-ofm-positron", "street-ofm-bright", "street-ofm-liberty", "street-ofm-dark", "street-ofm-fiord"]));
   });
 });
 
@@ -89,6 +120,13 @@ describe("Themed styles", () => {
     expect(result.isThemed).toBe(true);
   });
 
+  it("keeps blue Fiord unchanged and tints Fiord for other color themes", () => {
+    expect(resolveBasemapSelection("street-linksim", "dark", "blue").isThemed).toBe(false);
+    for (const colorTheme of ["pink", "red", "green", "neutral"] as const) {
+      expect(resolveBasemapSelection("street-linksim", "dark", colorTheme).isThemed).toBe(true);
+    }
+  });
+
   it("terrain-outdoors isThemed is true", () => {
     const result = resolveBasemapSelection("terrain-outdoors", "light", "blue");
     expect(result.isThemed).toBe(true);
@@ -103,7 +141,8 @@ describe("Themed styles", () => {
 
   it("street-positron isThemed is false", () => {
     const result = resolveBasemapSelection("street-positron", "light", "blue");
-    expect(result.isThemed).toBe(false);
+    if (result.styleId === "street-positron") expect(result.isThemed).toBe(false);
+    else expect(result.fallbackReason).toContain("API key");
   });
 });
 
@@ -148,16 +187,27 @@ describe("getStylesForCategory", () => {
 });
 
 describe("basemap fallback style", () => {
-  it("uses CARTO LinkSim themed style when provider fails", () => {
+  it("uses OpenFreeMap LinkSim when a provider fails", () => {
     const expected = resolveBasemapSelection("street-linksim", "light", "blue").style;
-    const fallback = getCartoFallbackStyle("light", "blue");
+    const fallback = getOpenFreeMapFallbackStyle("light", "blue");
     expect(fallback).toEqual(expected);
   });
 
-  it("adapts fallback style to dark theme", () => {
-    const darkFallback = getCartoFallbackStyle("dark", "blue");
-    const darkStyle = darkFallback as { sources?: { cartoRaster?: { tiles?: string[] } } };
-    const tiles = darkStyle.sources?.cartoRaster?.tiles ?? [];
-    expect(tiles.some((tile) => tile.includes("dark_all"))).toBe(true);
+  it("has a provider-independent local fallback", () => {
+    const fallback = getLocalFallbackStyle("dark", "blue");
+    expect(fallback.sources).toEqual({});
+    expect(fallback.layers[0]).toMatchObject({ type: "background" });
+  });
+
+  it("only adds the shared CARTO key to CARTO basemap hosts", () => {
+    expect(transformCartoRequest("https://a.basemaps.cartocdn.com/light_all/1/1/1.png", "abc").url).toContain("key=abc");
+    expect(transformCartoRequest("https://custom.test/style.json?x=1", "abc").url).toBe("https://custom.test/style.json?x=1");
+  });
+
+  it("advances selected source to OpenFreeMap and then the local background", () => {
+    expect(nextBasemapFallbackStage("selected", "street-maptiler")).toBe("openfreemap");
+    expect(nextBasemapFallbackStage("openfreemap", "street-maptiler")).toBe("local");
+    expect(nextBasemapFallbackStage("selected", DEFAULT_BASEMAP_STYLE_ID)).toBe("local");
+    expect(nextBasemapFallbackStage("local", "street-maptiler")).toBe("local");
   });
 });

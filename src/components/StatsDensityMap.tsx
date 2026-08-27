@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Fullscreen, ZoomIn, ZoomOut } from "lucide-react";
 import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection, Point } from "geojson";
-import { getCartoFallbackStyle } from "../lib/basemaps";
+import { getLocalFallbackStyle, getOpenFreeMapFallbackStyle } from "../lib/basemaps";
 import type { StatsPayload } from "../lib/stats";
 import type { UiColorTheme } from "../themes/types";
 import { MapControlButton } from "./ui/MapControlButton";
@@ -61,6 +61,7 @@ const fitBins = (map: MapRef | null, bins: StatsDensityMapProps["bins"]) => {
 export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor, surfaceColor }: StatsDensityMapProps) {
   const mapRef = useRef<MapRef | null>(null);
   const [hovered, setHovered] = useState<HoveredBin | null>(null);
+  const [useLocalFallback, setUseLocalFallback] = useState(false);
   const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
   const featureCollection = useMemo<FeatureCollection<Point, DensityProperties>>(
     () => ({
@@ -130,12 +131,12 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
       <Map
         ref={mapRef}
         initialViewState={{ ...initialCenter, zoom: bins.length === 1 ? 5 : 3 }}
-        mapStyle={getCartoFallbackStyle(theme, colorTheme)}
+        mapStyle={useLocalFallback ? getLocalFallbackStyle(theme, colorTheme) : getOpenFreeMapFallbackStyle(theme, colorTheme)}
         attributionControl={false}
         dragPan={!window.matchMedia("(pointer: coarse)").matches}
         scrollZoom={false}
         touchZoomRotate={false}
-        onError={() => setHovered(null)}
+        onError={() => { setHovered(null); setUseLocalFallback(true); }}
         onLoad={(event) => fitBins(event.target as unknown as MapRef, bins)}
         onMouseLeave={() => setHovered(null)}
         onMouseMove={hoverFromFeature}
@@ -191,7 +192,7 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         </div>
       </div>
       <div className="floating-attribution-pill ui-surface-pill stats-map-attribution">
-        <a href="https://carto.com/attributions" rel="noreferrer" target="_blank">CARTO</a>
+        {useLocalFallback ? <span>Local background</span> : <a href="https://openfreemap.org/" rel="noreferrer" target="_blank">OpenFreeMap</a>}
         <span>·</span>
         <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">MapLibre</a>
       </div>

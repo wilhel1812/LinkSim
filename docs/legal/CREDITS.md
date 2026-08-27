@@ -14,4 +14,5 @@ This project is an independent web reimplementation inspired by Radio Mobile con
 
 ## Basemap Styles
 
-- CARTO basemap styles (Positron / Dark Matter) used through MapLibre style endpoints.
+- OpenFreeMap styles and tiles, based on OpenStreetMap data: https://openfreemap.org/
+- Optional CARTO basemap styles (Positron / Dark Matter and Voyager) used through MapLibre style endpoints when the deployment has a shared key.

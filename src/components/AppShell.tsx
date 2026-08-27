@@ -329,9 +329,10 @@ export function AppShell() {
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
 
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
-    [basemapStyleId, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, currentUser?.basemapPreferences?.customSources ?? []),
+    [basemapStyleId, colorTheme, currentUser?.basemapPreferences?.customSources, theme],
   );
+  const [renderedBasemapAttribution, setRenderedBasemapAttribution] = useState<{ text: string; url: string } | null>(null);
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
@@ -2145,6 +2146,7 @@ export function AppShell() {
           ) : null}
         </div>
         <MapView
+          onRenderedBasemapChange={setRenderedBasemapAttribution}
           isMapExpanded={isMapExpanded}
           showInspector={
             (!isMapExpanded || inspectorMotionPhase === "exiting") &&
@@ -2364,9 +2366,11 @@ export function AppShell() {
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill ui-surface-pill">
           <span>&copy;</span>
-          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
-            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
-          </a>
+          {(renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl) ? (
+            <a href={renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+              {(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}
+            </a>
+          ) : <span>{(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}</span>}
           <span>&copy;</span>
           <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
             MapLibre

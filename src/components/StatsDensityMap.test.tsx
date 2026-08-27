@@ -54,7 +54,7 @@ describe("StatsDensityMap", () => {
     );
 
     expect(screen.getByLabelText("Zoom out Site density map").closest(".stats-map-controls")).toHaveClass("map-controls");
-    const attribution = screen.getByText("CARTO").closest(".stats-map-attribution");
+    const attribution = screen.getByText("OpenFreeMap").closest(".stats-map-attribution");
     expect(attribution).toHaveClass("floating-attribution-pill");
     expect(attribution).toHaveTextContent("MapLibre");
 

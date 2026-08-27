@@ -16,6 +16,8 @@ const hoisted = vi.hoisted(() => ({
     setUiThemePreference: vi.fn(),
     uiColorTheme: "blue",
     setUiColorTheme: vi.fn(),
+    basemapStyleId: "street-linksim",
+    setBasemapStyleId: vi.fn(),
     setCurrentUser: vi.fn(),
     setAuthState: vi.fn(),
   } as Record<string, unknown>,
@@ -239,5 +241,36 @@ describe("PreferencesSection custom radio presets", () => {
     await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
     expect(hoisted.updateMyProfile.mock.calls[0]?.[0].simulationDefaultsPreference.customPresets[0].defaults.propagationEnvironment.polarization).toBe("Horizontal");
     vi.useRealTimers();
+  });
+
+  it("creates an account-synced custom MapLibre style source", async () => {
+    const me = userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false });
+    hoisted.updateMyProfile.mockImplementation(async (patch) => ({ ...me, basemapPreferences: patch.basemapPreferences }));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map name" }), "Field Map");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map light URL" }), "https://maps.test/style.json?token=browser-safe");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map attribution" }), "Field data");
+    await userEvent.click(screen.getByRole("button", { name: "Create custom map" }));
+
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1));
+    expect(hoisted.updateMyProfile.mock.calls[0]?.[0].basemapPreferences.customSources[0]).toMatchObject({
+      name: "Field Map", kind: "style", lightUrl: "https://maps.test/style.json?token=browser-safe",
+    });
+  });
+
+  it("returns the device to LinkSim when deleting its active custom source", async () => {
+    const me = {
+      ...userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false }),
+      basemapPreferences: { version: 1 as const, customSources: [{ id: "field", name: "Field Map", kind: "style" as const, lightUrl: "https://maps.test/style.json", attribution: "Field data" }] },
+    };
+    hoisted.store.basemapStyleId = "custom:field";
+    hoisted.updateMyProfile.mockImplementation(async (patch) => ({ ...me, basemapPreferences: patch.basemapPreferences }));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Custom maps/ }), "field");
+    await userEvent.click(screen.getByRole("button", { name: "Delete custom map: Field Map" }));
+
+    await waitFor(() => expect(hoisted.store.setBasemapStyleId).toHaveBeenCalledWith("street-linksim"));
   });
 });
