@@ -37,6 +37,7 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
   BASEMAP_CATEGORIES,
   DEFAULT_BASEMAP_STYLE_ID,
+  getBasemapAttributionCredits,
   getCategoryForStyleId,
   getLocalFallbackStyle,
   getOpenFreeMapFallbackStyle,
@@ -47,6 +48,7 @@ import {
   shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   type BasemapCategory,
+  type RenderedBasemapAttribution,
 } from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
@@ -471,7 +473,7 @@ type MapViewProps = {
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
   onPublishNotice?: (notice: { id: string; message: string; tone: "info" | "warning" | "error"; persistent: boolean }) => void;
-  onRenderedBasemapChange?: (attribution: { text: string; url: string }) => void;
+  onRenderedBasemapChange?: (attribution: RenderedBasemapAttribution) => void;
 };
 
 type MarkerActionButtonProps = {
@@ -3321,13 +3323,19 @@ export function MapView({
   useEffect(() => {
     if (!onRenderedBasemapChange) return;
     if (basemapFallbackStage === "selected") {
-      onRenderedBasemapChange({ text: resolvedBasemap.attribution, url: resolvedBasemap.attributionUrl });
+      onRenderedBasemapChange({ credits: getBasemapAttributionCredits(resolvedBasemap) });
     } else if (basemapFallbackStage === "openfreemap") {
-      onRenderedBasemapChange({ text: "© OpenStreetMap contributors", url: "https://openfreemap.org/" });
+      onRenderedBasemapChange({
+        credits: getBasemapAttributionCredits({
+          provider: "openfreemap",
+          attribution: "© OpenStreetMap contributors",
+          attributionUrl: "https://openfreemap.org/",
+        }),
+      });
     } else {
-      onRenderedBasemapChange({ text: "Local background", url: "" });
+      onRenderedBasemapChange({ credits: [{ text: "Local background", url: "" }] });
     }
-  }, [basemapFallbackStage, onRenderedBasemapChange, resolvedBasemap.attribution, resolvedBasemap.attributionUrl]);
+  }, [basemapFallbackStage, onRenderedBasemapChange, resolvedBasemap.attribution, resolvedBasemap.attributionUrl, resolvedBasemap.provider]);
   const { isMultiSelectMode, setIsMultiSelectMode, fitControlActive, clearFitControlActive, zoomBy, fitToNodes } = useMapControls({
     activeViewState,
     fitBottomInset,

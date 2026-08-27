@@ -38,6 +38,31 @@ export type BasemapSelectionResolved = {
   fallbackReason: string | null;
 };
 
+export type BasemapAttributionCredit = {
+  text: string;
+  url: string;
+};
+
+export type RenderedBasemapAttribution = {
+  credits: BasemapAttributionCredit[];
+};
+
+export const OPENFREEMAP_ATTRIBUTION_CREDITS: BasemapAttributionCredit[] = [
+  { text: "OpenFreeMap", url: "https://openfreemap.org/" },
+  { text: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+];
+
+export const LOCAL_BASEMAP_ATTRIBUTION_CREDITS: BasemapAttributionCredit[] = [
+  { text: "Local background", url: "" },
+];
+
+export const getBasemapAttributionCredits = (
+  basemap: Pick<BasemapSelectionResolved, "provider" | "attribution" | "attributionUrl">,
+): BasemapAttributionCredit[] =>
+  basemap.provider === "openfreemap"
+    ? OPENFREEMAP_ATTRIBUTION_CREDITS
+    : [{ text: basemap.attribution, url: basemap.attributionUrl }];
+
 const CARTO_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const CARTO_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const CARTO_VOYAGER = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";

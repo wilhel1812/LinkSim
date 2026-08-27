@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CARTO_KEY,
   DEFAULT_BASEMAP_STYLE_ID,
+  getBasemapAttributionCredits,
   getLocalFallbackStyle,
   getOpenFreeMapFallbackStyle,
   getStylesForCategory,
@@ -200,6 +201,14 @@ describe("getStylesForCategory", () => {
 });
 
 describe("basemap fallback style", () => {
+  it("credits OpenFreeMap and OpenStreetMap with separate destination links", () => {
+    const basemap = resolveBasemapSelection(DEFAULT_BASEMAP_STYLE_ID, "light", "blue");
+    expect(getBasemapAttributionCredits(basemap)).toEqual([
+      { text: "OpenFreeMap", url: "https://openfreemap.org/" },
+      { text: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+    ]);
+  });
+
   it("uses OpenFreeMap LinkSim when a provider fails", () => {
     const expected = resolveBasemapSelection("street-linksim", "light", "blue").style;
     const fallback = getOpenFreeMapFallbackStyle("light", "blue");

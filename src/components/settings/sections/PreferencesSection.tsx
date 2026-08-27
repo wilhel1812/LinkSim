@@ -44,13 +44,90 @@ const IDLE_SELECT: SelectFieldState = { state: "idle", error: null };
 const PRESET_VALUE_SAVE_DEBOUNCE_MS = 300;
 
 export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps) {
-  const preferenceKey = JSON.stringify([
+  const radioPreferenceKey = JSON.stringify([
     me?.id ?? null,
     me?.defaultFrequencyPresetId ?? null,
     me?.simulationDefaultsPreference ?? null,
-    me?.basemapPreferences ?? null,
   ]);
-  return <PreferencesSectionContent key={preferenceKey} me={me} onMeUpdated={onMeUpdated} />;
+  return (
+    <section className="settings-section" aria-labelledby="settings-preferences-heading">
+      <header className="settings-section-header">
+        <h2 id="settings-preferences-heading">Preferences</h2>
+        <p className="field-help">Theme preferences apply to this device. Other preferences sync to your account.</p>
+      </header>
+      <div className="settings-preferences-fields">
+        <DeviceAndMapPreferences me={me} onMeUpdated={onMeUpdated} />
+        <RadioPreferencesFields key={radioPreferenceKey} me={me} onMeUpdated={onMeUpdated} />
+      </div>
+    </section>
+  );
+}
+
+function DeviceAndMapPreferences({ me, onMeUpdated }: PreferencesSectionProps) {
+  const uiThemePreference = useAppStore((state) => state.uiThemePreference);
+  const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
+  const uiColorTheme = useAppStore((state) => state.uiColorTheme);
+  const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
+  const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
+  const holidayThemes = getHolidayThemeCatalog();
+  const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
+  const setHolidayThemeSelection = (holidayThemeKey: HolidayThemeKey | null) => {
+    setHolidayThemePreview(holidayThemeKey);
+    if (!holidayThemeKey) return;
+    const holidayTheme = holidayThemes.find((theme) => theme.key === holidayThemeKey);
+    if (holidayTheme) setUiColorTheme(holidayTheme.colorTheme as UiColorTheme);
+  };
+
+  return (
+    <>
+      <div className="autosave-field">
+        <label className="autosave-field-label" htmlFor="pref-ui-theme">
+          <span>UI theme <InfoTip text="Choose whether LinkSim follows your system theme, or force light/dark mode." /></span>
+        </label>
+        <select id="pref-ui-theme" className="locale-select" value={uiThemePreference} onChange={(event) => setUiThemePreference(event.target.value as "system" | "light" | "dark")}>
+          <option value="system">System</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+        <div className="field-help">Device-only preference — not synced across devices.</div>
+      </div>
+
+      <CustomBasemapManager me={me} onMeUpdated={onMeUpdated} />
+
+      <div className="autosave-field">
+        <label className="autosave-field-label" htmlFor="pref-color-theme">
+          <span>Color theme <InfoTip text="Select the app accent palette." /></span>
+        </label>
+        <select
+          id="pref-color-theme"
+          className="locale-select"
+          value={selectedColorThemeValue}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next.startsWith("holiday:")) {
+              setHolidayThemeSelection(next.slice("holiday:".length) as HolidayThemeKey);
+              return;
+            }
+            setHolidayThemePreview(null);
+            setUiColorTheme(next as UiColorTheme);
+          }}
+        >
+          <option value="blue">Blue</option>
+          <option value="pink">Pink</option>
+          <option value="red">Red</option>
+          <option value="green">Green</option>
+          <option value="neutral">Neutral</option>
+          {holidayThemesVisible ? (
+            <optgroup label="Seasonal">
+              {holidayThemes.map((theme) => <option key={theme.key} value={`holiday:${theme.key}`}>{theme.title.replace(" Theme", "")}</option>)}
+            </optgroup>
+          ) : activeHolidayTheme ? (
+            <option value={`holiday:${activeHolidayTheme.key}`}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
+          ) : null}
+        </select>
+      </div>
+    </>
+  );
 }
 
 type BasemapDraft = {
@@ -175,13 +252,8 @@ function CustomBasemapManager({ me, onMeUpdated }: PreferencesSectionProps) {
   );
 }
 
-function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps) {
-  const uiThemePreference = useAppStore((state) => state.uiThemePreference);
-  const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
-  const uiColorTheme = useAppStore((state) => state.uiColorTheme);
-  const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
+function RadioPreferencesFields({ me, onMeUpdated }: PreferencesSectionProps) {
   const setAuthState = useAppStore((state) => state.setAuthState);
-  const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
   const initialPreference = useMemo(
     () => normalizeUserSimulationDefaultsPreference(
@@ -220,8 +292,6 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
     : managedPreset?.name ?? "";
   const activeDefaults = resolveUserSimulationDefaults(preference, me?.defaultFrequencyPresetId);
   const editableDefaults = managedPreset?.defaults ?? activeDefaults;
-  const holidayThemes = getHolidayThemeCatalog();
-  const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
 
   const drainPreferenceSaveQueue = useCallback(
     async function drainPreferenceSaveQueue(): Promise<void> {
@@ -401,86 +471,8 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
     }
   };
 
-  const setHolidayThemeSelection = (holidayThemeKey: HolidayThemeKey | null) => {
-    setHolidayThemePreview(holidayThemeKey);
-    if (!holidayThemeKey) return;
-    const holidayTheme = holidayThemes.find((theme) => theme.key === holidayThemeKey);
-    if (holidayTheme) setUiColorTheme(holidayTheme.colorTheme as UiColorTheme);
-  };
-
-  const renderHolidayThemeOption = (holidayThemeKey: HolidayThemeKey, label: string) => (
-    <option key={holidayThemeKey} value={`holiday:${holidayThemeKey}`}>
-      {label}
-    </option>
-  );
-
   return (
-    <section className="settings-section" aria-labelledby="settings-preferences-heading">
-      <header className="settings-section-header">
-        <h2 id="settings-preferences-heading">Preferences</h2>
-        <p className="field-help">Theme preferences apply to this device. Other preferences sync to your account.</p>
-      </header>
-
-      <div className="settings-preferences-fields">
-        <div className="autosave-field">
-          <label className="autosave-field-label" htmlFor="pref-ui-theme">
-            <span>
-              UI theme{" "}
-              <InfoTip text="Choose whether LinkSim follows your system theme, or force light/dark mode." />
-            </span>
-          </label>
-          <select
-            id="pref-ui-theme"
-            className="locale-select"
-            value={uiThemePreference}
-            onChange={(event) =>
-              setUiThemePreference(event.target.value as "system" | "light" | "dark")
-            }
-          >
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-          <div className="field-help">Device-only preference — not synced across devices.</div>
-        </div>
-
-        <CustomBasemapManager me={me} onMeUpdated={onMeUpdated} />
-
-        <div className="autosave-field">
-          <label className="autosave-field-label" htmlFor="pref-color-theme">
-            <span>
-              Color theme <InfoTip text="Select the app accent palette." />
-            </span>
-          </label>
-          <select
-            id="pref-color-theme"
-            className="locale-select"
-            value={selectedColorThemeValue}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (next.startsWith("holiday:")) {
-                setHolidayThemeSelection(next.slice("holiday:".length) as HolidayThemeKey);
-                return;
-              }
-              setHolidayThemePreview(null);
-              setUiColorTheme(next as UiColorTheme);
-            }}
-          >
-            <option value="blue">Blue</option>
-            <option value="pink">Pink</option>
-            <option value="red">Red</option>
-            <option value="green">Green</option>
-            <option value="neutral">Neutral</option>
-            {holidayThemesVisible ? (
-              <optgroup label="Seasonal">
-                {holidayThemes.map((theme) => renderHolidayThemeOption(theme.key, theme.title.replace(" Theme", "")))}
-              </optgroup>
-            ) : activeHolidayTheme ? (
-              <option value={`holiday:${activeHolidayTheme.key}`}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
-            ) : null}
-          </select>
-        </div>
-
+    <>
         <div className="autosave-field">
           <label className="autosave-field-label" htmlFor="pref-default-preset">
             <span>
@@ -689,7 +681,6 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
             )}
           </div>
         ) : null}
-      </div>
-    </section>
+    </>
   );
 }

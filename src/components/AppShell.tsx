@@ -25,7 +25,7 @@ import {
   upsertUiNotification,
 } from "../lib/uiNotifications";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
-import { resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapAttributionCredits, resolveBasemapSelection, type RenderedBasemapAttribution } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -45,6 +45,7 @@ import { MapEditorPanel } from "./map/MapEditorPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
+import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 
 initializeMigrations();
 
@@ -332,7 +333,7 @@ export function AppShell() {
     () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, currentUser?.basemapPreferences?.customSources ?? []),
     [basemapStyleId, colorTheme, currentUser?.basemapPreferences?.customSources, theme],
   );
-  const [renderedBasemapAttribution, setRenderedBasemapAttribution] = useState<{ text: string; url: string } | null>(null);
+  const [renderedBasemapAttribution, setRenderedBasemapAttribution] = useState<RenderedBasemapAttribution | null>(null);
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
@@ -2367,16 +2368,7 @@ export function AppShell() {
       ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill ui-surface-pill">
-          <span>&copy;</span>
-          {(renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl) ? (
-            <a href={renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
-              {(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}
-            </a>
-          ) : <span>{(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}</span>}
-          <span>&copy;</span>
-          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
-            MapLibre
-          </a>
+          <BasemapAttributionLinks credits={renderedBasemapAttribution?.credits ?? getBasemapAttributionCredits(resolvedBasemap)} />
         </div>
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />

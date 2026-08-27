@@ -5,7 +5,7 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
-import { resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapAttributionCredits, resolveBasemapSelection, type RenderedBasemapAttribution } from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
@@ -17,6 +17,7 @@ import { ConfirmActionModal } from "./ConfirmActionModal";
 import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
@@ -42,7 +43,7 @@ type SidebarProps = {
   panelClassName?: string;
   /** Override the computed simulation name shown in the Simulation section header. */
   simulationDisplayLabel?: string;
-  renderedBasemapAttribution?: { text: string; url: string } | null;
+  renderedBasemapAttribution?: RenderedBasemapAttribution | null;
 };
 
 export function Sidebar({
@@ -664,18 +665,7 @@ export function Sidebar({
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
         <div className="sidebar-footer-links">
-          <span>©</span>
-          {(renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl) ? (
-            <a href={renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
-              {(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}
-            </a>
-          ) : (
-            <span>{(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}</span>
-          )}
-          <span>©</span>
-          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
-            MapLibre
-          </a>
+          <BasemapAttributionLinks credits={renderedBasemapAttribution?.credits ?? getBasemapAttributionCredits(resolvedBasemap)} />
         </div>
         <div className="sidebar-footer-links sidebar-footer-icon-links">
           <a
