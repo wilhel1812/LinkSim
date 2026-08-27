@@ -56,14 +56,15 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
         <p className="field-help">Theme preferences apply to this device. Other preferences sync to your account.</p>
       </header>
       <div className="settings-preferences-fields">
-        <DeviceAndMapPreferences me={me} onMeUpdated={onMeUpdated} />
+        <DeviceThemePreferences />
         <RadioPreferencesFields key={radioPreferenceKey} me={me} onMeUpdated={onMeUpdated} />
+        <CustomBasemapManager me={me} onMeUpdated={onMeUpdated} />
       </div>
     </section>
   );
 }
 
-function DeviceAndMapPreferences({ me, onMeUpdated }: PreferencesSectionProps) {
+function DeviceThemePreferences() {
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
@@ -91,8 +92,6 @@ function DeviceAndMapPreferences({ me, onMeUpdated }: PreferencesSectionProps) {
         </select>
         <div className="field-help">Device-only preference — not synced across devices.</div>
       </div>
-
-      <CustomBasemapManager me={me} onMeUpdated={onMeUpdated} />
 
       <div className="autosave-field">
         <label className="autosave-field-label" htmlFor="pref-color-theme">

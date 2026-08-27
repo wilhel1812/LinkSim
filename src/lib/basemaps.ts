@@ -266,12 +266,12 @@ const styleForPreset = (
     return theme === "dark" ? CARTO_DARK : CARTO_LIGHT;
   }
   if (provider === "maptiler") {
-    // topographic-themed uses the same official style as topographic (theme color overlay is added by MapView)
+    // topographic-themed uses the same official style as topographic (its cool palette is remapped by the map renderer)
     if (presetId === "topographic-themed") return maptilerStyle("topographic", theme);
     return maptilerStyle(presetId || "normal", theme);
   }
   if (provider === "stadia") {
-    // outdoors-themed uses the same official style as outdoors (theme color overlay is added by MapView)
+    // outdoors-themed uses the same official style as outdoors (its cool palette is remapped by the map renderer)
     if (presetId === "outdoors-themed") return stadiaStyle("outdoors", theme);
     return stadiaStyle(presetId || "normal", theme);
   }

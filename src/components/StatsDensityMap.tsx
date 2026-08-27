@@ -13,6 +13,7 @@ import type { StatsPayload } from "../lib/stats";
 import type { UiColorTheme } from "../themes/types";
 import { MapControlButton } from "./ui/MapControlButton";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
+import { BasemapThemeTint } from "./BasemapThemeTint";
 
 type StatsDensityMapProps = {
   bins: StatsPayload["geography"]["bins"];
@@ -154,6 +155,7 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         onClick={hoverFromFeature}
         interactiveLayerIds={["linksim-stats-density-bins"]}
       >
+        <BasemapThemeTint colorTheme={colorTheme} enabled={!useLocalFallback && !(theme === "dark" && colorTheme === "blue")} theme={theme} />
         <Source data={featureCollection} id="linksim-stats-density" type="geojson">
           <Layer
             id="linksim-stats-density-bins"
