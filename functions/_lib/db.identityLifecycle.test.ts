@@ -8,6 +8,7 @@ import {
   executeVerifiedIdentityEnsure,
   fetchLibraryForUser,
   revertResourceFromChangeCopy,
+  setUserAvatarAssets,
 } from "./db";
 
 class SqliteStatement {
@@ -184,6 +185,24 @@ const seedCanonicalAccount = (database: SqliteD1) => {
 };
 
 describe("authoritative identity lifecycle", () => {
+  it("returns private basemap preferences after the current user updates an avatar", async () => {
+    const database = new SqliteD1();
+    seedCanonicalAccount(database);
+
+    const profile = await setUserAvatarAssets(envFor(database) as never, "old-subject", {
+      avatarUrl: "/api/avatar/users/new/avatar.webp",
+      avatarObjectKey: "users/new/avatar.webp",
+      avatarThumbKey: "users/new/avatar-thumb.webp",
+      avatarHash: "new-avatar-hash",
+      avatarBytes: 4321,
+      avatarContentType: "image/webp",
+    });
+
+    expect(profile.basemapPreferences?.customSources).toEqual([
+      expect.objectContaining({ id: "field", lightUrl: "https://maps.test/style.json" }),
+    ]);
+  });
+
   it("atomically migrates every identity alias and observable resource timestamp", async () => {
     const database = new SqliteD1();
     seedCanonicalAccount(database);

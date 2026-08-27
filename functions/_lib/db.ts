@@ -1510,7 +1510,7 @@ export const setUserAvatarAssets = async (
       userId,
     )
     .run();
-  const profile = await fetchUserProfile(env, userId);
+  const profile = await fetchMyUserProfile(env, userId);
   if (!profile) throw new Error("User not found after avatar update.");
   return profile;
 };
