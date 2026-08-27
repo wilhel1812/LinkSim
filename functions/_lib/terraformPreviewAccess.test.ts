@@ -8,6 +8,9 @@ const production = read("infra/terraform/environments/prod/terraform.tfvars");
 const moduleSource = read("infra/terraform/modules/linksim_cloudflare/main.tf");
 const stagingWrangler = read("wrangler.staging.toml");
 const productionWrangler = read("wrangler.toml");
+const runtimeTypes = read("functions/_lib/types.ts");
+const accessPolicyDocs = read("docs/access-policy-templates.md");
+const authSetupDocs = read("docs/cloudflare-auth-setup.md");
 
 const applicationBlock = (config: string, key: string): string => {
   const start = config.indexOf(`  ${key} = {`);
@@ -52,8 +55,20 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(stagingWrangler).not.toContain(
       "08eb695895482e6a14ff49332f3491d0aa02c751670d37983aa7dbbe0da16a08",
     );
-    expect(staging).toContain('REGISTRATION_MODE                               = "open"');
-    expect(stagingWrangler).toContain('REGISTRATION_MODE = "open"');
+  });
+
+  it("does not advertise the obsolete registration mode as active configuration", () => {
+    for (const source of [
+      staging,
+      production,
+      stagingWrangler,
+      productionWrangler,
+      runtimeTypes,
+      accessPolicyDocs,
+      authSetupDocs,
+    ]) {
+      expect(source).not.toContain("REGISTRATION_MODE");
+    }
   });
 
   it("models the production public-shell and authenticated-API split", () => {
