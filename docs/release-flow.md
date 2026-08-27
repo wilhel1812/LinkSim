@@ -93,7 +93,8 @@
   3. Commit and push.
   4. Open PR to `staging` and merge once approved.
   5. Merge to `staging`; CI automatically deploys https://staging.linksim.link. Do not run deploy scripts locally.
-  6. Promote via `staging` -> `main` PR only with explicit approval.
+  6. Promote with explicit approval through one normal production PR: use the
+     default `staging` -> `main` path or the approved exact-tree fallback.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
 
 ## Milestone release rules
