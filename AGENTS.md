@@ -6,6 +6,8 @@
 - Before changing code, review the relevant open GitHub Issue(s), then read:
   1. `docs/release-flow.md`
   2. `docs/milestone-release-checklist.md`
+- Before using or changing the staged documentation-only delivery lane, read
+  `docs/documentation-delivery.md` and verify its activation gates are complete.
 - If instructions conflict, use this precedence:
   1. explicit user instruction in the current thread
   2. this `AGENTS.md`

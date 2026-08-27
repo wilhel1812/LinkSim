@@ -24,8 +24,51 @@ on:
           - prod-main
 
 jobs:
+  classify_changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Checkout event commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Classify documentation-only change
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE_SHA: ${{ github.event.before }}
+          EVENT_HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "changed_count=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            node scripts/docs-only-policy.mjs classify \
+              --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --mode three-dot
+            exit 0
+          fi
+          node scripts/docs-only-policy.mjs classify \
+            --base "$EVENT_BEFORE_SHA" --head "$EVENT_HEAD_SHA" --mode two-dot
+
   deploy-staging-preview:
+    needs: classify_changes
     if: |
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'
     runs-on: ubuntu-latest
@@ -155,9 +198,14 @@ jobs:
             }
 
   deploy-staging:
+    needs: classify_changes
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
+      )
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -232,9 +280,14 @@ jobs:
         run: node scripts/access-boundary.mjs check staging
 
   deploy-prod-main:
+    needs: classify_changes
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
+      )
     runs-on: ubuntu-latest
     environment: production
     permissions:
