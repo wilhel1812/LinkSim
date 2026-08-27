@@ -1,6 +1,8 @@
 # Milestone Release Checklist
 
-Use this checklist before opening a normal production promotion PR (`staging` -> `main`).
+Use this checklist before opening a normal production promotion PR, whether it
+uses the default direct `staging` -> `main` path or the approved exact-tree
+`release/vX.Y.Z` -> `main` fallback.
 
 ## Scope and freeze
 - [ ] Milestone scope is frozen for release.
@@ -21,6 +23,6 @@ Use this checklist before opening a normal production promotion PR (`staging` ->
 - [ ] Release tag `vX.Y.Z` points to the verified release tree that production will deploy.
 
 ## PR attestation (required)
-Include this checked line in the PR body for `staging` -> `main`:
+Include this checked line in the production promotion PR body:
 
 `- [x] Milestone release checklist completed: docs/milestone-release-checklist.md`

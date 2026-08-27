@@ -14,12 +14,29 @@ vi.mock("./sections/ProfileSection", () => ({
   ),
 }));
 vi.mock("./sections/PreferencesSection", () => ({
-  PreferencesSection: () => <div data-testid="preferences-section">Preferences Section</div>,
+  PreferencesSection: ({ me, onMeUpdated }: {
+    me: CloudUser | null;
+    onMeUpdated: (user: CloudUser, patch?: Partial<CloudUser>) => void;
+  }) => <div data-testid="preferences-section">
+    Preferences Section
+    <span data-testid="preference-values">{me?.defaultFrequencyPresetId}:{me?.basemapPreferences?.customSources[0]?.lightUrl}</span>
+    <button onClick={() => onMeUpdated({
+      ...me!,
+      defaultFrequencyPresetId: "old-radio",
+      basemapPreferences: { version: 1, customSources: [{ id: "field", name: "Field", kind: "style", lightUrl: "https://maps.test/new.json", attribution: "Field" }] },
+    }, { basemapPreferences: me?.basemapPreferences })}>Apply late map response</button>
+    <button onClick={() => onMeUpdated({
+      ...me!,
+      defaultFrequencyPresetId: "new-radio",
+      basemapPreferences: { version: 1, customSources: [] },
+    }, { defaultFrequencyPresetId: "new-radio" })}>Apply radio response</button>
+  </div>,
 }));
 vi.mock("../UserAdminPanel", () => ({
   UserAdminPanel: () => <div data-testid="admin-panel">Admin Panel</div>,
 }));
-vi.mock("../../lib/cloudUser", () => ({
+vi.mock("../../lib/cloudUser", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../lib/cloudUser")>(),
   fetchMe: vi.fn().mockResolvedValue(null),
 }));
 
@@ -84,6 +101,31 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
     expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-section")).not.toBeInTheDocument();
+  });
+
+  it("merges inverted profile responses by the fields each request patched", () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      bio: "",
+      avatarUrl: "",
+      isAdmin: false,
+      isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      defaultFrequencyPresetId: "old-radio",
+      basemapPreferences: { version: 1, customSources: [] },
+    };
+    render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply radio response" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply late map response" }));
+
+    expect(screen.getByTestId("preference-values")).toHaveTextContent("new-radio:https://maps.test/new.json");
+    expect(mockState.setCurrentUser).toHaveBeenLastCalledWith(expect.objectContaining({
+      defaultFrequencyPresetId: "new-radio",
+      basemapPreferences: expect.objectContaining({ customSources: [expect.objectContaining({ id: "field" })] }),
+    }));
   });
 
   it("does not show the Admin nav item for a non-admin user", () => {

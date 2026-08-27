@@ -261,7 +261,7 @@ describe("overlayRaster async builders", () => {
       bounds,
       dimensions,
       initialGridSize: 24,
-      rxTargetDbm: -118,
+      rxTargetDbm: -102,
       contributors: [{ id: "site-a", evaluatePoint: (lat: number, lon: number) => {
         evaluations += 1;
         return -104 + (lat - bounds.minLat) * 20 + (lon - bounds.minLon) * 10;
@@ -275,8 +275,50 @@ describe("overlayRaster async builders", () => {
 
     expect(heatmap?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
     expect(contours?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(contours?.targetContour?.features.length).toBeGreaterThan(0);
     expect(evaluations).toBe(firstEvaluations);
     expect(contours?.analysisStats?.evaluatedPaths).toBe(0);
+  });
+
+  it("adds the target contour without additional RF or terrain evaluations", async () => {
+    const dimensions = { width: 24, height: 16 };
+    let heatmapEvaluations = 0;
+    let contourEvaluations = 0;
+    const evaluateSignal = (lat: number, lon: number) =>
+      -124 + (lat - bounds.minLat) * 30 + (lon - bounds.minLon) * 30;
+
+    const heatmap = await buildAdaptiveCoverageOverlayPixelsAsync({
+      adaptive: false,
+      analysisCacheKey: "cold-heatmap-evaluation-count",
+      bounds,
+      contributors: [{ id: "site-a", evaluatePoint: (lat, lon) => {
+        heatmapEvaluations += 1;
+        return evaluateSignal(lat, lon);
+      } }],
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -120,
+    });
+    const contours = await buildAdaptiveCoverageOverlayPixelsAsync({
+      adaptive: false,
+      analysisCacheKey: "cold-contour-evaluation-count",
+      bounds,
+      contributors: [{ id: "site-a", evaluatePoint: (lat, lon) => {
+        contourEvaluations += 1;
+        return evaluateSignal(lat, lon);
+      } }],
+      dimensions,
+      initialGridSize: 24,
+      mode: "contours",
+      rxTargetDbm: -120,
+    });
+
+    expect(heatmapEvaluations).toBe(dimensions.width * dimensions.height);
+    expect(contourEvaluations).toBe(heatmapEvaluations);
+    expect(contours?.analysisStats?.evaluatedPaths).toBe(heatmap?.analysisStats?.evaluatedPaths);
+    expect(heatmap?.targetContour).toBeUndefined();
+    expect(contours?.targetContour?.features.length).toBeGreaterThan(0);
   });
 
   it("keeps multi-contributor strongest and weakest surfaces within the accuracy gate", async () => {
@@ -1125,6 +1167,87 @@ describe("overlayRaster async builders", () => {
     );
 
     await expect(promise).rejects.toBeInstanceOf(OverlayTaskCancelledError);
+  });
+
+  it("keeps dense target-contour extraction cancellable after cached RF analysis", async () => {
+    const dimensions = { width: 240, height: 240 };
+    const analysisCacheKey = "contour-extraction-cancellation";
+    let evaluations = 0;
+    const evaluatePoint = (lat: number, lon: number) => {
+      evaluations += 1;
+      const row = Math.round(((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * (dimensions.height - 1));
+      const column = Math.round(((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * (dimensions.width - 1));
+      return (row + column) % 2 === 0 ? -130 : -110;
+    };
+    await buildAdaptiveCoverageOverlayPixelsAsync({
+      adaptive: false,
+      analysisCacheKey,
+      bounds,
+      contributors: [{ id: "site-a", evaluatePoint }],
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -120,
+    });
+    const evaluationsAfterHeatmap = evaluations;
+    let shouldCancel = false;
+    const progress: number[] = [];
+
+    const promise = buildAdaptiveCoverageOverlayPixelsAsync({
+      adaptive: false,
+      analysisCacheKey,
+      bounds,
+      contributors: [{ id: "site-a", evaluatePoint }],
+      context: {
+        frameBudgetMs: 1,
+        onProgress: ({ percent }) => {
+          progress.push(percent);
+          if (percent >= 92) shouldCancel = true;
+        },
+        phase: "contours",
+        shouldCancel: () => shouldCancel,
+        signature: "contour-extraction-cancel-test",
+      },
+      dimensions,
+      initialGridSize: 24,
+      mode: "contours",
+      rxTargetDbm: -120,
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(OverlayTaskCancelledError);
+    expect(progress.some((percent) => percent >= 92)).toBe(true);
+    expect(evaluations).toBe(evaluationsAfterHeatmap);
+  });
+
+  it("reports dense contour work through the existing long-task and progress hooks", async () => {
+    const dimensions = { width: 160, height: 160 };
+    const longTaskTotals: number[] = [];
+    const progress: number[] = [];
+    await buildAdaptiveCoverageOverlayPixelsAsync({
+      adaptive: false,
+      bounds,
+      contributors: [{ id: "site-a", evaluatePoint: (lat, lon) => {
+        const row = Math.round(((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * (dimensions.height - 1));
+        const column = Math.round(((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * (dimensions.width - 1));
+        return (row + column) % 2 === 0 ? -130 : -110;
+      } }],
+      context: {
+        frameBudgetMs: 1,
+        longTaskMs: 1,
+        onLongTask: ({ total }) => longTaskTotals.push(total),
+        onProgress: ({ percent }) => progress.push(percent),
+        phase: "contours",
+        signature: "contour-extraction-budget-test",
+      },
+      dimensions,
+      initialGridSize: 24,
+      mode: "contours",
+      rxTargetDbm: -120,
+    });
+
+    expect(longTaskTotals).toContain((dimensions.width - 1) * (dimensions.height - 1));
+    expect(progress.at(-1)).toBe(100);
+    expect(progress.every((value, index) => index === 0 || value >= progress[index - 1])).toBe(true);
   });
 
   it("reports cooperative progress for overlay build callbacks", async () => {

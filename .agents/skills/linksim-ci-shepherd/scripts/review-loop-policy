@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Return the deterministic stopping decision for an authorized review loop."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+
+
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+BLOCKING_CONDITIONS = (
+    "none",
+    "external-failure",
+    "missing-authority",
+    "out-of-scope",
+    "human-judgment",
+)
+
+
+def non_negative(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return number
+
+
+def positive(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def commit_sha(value: str) -> str:
+    if not SHA_PATTERN.fullmatch(value):
+        raise argparse.ArgumentTypeError("must be a 40-character commit SHA")
+    return value.lower()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=("all-findings", "no-p1"), required=True)
+    parser.add_argument("--budget", type=positive, default=8)
+    parser.add_argument("--reviews-used", type=positive, required=True)
+    parser.add_argument("--reviewed-head", type=commit_sha, required=True)
+    parser.add_argument("--current-head", type=commit_sha, required=True)
+    for severity in ("p0", "p1", "p2", "p3"):
+        parser.add_argument(f"--{severity}", type=non_negative, default=0)
+        parser.add_argument(f"--{severity}-streak", type=non_negative, default=0)
+    parser.add_argument(
+        "--blocking-condition", choices=BLOCKING_CONDITIONS, default="none"
+    )
+    args = parser.parse_args()
+
+    findings = {
+        severity: getattr(args, severity) for severity in ("p0", "p1", "p2", "p3")
+    }
+    streaks = {
+        severity: getattr(args, f"{severity}_streak")
+        for severity in ("p0", "p1", "p2", "p3")
+    }
+    for severity, streak in streaks.items():
+        if streak > 0 and findings[severity] == 0:
+            parser.error(f"--{severity}-streak requires --{severity} to be positive")
+
+    targeted_severities = (
+        ("p0", "p1") if args.mode == "no-p1" else ("p0", "p1", "p2", "p3")
+    )
+    targeted = sum(findings[severity] for severity in targeted_severities)
+    targeted_streak = max(streaks[severity] for severity in targeted_severities)
+
+    if args.blocking_condition != "none":
+        decision = "stop-blocked"
+    elif args.reviewed_head != args.current_head:
+        decision = "stop-stale-review"
+    elif targeted == 0:
+        decision = (
+            "complete-threshold"
+            if args.mode == "no-p1" and args.p2 + args.p3 > 0
+            else "complete-clean"
+        )
+    elif args.reviews_used >= args.budget:
+        decision = "stop-budget"
+    elif targeted_streak >= 2:
+        decision = "reassess-architecture"
+    else:
+        decision = "fix-and-review"
+
+    print(
+        json.dumps(
+            {
+                "decision": decision,
+                "mode": args.mode,
+                "budget": args.budget,
+                "reviews_used": args.reviews_used,
+                "reviewed_head": args.reviewed_head,
+                "current_head": args.current_head,
+                "remaining_findings": findings,
+                "finding_streaks": streaks,
+                "targeted_streak": targeted_streak,
+                "blocking_condition": args.blocking_condition,
+            },
+            separators=(",", ":"),
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -24,8 +24,51 @@ on:
           - prod-main
 
 jobs:
+  classify_changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Checkout event commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Classify documentation-only change
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE_SHA: ${{ github.event.before }}
+          EVENT_HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "changed_count=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            node scripts/docs-only-policy.mjs classify \
+              --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --mode three-dot
+            exit 0
+          fi
+          node scripts/docs-only-policy.mjs classify \
+            --base "$EVENT_BEFORE_SHA" --head "$EVENT_HEAD_SHA" --mode two-dot
+
   deploy-staging-preview:
+    needs: classify_changes
     if: |
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'
     runs-on: ubuntu-latest
@@ -52,7 +95,7 @@ jobs:
             echo "Invalid preview base SHA." >&2
             exit 1
           fi
-          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql; then
+          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql db/migrations/2026-08-27_basemap_preferences.sql; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -78,6 +121,7 @@ jobs:
         if: steps.identity_schema.outputs.changed != 'true'
         env:
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
         run: npm run build:bundle && npm run build:verify
 
       - name: Deploy authenticated staging preview
@@ -87,6 +131,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
           PREVIEW_BRANCH: ${{ github.head_ref }}
         run: node scripts/deploy-pages-safe.mjs --target staging-preview --branch "$PREVIEW_BRANCH"
 
@@ -153,9 +198,14 @@ jobs:
             }
 
   deploy-staging:
+    needs: classify_changes
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
+      )
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -208,20 +258,36 @@ jobs:
           npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-08-20_site_notice.sql --yes
           npx wrangler d1 execute linksim_staging --remote --command "SELECT revision FROM site_notice WHERE singleton = 1;"
 
+      - name: Apply staging basemap preferences migration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim_staging --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"; then
+            npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-08-27_basemap_preferences.sql --yes
+          fi
+          npx wrangler d1 execute linksim_staging --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"
+
       - name: Deploy staging with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
         run: npm run deploy:staging
 
       - name: Verify staging Access boundary
         run: node scripts/access-boundary.mjs check staging
 
   deploy-prod-main:
+    needs: classify_changes
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
+      !cancelled() &&
+      needs.classify_changes.outputs.docs_only != 'true' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
+      )
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -313,11 +379,23 @@ jobs:
           npx wrangler d1 execute linksim --remote --file db/migrations/2026-08-20_site_notice.sql --yes
           npx wrangler d1 execute linksim --remote --command "SELECT revision FROM site_notice WHERE singleton = 1;"
 
+      - name: Apply production basemap preferences migration
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"; then
+            npx wrangler d1 execute linksim --remote --file db/migrations/2026-08-27_basemap_preferences.sql --yes
+          fi
+          npx wrangler d1 execute linksim --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"
+
       - name: Deploy prod/main with guardrails
         working-directory: ${{ runner.temp }}/linksim-release
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
           DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
         run: npm run build:bundle && npm run build:verify && node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main

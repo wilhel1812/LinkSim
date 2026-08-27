@@ -1,10 +1,16 @@
 import type { StyleSpecification } from "maplibre-gl";
 import { THEMES } from "../themes";
 import type { UiColorTheme } from "../themes/types";
+import {
+  customBasemapSourceId,
+  customBasemapStyleId,
+  type CustomBasemapSource,
+} from "./basemapPreferences";
 
-export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket" | "npolar";
+export type BasemapProvider = "openfreemap" | "carto" | "maptiler" | "stadia" | "kartverket" | "npolar" | "custom" | "local";
 export type BasemapTheme = "light" | "dark";
-export type BasemapCategory = "street" | "terrain" | "topographic" | "photo" | "artistic" | "regional";
+export type BasemapFallbackStage = "selected" | "openfreemap" | "local";
+export type BasemapCategory = "street" | "terrain" | "topographic" | "photo" | "artistic" | "regional" | "custom";
 
 export type BasemapStyleEntry = {
   id: string;
@@ -14,6 +20,7 @@ export type BasemapStyleEntry = {
   isThemed: boolean;
   requiresKey: boolean;
   available: boolean;
+  provider?: BasemapProvider;
   regional?: { region: string };
 };
 
@@ -27,17 +34,45 @@ export type BasemapSelectionResolved = {
   presetId: string;
   presetLabel: string;
   isThemed: boolean;
+  maxZoom: number;
   fallbackReason: string | null;
 };
+
+export type BasemapAttributionCredit = {
+  text: string;
+  url: string;
+};
+
+export type RenderedBasemapAttribution = {
+  credits: BasemapAttributionCredit[];
+};
+
+export const OPENFREEMAP_ATTRIBUTION_CREDITS: BasemapAttributionCredit[] = [
+  { text: "OpenFreeMap", url: "https://openfreemap.org/" },
+  { text: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+];
+
+export const LOCAL_BASEMAP_ATTRIBUTION_CREDITS: BasemapAttributionCredit[] = [
+  { text: "Local background", url: "" },
+];
+
+export const getBasemapAttributionCredits = (
+  basemap: Pick<BasemapSelectionResolved, "provider" | "attribution" | "attributionUrl">,
+): BasemapAttributionCredit[] =>
+  basemap.provider === "openfreemap"
+    ? OPENFREEMAP_ATTRIBUTION_CREDITS
+    : [{ text: basemap.attribution, url: basemap.attributionUrl }];
 
 const CARTO_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const CARTO_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const CARTO_VOYAGER = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+const OPENFREEMAP_STYLE_BASE = "https://tiles.openfreemap.org/styles";
 
 const CARTO_ATTRIBUTION =
   '© OpenStreetMap contributors © CARTO';
 
 const MAPTILER_KEY = String(import.meta.env.VITE_MAPTILER_KEY ?? "").trim();
+export const CARTO_KEY = String(import.meta.env.VITE_CARTO_KEY ?? "").trim();
 const STADIA_KEY = String(import.meta.env.VITE_STADIA_KEY ?? "").trim();
 const KARTVERKET_KEY = String(import.meta.env.VITE_KARTVERKET_API_KEY ?? "").trim();
 const KARTVERKET_TILE_TEMPLATE = String(import.meta.env.VITE_KARTVERKET_TILE_TEMPLATE ?? "").trim();
@@ -54,70 +89,7 @@ const kartverketTileTemplate = (() => {
   return `${base}${glue}api_key=${encodeURIComponent(KARTVERKET_KEY)}`;
 })();
 
-const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
-  theme === "dark"
-    ? [
-        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-      ]
-    : [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      ];
-
-const cartoThemedTint = (
-  colorTheme: UiColorTheme,
-  theme: BasemapTheme,
-): { color: string; opacity: number } => {
-  return {
-    color: THEMES[colorTheme][theme].cssVars["--terrain"],
-    opacity: theme === "dark" ? 0.1 : 0.08,
-  };
-};
-
-const themedCartoStyle = (theme: BasemapTheme, colorTheme: UiColorTheme): StyleSpecification => {
-  const tint = cartoThemedTint(colorTheme, theme);
-  return {
-    version: 8,
-    sources: {
-      cartoRaster: {
-        type: "raster",
-        tiles: cartoRasterTilesForTheme(theme),
-        tileSize: 256,
-        attribution: CARTO_ATTRIBUTION,
-      },
-      tintMask: {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          geometry: {
-            type: "Polygon",
-            coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]],
-          },
-          properties: {},
-        },
-      },
-    },
-    layers: [
-      {
-        id: "carto-raster-base",
-        type: "raster",
-        source: "cartoRaster",
-        minzoom: 0,
-        maxzoom: 22,
-      },
-      {
-        id: "theme-tint-overlay",
-        type: "fill",
-        source: "tintMask",
-        paint: {
-          "fill-color": tint.color,
-          "fill-opacity": tint.opacity,
-        },
-      },
-    ],
-  } as StyleSpecification;
-};
+const openFreeMapStyle = (preset: string): string => `${OPENFREEMAP_STYLE_BASE}/${preset}`;
 
 const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
   const mapId =
@@ -246,6 +218,12 @@ type ProviderAttribution = {
 
 const PROVIDER_ATTRIBUTIONS: ProviderAttribution[] = [
   {
+    provider: "openfreemap",
+    label: "OpenFreeMap",
+    attribution: "© OpenStreetMap contributors",
+    attributionUrl: "https://openfreemap.org/",
+  },
+  {
     provider: "carto",
     label: "CARTO",
     attribution: CARTO_ATTRIBUTION,
@@ -275,32 +253,25 @@ const PROVIDER_ATTRIBUTIONS: ProviderAttribution[] = [
     attribution: NP_ATTRIBUTION,
     attributionUrl: "https://npolar.no/",
   },
-  {
-    provider: "npolar",
-    label: "Norsk Polarinstitutt",
-    attribution: NP_ATTRIBUTION,
-    attributionUrl: "https://npolar.no/",
-  },
 ];
 
 const styleForPreset = (
   provider: BasemapProvider,
   presetId: string,
   theme: BasemapTheme,
-  colorTheme: UiColorTheme,
 ): string | StyleSpecification => {
+  if (provider === "openfreemap") return openFreeMapStyle(presetId);
   if (provider === "carto") {
-    if (presetId === "normal-themed") return themedCartoStyle(theme, colorTheme);
     if (presetId === "topographic") return CARTO_VOYAGER;
     return theme === "dark" ? CARTO_DARK : CARTO_LIGHT;
   }
   if (provider === "maptiler") {
-    // topographic-themed uses the same official style as topographic (theme color overlay is added by MapView)
+    // topographic-themed uses the same official style as topographic (its cool palette is remapped by the map renderer)
     if (presetId === "topographic-themed") return maptilerStyle("topographic", theme);
     return maptilerStyle(presetId || "normal", theme);
   }
   if (provider === "stadia") {
-    // outdoors-themed uses the same official style as outdoors (theme color overlay is added by MapView)
+    // outdoors-themed uses the same official style as outdoors (its cool palette is remapped by the map renderer)
     if (presetId === "outdoors-themed") return stadiaStyle("outdoors", theme);
     return stadiaStyle(presetId || "normal", theme);
   }
@@ -312,7 +283,12 @@ const styleForPreset = (
 
 // Maps each styleId to its backend provider + preset for style resolution.
 const STYLE_REGISTRY_BACKEND: Record<string, { provider: BasemapProvider; preset: string }> = {
-  "street-linksim":          { provider: "carto",      preset: "normal-themed" },
+  "street-linksim":          { provider: "openfreemap", preset: "positron" },
+  "street-ofm-positron":     { provider: "openfreemap", preset: "positron" },
+  "street-ofm-bright":       { provider: "openfreemap", preset: "bright" },
+  "street-ofm-liberty":      { provider: "openfreemap", preset: "liberty" },
+  "street-ofm-dark":         { provider: "openfreemap", preset: "dark" },
+  "street-ofm-fiord":        { provider: "openfreemap", preset: "fiord" },
   "street-positron":         { provider: "carto",      preset: "normal" },
   "street-maptiler":         { provider: "maptiler",   preset: "normal" },
   "street-alidade":          { provider: "stadia",     preset: "normal" },
@@ -337,15 +313,20 @@ export const DEFAULT_BASEMAP_STYLE_ID = "street-linksim";
 
 export const BASEMAP_STYLE_REGISTRY: BasemapStyleEntry[] = [
   // Street
-  { id: "street-linksim",          label: "LinkSim",               category: "street",       hasDarkMode: true,  isThemed: true,  requiresKey: false, available: true },
-  { id: "street-positron",         label: "Positron / Dark Matter", category: "street",       hasDarkMode: true,  isThemed: false, requiresKey: false, available: true },
+  { id: "street-linksim",          label: "LinkSim",               category: "street",       hasDarkMode: true,  isThemed: true,  requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-ofm-positron",     label: "OpenFreeMap Positron",  category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-ofm-bright",       label: "OpenFreeMap Bright",    category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-ofm-liberty",      label: "OpenFreeMap Liberty",   category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-ofm-dark",         label: "OpenFreeMap Dark",      category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-ofm-fiord",        label: "OpenFreeMap Fiord",     category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true, provider: "openfreemap" },
+  { id: "street-positron",         label: "CARTO Positron / Dark Matter", category: "street", hasDarkMode: true, isThemed: false, requiresKey: true, available: CARTO_KEY.length > 0, provider: "carto" },
   { id: "street-maptiler",         label: "MapTiler Streets",       category: "street",       hasDarkMode: true,  isThemed: false, requiresKey: true,  available: MAPTILER_KEY.length > 0 },
   { id: "street-alidade",          label: "Alidade Smooth",         category: "street",       hasDarkMode: true,  isThemed: false, requiresKey: false, available: true },
   { id: "street-alidade-bright",   label: "Alidade Bright",         category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true },
   { id: "street-osm",              label: "Open Street Maps",       category: "street",       hasDarkMode: false, isThemed: false, requiresKey: false, available: true },
   // Terrain
   { id: "terrain-outdoors",        label: "Outdoors",               category: "terrain",      hasDarkMode: false, isThemed: true,  requiresKey: false, available: true },
-  { id: "terrain-voyager",         label: "Voyager",                category: "terrain",      hasDarkMode: false, isThemed: false, requiresKey: false, available: true },
+  { id: "terrain-voyager",         label: "CARTO Voyager",          category: "terrain",      hasDarkMode: false, isThemed: false, requiresKey: true, available: CARTO_KEY.length > 0, provider: "carto" },
   { id: "terrain-stamen",          label: "Stamen Terrain",         category: "terrain",      hasDarkMode: false, isThemed: false, requiresKey: false, available: true },
   // Topographic
   { id: "topo-topo",               label: "Topo",                   category: "topographic",  hasDarkMode: true,  isThemed: true,  requiresKey: true,  available: MAPTILER_KEY.length > 0 },
@@ -369,12 +350,17 @@ export const BASEMAP_CATEGORIES: { id: BasemapCategory; label: string }[] = [
   { id: "photo",       label: "Photo" },
   { id: "artistic",    label: "Artistic" },
   { id: "regional",    label: "Regional" },
+  { id: "custom",      label: "Custom" },
 ];
 
 // Returns entries for a given category.
 // For "regional": all entries with a `regional` field, sorted Kartverket → NPolar.
 // For other categories: global (non-regional) entries first, then regional entries.
-export const getStylesForCategory = (category: BasemapCategory): BasemapStyleEntry[] => {
+export const getStylesForCategory = (category: BasemapCategory, customSources: CustomBasemapSource[] = []): BasemapStyleEntry[] => {
+  if (category === "custom") return customSources.map((source) => ({
+    id: customBasemapStyleId(source.id), label: source.name, category: "custom", hasDarkMode: Boolean(source.darkUrl),
+    isThemed: false, requiresKey: false, available: true, provider: "custom",
+  }));
   if (category === "regional") {
     return BASEMAP_STYLE_REGISTRY.filter((e) => e.regional !== undefined).sort((a, b) => {
       const providerOrder: Record<string, number> = { kartverket: 0, npolar: 1 };
@@ -391,13 +377,14 @@ export const getStylesForCategory = (category: BasemapCategory): BasemapStyleEnt
 
 // Returns the category of a style entry; for entries without a category, defaults to "street".
 export const getCategoryForStyleId = (styleId: string): BasemapCategory => {
+  if (customBasemapSourceId(styleId) !== null) return "custom";
   const entry = BASEMAP_STYLE_REGISTRY.find((e) => e.id === styleId);
   return entry?.category ?? "street";
 };
 
 // Returns the first available style ID for a category, or the first overall if all are unavailable.
-export const getDefaultStyleIdForCategory = (category: BasemapCategory): string => {
-  const styles = getStylesForCategory(category);
+export const getDefaultStyleIdForCategory = (category: BasemapCategory, customSources: CustomBasemapSource[] = []): string => {
+  const styles = getStylesForCategory(category, customSources);
   return (styles.find((s) => s.available) ?? styles[0])?.id ?? DEFAULT_BASEMAP_STYLE_ID;
 };
 
@@ -405,7 +392,21 @@ export const resolveBasemapSelection = (
   styleId: string,
   theme: BasemapTheme,
   colorTheme: UiColorTheme = "blue",
+  customSources: CustomBasemapSource[] = [],
 ): BasemapSelectionResolved => {
+  const customId = customBasemapSourceId(styleId);
+  if (customId !== null) {
+    const source = customSources.find((candidate) => candidate.id === customId);
+    if (source) {
+      const sourceUrl = theme === "dark" ? source.darkUrl ?? source.lightUrl : source.lightUrl;
+      const style: string | StyleSpecification = source.kind === "style" ? sourceUrl : {
+        version: 8,
+        sources: { customRaster: { type: "raster", tiles: [sourceUrl], tileSize: source.tileSize, maxzoom: source.maxZoom, attribution: source.attribution } },
+        layers: [{ id: "custom-raster-base", type: "raster", source: "customRaster", minzoom: 0 }],
+      } as StyleSpecification;
+      return { styleId, style, attribution: source.attribution, attributionUrl: source.attributionUrl ?? "", provider: "custom", providerLabel: source.name, presetId: source.id, presetLabel: source.name, isThemed: false, maxZoom: source.kind === "raster-xyz" ? source.maxZoom : 22, fallbackReason: null };
+    }
+  }
   const entry = BASEMAP_STYLE_REGISTRY.find((e) => e.id === styleId);
   const fallbackEntry = BASEMAP_STYLE_REGISTRY.find((e) => e.id === DEFAULT_BASEMAP_STYLE_ID)!;
   const resolved = entry && entry.available ? entry : fallbackEntry;
@@ -417,22 +418,62 @@ export const resolveBasemapSelection = (
 
   const backend = STYLE_REGISTRY_BACKEND[resolved.id];
   const providerAttr = PROVIDER_ATTRIBUTIONS.find((p) => p.provider === backend.provider) ?? PROVIDER_ATTRIBUTIONS[0];
+  const preset = resolved.id === DEFAULT_BASEMAP_STYLE_ID && theme === "dark" ? "fiord" : backend.preset;
 
   return {
     styleId: resolved.id,
-    style: styleForPreset(backend.provider, backend.preset, theme, colorTheme),
+    style: styleForPreset(backend.provider, preset, theme),
     attribution: providerAttr.attribution,
     attributionUrl: providerAttr.attributionUrl,
     provider: backend.provider,
     providerLabel: providerAttr.label,
-    presetId: backend.preset,
+    presetId: preset,
     presetLabel: resolved.label,
-    isThemed: resolved.isThemed,
+    isThemed: resolved.isThemed && !(resolved.id === DEFAULT_BASEMAP_STYLE_ID && theme === "dark" && colorTheme === "blue"),
+    maxZoom: 22,
     fallbackReason,
   };
 };
 
-export const getCartoFallbackStyle = (
+export const getOpenFreeMapFallbackStyle = (
   theme: BasemapTheme,
   colorTheme: UiColorTheme = "blue",
-): string | StyleSpecification => styleForPreset("carto", "normal-themed", theme, colorTheme);
+): string | StyleSpecification => resolveBasemapSelection(DEFAULT_BASEMAP_STYLE_ID, theme, colorTheme).style;
+
+export const getLocalFallbackStyle = (theme: BasemapTheme, colorTheme: UiColorTheme = "blue"): StyleSpecification => ({
+  version: 8,
+  sources: {},
+  layers: [{ id: "local-background", type: "background", paint: { "background-color": THEMES[colorTheme][theme].cssVars["--bg"] } }],
+});
+
+export const transformCartoRequest = (url: string, key = CARTO_KEY): { url: string } => {
+  if (!key) return { url };
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "basemaps.cartocdn.com" || parsed.hostname.endsWith(".basemaps.cartocdn.com")) {
+      parsed.searchParams.set("key", key);
+      return { url: parsed.toString() };
+    }
+  } catch {
+    // MapLibre will report malformed resource URLs normally.
+  }
+  return { url };
+};
+
+export const nextBasemapFallbackStage = (
+  current: BasemapFallbackStage,
+  selectedStyleId: string,
+): BasemapFallbackStage => {
+  if (current === "local") return "local";
+  if (current === "openfreemap" || selectedStyleId === DEFAULT_BASEMAP_STYLE_ID) return "local";
+  return "openfreemap";
+};
+
+export const LINKSIM_MAP_RESOURCE_PREFIX = "linksim-";
+
+export const shouldAdvanceBasemapFallbackForError = (event: unknown): boolean => {
+  const sourceId = typeof event === "object" && event !== null && "sourceId" in event
+    ? event.sourceId
+    : undefined;
+  return typeof sourceId !== "string" || !sourceId.startsWith(LINKSIM_MAP_RESOURCE_PREFIX);
+};

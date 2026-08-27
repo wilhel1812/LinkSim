@@ -9,7 +9,6 @@ pages_domains = ["linksim.link"]
 pages_env_vars_plain = {
   ACCESS_TEAM_DOMAIN                              = "skarvassbu.cloudflareaccess.com"
   ADMIN_USER_IDS                                  = "f35e2a08-3713-5671-9725-ba82b21f25d4"
-  REGISTRATION_MODE                               = "approval_required"
   AVATAR_FALLBACK_ORIGIN                          = "https://linksim.pages.dev"
   PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE     = "6000"
   PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE = "600"

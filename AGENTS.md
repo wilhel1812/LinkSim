@@ -6,6 +6,8 @@
 - Before changing code, review the relevant open GitHub Issue(s), then read:
   1. `docs/release-flow.md`
   2. `docs/milestone-release-checklist.md`
+- Before using or changing the staged documentation-only delivery lane, read
+  `docs/documentation-delivery.md` and verify its activation gates are complete.
 - If instructions conflict, use this precedence:
   1. explicit user instruction in the current thread
   2. this `AGENTS.md`
@@ -57,13 +59,17 @@
   build or operate a repository poller, local checkout adapter, review-output
   parser, or relay account for this purpose.
 - Automatic reviews stay disabled. A maintainer explicitly requests a review
-  on the current pull request by commenting `@codex review`.
+  on the current pull request by commenting `@codex review`. As the only
+  exception, an explicit `$linksim-ci-shepherd` invocation that names the PR,
+  review mode, and optional budget authorizes that bounded run to post repeated
+  exact-head review requests under the skill's stopping rules.
 - The official Codex bot is the transparent review author. `Sentry` is the
   LinkSim crew role, not a separate publication identity.
 - A Codex review is advisory. It never constitutes human approval, cannot merge
   a pull request, and cannot authorize production.
 - After a pushed fix changes the head SHA, the maintainer decides whether to
-  request another review. Agents must not spend review usage automatically.
+  request another review unless the fix is inside that explicitly authorized
+  bounded run. Agents must not spend review usage outside those two paths.
 
 ## Code Review Rules
 

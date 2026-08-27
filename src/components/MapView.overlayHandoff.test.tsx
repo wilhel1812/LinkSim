@@ -6,14 +6,22 @@ import type { Link, Network, RadioSystem, Site, SrtmTile } from "../types/radio"
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
+  type TargetContour = {
+    type: "FeatureCollection";
+    features: Array<{
+      type: "Feature";
+      properties: { targetDbm: number };
+      geometry: { type: "LineString"; coordinates: Array<[number, number]> };
+    }>;
+  };
   const requests: Array<{
-    resolve: (value: { width: number; height: number; pixels: Uint8ClampedArray }) => void;
+    resolve: (value: { width: number; height: number; pixels: Uint8ClampedArray; targetContour?: TargetContour }) => void;
   }> = [];
   return {
     requests,
     buildCoverage: vi.fn(
       () =>
-        new Promise<{ width: number; height: number; pixels: Uint8ClampedArray }>((resolve) => {
+        new Promise<{ width: number; height: number; pixels: Uint8ClampedArray; targetContour?: TargetContour }>((resolve) => {
           requests.push({ resolve });
         }),
     ),
@@ -34,7 +42,14 @@ const loadingOverlayMock = vi.hoisted(() => ({
 
 const layerMock = vi.hoisted(() => ({
   coveragePaint: null as null | Record<string, unknown>,
-  props: [] as Array<{ beforeId?: string; id?: string }>,
+  props: [] as Array<{ beforeId?: string; id?: string; paint?: Record<string, unknown> }>,
+}));
+
+const mapMock = vi.hoisted(() => ({
+  props: null as null | {
+    mapStyle?: unknown;
+    onError?: (event: { sourceId?: string }) => void;
+  },
 }));
 
 vi.hoisted(() => {
@@ -58,13 +73,14 @@ vi.mock("../lib/overlayRaster", () => ({
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
   buildSourcePassFailOverlayPixelsAsync: overlayMock.buildCoverage,
   buildTerrainShadeOverlayPixelsAsync: vi.fn(async () => null),
-  overlayPixelsToDataUrl: vi.fn(() => ({
+  overlayPixelsToDataUrl: vi.fn((raster: { targetContour?: unknown }) => ({
     coordinates: [
       [10, 61],
       [11, 61],
       [11, 60],
       [10, 60],
     ],
+    targetContour: raster.targetContour,
     url: `data:image/mock-${++overlayMock.encodedRasterCount}`,
   })),
   OverlayTaskCancelledError: class OverlayTaskCancelledError extends Error {},
@@ -84,9 +100,10 @@ vi.mock("react-map-gl/maplibre", async () => {
   return {
     default: ReactMock.forwardRef(
       (
-        props: { children?: React.ReactNode },
+        props: { children?: React.ReactNode; mapStyle?: unknown; onError?: (event: { sourceId?: string }) => void },
         ref: React.ForwardedRef<{ easeTo: () => void; queryRenderedFeatures: () => unknown[] }>,
       ) => {
+        mapMock.props = props;
         ReactMock.useImperativeHandle(ref, () => ({
           easeTo: () => undefined,
           queryRenderedFeatures: () => [],
@@ -96,7 +113,7 @@ vi.mock("react-map-gl/maplibre", async () => {
     ),
     Layer: (props: { beforeId?: string; id?: string; paint?: Record<string, unknown> }) => {
       layerMock.props.push(props);
-      if (props.id === "coverage-overlay-layer") {
+      if (props.id === "linksim-coverage-overlay-layer") {
         layerMock.coveragePaint = props.paint ?? null;
       }
       return null;
@@ -187,7 +204,19 @@ const network: Network = {
   memberships: [{ siteId: site.id, systemId: system.id }],
 };
 
-const resolveNextRaster = async () => {
+const targetContour = {
+  type: "FeatureCollection" as const,
+  features: [{
+    type: "Feature" as const,
+    properties: { targetDbm: -120 },
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [[10.25, 60.25], [10.75, 60.75]] as Array<[number, number]>,
+    },
+  }],
+};
+
+const resolveNextRaster = async (includeTargetContour = false) => {
   await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
   const request = overlayMock.requests.shift();
   if (!request) throw new Error("Expected a pending overlay raster request");
@@ -196,6 +225,7 @@ const resolveNextRaster = async () => {
       width: 1,
       height: 1,
       pixels: new Uint8ClampedArray([255, 0, 0, 255]),
+      targetContour: includeTargetContour ? targetContour : undefined,
     });
   });
 };
@@ -208,6 +238,7 @@ describe("MapView overlay handoff", () => {
     loadingOverlayMock.props = null;
     layerMock.coveragePaint = null;
     layerMock.props = [];
+    mapMock.props = null;
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
       value: vi.fn(() => ({})),
@@ -245,6 +276,55 @@ describe("MapView overlay handoff", () => {
     });
   });
 
+  it("keeps a healthy basemap when an application overlay source errors", () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    const selectedStyle = mapMock.props?.mapStyle;
+    act(() => mapMock.props?.onError?.({ sourceId: "linksim-coverage-overlay-source" }));
+    expect(mapMock.props?.mapStyle).toBe(selectedStyle);
+    act(() => mapMock.props?.onError?.({ sourceId: "linksim-simulation-loading-overlay-source" }));
+    expect(mapMock.props?.mapStyle).toBe(selectedStyle);
+  });
+
+  it("retries a failed custom style after its account definition changes", async () => {
+    const user = {
+      id: "user-1",
+      username: "Owner",
+      bio: "",
+      avatarUrl: "",
+      isAdmin: false,
+      isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      basemapPreferences: {
+        version: 1 as const,
+        customSources: [{ id: "field", name: "Field", kind: "style" as const, lightUrl: "https://maps.test/broken.json", attribution: "Field" }],
+      },
+    };
+    useAppStore.setState({ currentUser: user, basemapStyleId: "custom:field" });
+    render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector={false} />);
+    expect(mapMock.props?.mapStyle).toBe("https://maps.test/broken.json");
+
+    act(() => mapMock.props?.onError?.({ sourceId: "openmaptiles" }));
+    expect(mapMock.props?.mapStyle).not.toBe("https://maps.test/broken.json");
+    act(() => useAppStore.getState().setCurrentUser({
+      ...user,
+      basemapPreferences: {
+        version: 1,
+        customSources: [{ id: "field", name: "Field", kind: "style", lightUrl: "https://maps.test/fixed.json", attribution: "Field" }],
+      },
+    }));
+
+    await waitFor(() => expect(mapMock.props?.mapStyle).toBe("https://maps.test/fixed.json"));
+  });
+
   it("keeps the displayed raster mounted until the replacement cloud is ready", async () => {
     render(
       <MapView
@@ -257,22 +337,22 @@ describe("MapView overlay handoff", () => {
 
     await resolveNextRaster();
     await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
-    expect(loadingOverlayMock.props?.beforeLayerId).toBe("link-lines-casing");
+    expect(loadingOverlayMock.props?.beforeLayerId).toBe("linksim-link-lines-casing");
     const firstKey = loadingOverlayMock.props?.handoffKey;
     expect(firstKey).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(firstKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),
     );
-    expect(layerMock.props.find((props) => props.id === "coverage-overlay-layer")?.beforeId).toBe(
-      "link-lines-casing",
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-overlay-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
     );
     expect(
-      screen.getByTestId("links").compareDocumentPosition(screen.getByTestId("coverage-overlay-source")) &
+      screen.getByTestId("linksim-links").compareDocumentPosition(screen.getByTestId("linksim-coverage-overlay-source")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudExited?.(firstKey!));
@@ -280,7 +360,7 @@ describe("MapView overlay handoff", () => {
     act(() => useAppStore.getState().setMapOverlayMode("contours"));
     await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
 
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
@@ -289,11 +369,26 @@ describe("MapView overlay handoff", () => {
     expect(replacementKey).not.toBe(firstKey);
     expect(layerMock.coveragePaint?.["raster-opacity"]).toBe(0);
 
+    await resolveNextRaster(true);
+    expect(screen.queryByTestId("linksim-coverage-target-contour-source")).not.toBeInTheDocument();
+
     act(() => loadingOverlayMock.props?.onCloudReady?.(replacementKey!));
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(replacementKey!));
+    act(() => loadingOverlayMock.props?.onCloudExited?.(replacementKey!));
+    await waitFor(() => expect(screen.getByTestId("linksim-coverage-target-contour-source")).toBeInTheDocument());
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-halo-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
+    );
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-line-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
+    );
+    expect(
+      layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-line-layer")?.paint?.["line-color"],
+    ).toBeTruthy();
   });
 
   it("starts the initial automatic calculation without waiting for interaction", async () => {
@@ -633,7 +728,7 @@ describe("MapView overlay handoff", () => {
     act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),
@@ -650,7 +745,7 @@ describe("MapView overlay handoff", () => {
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
     expect(overlayMock.buildCoverage).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
@@ -672,7 +767,7 @@ describe("MapView overlay handoff", () => {
     act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),

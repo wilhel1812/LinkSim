@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { buildSettingsPath, matchSettingsPath, type SettingsSectionId } from "../../lib/deepLink";
 import { useAppStore } from "../../store/appStore";
-import { fetchMe, type CloudUser } from "../../lib/cloudUser";
+import { fetchMe, mergeCloudUserProfilePatch, type CloudUser, type CloudUserProfilePatch } from "../../lib/cloudUser";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { clearAuthenticatedSessionMarker } from "../../lib/appShellGuards";
 import { ProfileSection } from "./sections/ProfileSection";
@@ -42,6 +42,7 @@ export function SettingsPanel({ initialSection, onClose, suspended = false }: Se
   const setAuthState = useAppStore((state) => state.setAuthState);
 
   const [me, setMe] = useState<CloudUser | null>(currentUser);
+  const meRef = useRef<CloudUser | null>(currentUser);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? "profile");
   const [mobileDetailOpen, setMobileDetailOpen] = useState<boolean>(initialSection !== null);
@@ -56,6 +57,7 @@ export function SettingsPanel({ initialSection, onClose, suspended = false }: Se
       try {
         const current = await fetchMe();
         if (cancelled) return;
+        meRef.current = current;
         setMe(current);
         setCurrentUser(current);
       } catch (error) {
@@ -112,9 +114,11 @@ export function SettingsPanel({ initialSection, onClose, suspended = false }: Se
   }, [suspended]);
 
   const handleMeUpdated = useCallback(
-    (user: CloudUser) => {
-      setMe(user);
-      setCurrentUser(user);
+    (user: CloudUser, patch?: CloudUserProfilePatch) => {
+      const next = mergeCloudUserProfilePatch(meRef.current, user, patch);
+      meRef.current = next;
+      setMe(next);
+      setCurrentUser(next);
       setAuthState("signed_in");
     },
     [setAuthState, setCurrentUser],
@@ -122,6 +126,7 @@ export function SettingsPanel({ initialSection, onClose, suspended = false }: Se
 
   const handleSignOut = useCallback(() => {
     clearAuthenticatedSessionMarker();
+    meRef.current = null;
     setMe(null);
     setCurrentUser(null);
     setAuthState("signed_out");

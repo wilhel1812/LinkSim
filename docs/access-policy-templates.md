@@ -32,14 +32,14 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 - Keep `/api/public-simulation` reachable without Access challenge.
 
 ### App authorization model
-- Keep `REGISTRATION_MODE=open`.
+- First successful Access login creates the LinkSim user profile.
 - Treat Access as identity proof for signed-in users.
 - Treat LinkSim visibility/role checks as the data authorization source.
 - Anonymous deep-link users must only load the shared/public Simulation bundle resolved by deep link.
 - Guest mode must not expose library browsing/discovery of unrelated objects.
 
 ### LinkSim app-level authorization
-- Keep `REGISTRATION_MODE=open`.
+- LinkSim registration behavior is not controlled by an environment variable.
 - Cloudflare Access answers “who can sign in”.
 - LinkSim visibility and role checks answer “who can use each simulation feature”.
 
@@ -51,7 +51,6 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 ## Required env variables
 - `ACCESS_TEAM_DOMAIN`
 - `ACCESS_AUD`
-- `REGISTRATION_MODE=open`
 - `ADMIN_USER_IDS=<comma-separated admin ids>`
 - `AUTH_OBSERVABILITY=true` (recommended)
 

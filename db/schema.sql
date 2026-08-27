@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   idp_email_verified INTEGER NOT NULL DEFAULT 0,
   avatar_url TEXT,
   email_public INTEGER NOT NULL DEFAULT 1,
+  basemap_preferences_json TEXT,
   avatar_object_key TEXT,
   avatar_thumb_key TEXT,
   avatar_hash TEXT,

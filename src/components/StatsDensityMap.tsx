@@ -2,10 +2,18 @@ import { useMemo, useRef, useState } from "react";
 import { Fullscreen, ZoomIn, ZoomOut } from "lucide-react";
 import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection, Point } from "geojson";
-import { getCartoFallbackStyle } from "../lib/basemaps";
+import {
+  LOCAL_BASEMAP_ATTRIBUTION_CREDITS,
+  OPENFREEMAP_ATTRIBUTION_CREDITS,
+  getLocalFallbackStyle,
+  getOpenFreeMapFallbackStyle,
+  shouldAdvanceBasemapFallbackForError,
+} from "../lib/basemaps";
 import type { StatsPayload } from "../lib/stats";
 import type { UiColorTheme } from "../themes/types";
 import { MapControlButton } from "./ui/MapControlButton";
+import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
+import { BasemapThemeTint } from "./BasemapThemeTint";
 
 type StatsDensityMapProps = {
   bins: StatsPayload["geography"]["bins"];
@@ -61,6 +69,7 @@ const fitBins = (map: MapRef | null, bins: StatsDensityMapProps["bins"]) => {
 export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor, surfaceColor }: StatsDensityMapProps) {
   const mapRef = useRef<MapRef | null>(null);
   const [hovered, setHovered] = useState<HoveredBin | null>(null);
+  const [useLocalFallback, setUseLocalFallback] = useState(false);
   const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
   const featureCollection = useMemo<FeatureCollection<Point, DensityProperties>>(
     () => ({
@@ -130,21 +139,26 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
       <Map
         ref={mapRef}
         initialViewState={{ ...initialCenter, zoom: bins.length === 1 ? 5 : 3 }}
-        mapStyle={getCartoFallbackStyle(theme, colorTheme)}
+        mapStyle={useLocalFallback ? getLocalFallbackStyle(theme, colorTheme) : getOpenFreeMapFallbackStyle(theme, colorTheme)}
         attributionControl={false}
         dragPan={!window.matchMedia("(pointer: coarse)").matches}
         scrollZoom={false}
         touchZoomRotate={false}
-        onError={() => setHovered(null)}
+        onError={(event) => {
+          if (!shouldAdvanceBasemapFallbackForError(event)) return;
+          setHovered(null);
+          setUseLocalFallback(true);
+        }}
         onLoad={(event) => fitBins(event.target as unknown as MapRef, bins)}
         onMouseLeave={() => setHovered(null)}
         onMouseMove={hoverFromFeature}
         onClick={hoverFromFeature}
-        interactiveLayerIds={["stats-density-bins"]}
+        interactiveLayerIds={["linksim-stats-density-bins"]}
       >
-        <Source data={featureCollection} id="stats-density" type="geojson">
+        <BasemapThemeTint colorTheme={colorTheme} enabled={!useLocalFallback && !(theme === "dark" && colorTheme === "blue")} theme={theme} />
+        <Source data={featureCollection} id="linksim-stats-density" type="geojson">
           <Layer
-            id="stats-density-bins"
+            id="linksim-stats-density-bins"
             type="circle"
             paint={{
               "circle-color": accentColor || colorVar("--accent"),
@@ -191,9 +205,7 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         </div>
       </div>
       <div className="floating-attribution-pill ui-surface-pill stats-map-attribution">
-        <a href="https://carto.com/attributions" rel="noreferrer" target="_blank">CARTO</a>
-        <span>·</span>
-        <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">MapLibre</a>
+        <BasemapAttributionLinks credits={useLocalFallback ? LOCAL_BASEMAP_ATTRIBUTION_CREDITS : OPENFREEMAP_ATTRIBUTION_CREDITS} />
       </div>
     </div>
   );
