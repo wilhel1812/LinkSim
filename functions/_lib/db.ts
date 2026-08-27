@@ -1418,52 +1418,49 @@ export const updateUserProfile = async (
   if (!nextEmail) throw new Error("Email is required and must be valid.");
   if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL.");
 
-  const duplicateUser = await env.DB
-    .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
-    .bind(nextName, userId)
-    .first<{ id: string }>();
-  if (duplicateUser?.id) throw new Error("Username is already in use.");
+  if (patch.username !== undefined) {
+    const duplicateUser = await env.DB
+      .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
+      .bind(nextName, userId)
+      .first<{ id: string }>();
+    if (duplicateUser?.id) throw new Error("Username is already in use.");
+  }
 
-  await env.DB.prepare(
-    `UPDATE users
-     SET username = ?,
-         username_set_at = CASE WHEN ? = 1 THEN COALESCE(username_set_at, ?) ELSE username_set_at END,
-         email = ?,
-         bio = ?,
-         access_request_note = ?,
-         avatar_url = ?,
-          email_public = ?,
-          default_frequency_preset_id = ?,
-          simulation_defaults_preference_json = ?,
-          basemap_preferences_json = ?,
-          avatar_object_key = ?,
-         avatar_thumb_key = ?,
-         avatar_hash = ?,
-         avatar_bytes = ?,
-         avatar_content_type = ?,
-         updated_at = ?
-     WHERE id = ?`,
-  )
-    .bind(
-      nextName,
-      patch.username === undefined ? 0 : 1,
-      new Date().toISOString(),
-      nextEmail,
-      nextBio,
-      nextAccessRequestNote,
-      nextAvatar ?? "",
-      nextEmailPublic ? 1 : 0,
-      nextDefaultFrequencyPresetId ?? null,
-      nextSimulationDefaultsPreference ?? null,
-      nextBasemapPreferences ?? null,
-      shouldClearAvatarMetadata ? null : existing.avatar_object_key,
-      shouldClearAvatarMetadata ? null : existing.avatar_thumb_key,
-      shouldClearAvatarMetadata ? null : existing.avatar_hash,
-      shouldClearAvatarMetadata ? null : existing.avatar_bytes,
-      shouldClearAvatarMetadata ? null : existing.avatar_content_type,
-      new Date().toISOString(),
-      userId,
-    )
+  const now = new Date().toISOString();
+  const assignments: string[] = [];
+  const bindings: unknown[] = [];
+  const assign = (sql: string, value: unknown) => {
+    assignments.push(sql);
+    bindings.push(value);
+  };
+  if (patch.username !== undefined) {
+    assign("username = ?", nextName);
+    assign("username_set_at = COALESCE(username_set_at, ?)", now);
+  }
+  if (patch.email !== undefined) assign("email = ?", nextEmail);
+  if (patch.bio !== undefined) assign("bio = ?", nextBio);
+  if (patch.accessRequestNote !== undefined) assign("access_request_note = ?", nextAccessRequestNote);
+  if (patch.avatarUrl !== undefined) {
+    assign("avatar_url = ?", nextAvatar ?? "");
+    if (shouldClearAvatarMetadata) {
+      assignments.push(
+        "avatar_object_key = NULL",
+        "avatar_thumb_key = NULL",
+        "avatar_hash = NULL",
+        "avatar_bytes = NULL",
+        "avatar_content_type = NULL",
+      );
+    }
+  }
+  if (patch.emailPublic !== undefined) assign("email_public = ?", nextEmailPublic ? 1 : 0);
+  if (patch.defaultFrequencyPresetId !== undefined) assign("default_frequency_preset_id = ?", nextDefaultFrequencyPresetId ?? null);
+  if (patch.simulationDefaultsPreference !== undefined) assign("simulation_defaults_preference_json = ?", nextSimulationDefaultsPreference ?? null);
+  if (patch.basemapPreferences !== undefined) assign("basemap_preferences_json = ?", nextBasemapPreferences ?? null);
+  assign("updated_at = ?", now);
+
+  await env.DB
+    .prepare(`UPDATE users SET ${assignments.join(", ")} WHERE id = ?`)
+    .bind(...bindings, userId)
     .run();
 
   const profile = options.includeBasemapPreferences

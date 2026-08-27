@@ -37,7 +37,19 @@ describe("custom basemap resolution", () => {
     const raster = resolveBasemapSelection("custom:raster", "light", "blue", sources);
     expect(raster.maxZoom).toBe(17);
     expect((raster.style as unknown as { sources: { customRaster: { tiles: string[]; tileSize: number } } }).sources.customRaster).toMatchObject({ tiles: ["https://tiles.test/{z}/{x}/{y}.png"], tileSize: 512 });
+    expect((raster.style as unknown as { layers: Array<{ maxzoom?: number }> }).layers[0]).not.toHaveProperty("maxzoom");
     expect(getStylesForCategory("custom", sources).map((entry) => entry.id)).toEqual(["custom:style", "custom:raster"]);
+  });
+
+  it("reuses an updated light URL in dark mode when no dark URL was supplied", () => {
+    const source: CustomBasemapSource = {
+      id: "single-url",
+      name: "Single URL",
+      kind: "style",
+      lightUrl: "https://maps.test/updated.json",
+      attribution: "My data",
+    };
+    expect(resolveBasemapSelection("custom:single-url", "dark", "blue", [source]).style).toBe("https://maps.test/updated.json");
   });
 
   it("falls back without persisting when an account source was deleted elsewhere", () => {

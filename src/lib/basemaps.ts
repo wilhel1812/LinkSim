@@ -377,7 +377,7 @@ export const resolveBasemapSelection = (
       const style: string | StyleSpecification = source.kind === "style" ? sourceUrl : {
         version: 8,
         sources: { customRaster: { type: "raster", tiles: [sourceUrl], tileSize: source.tileSize, maxzoom: source.maxZoom, attribution: source.attribution } },
-        layers: [{ id: "custom-raster-base", type: "raster", source: "customRaster", minzoom: 0, maxzoom: source.maxZoom }],
+        layers: [{ id: "custom-raster-base", type: "raster", source: "customRaster", minzoom: 0 }],
       } as StyleSpecification;
       return { styleId, style, attribution: source.attribution, attributionUrl: source.attributionUrl ?? "", provider: "custom", providerLabel: source.name, presetId: source.id, presetLabel: source.name, isThemed: false, maxZoom: source.kind === "raster-xyz" ? source.maxZoom : 22, fallbackReason: null };
     }

@@ -77,20 +77,20 @@ const normalizeSource = (value: unknown): CustomBasemapSource => {
   const name = requireText(raw.name, "Source name", MAX_BASEMAP_NAME_LENGTH);
   if (raw.kind !== "style" && raw.kind !== "raster-xyz") throw new BasemapPreferenceError("Source kind must be style or raster-xyz.");
   const lightUrl = normalizeUrl(raw.lightUrl, "Light URL")!;
-  const darkUrl = normalizeUrl(raw.darkUrl, "Dark URL", true) ?? lightUrl;
+  const darkUrl = normalizeUrl(raw.darkUrl, "Dark URL", true);
   const attribution = requireText(raw.attribution, "Attribution", MAX_BASEMAP_ATTRIBUTION_LENGTH);
   const attributionUrl = normalizeUrl(raw.attributionUrl, "Attribution URL", true);
 
-  if (raw.kind === "style") return { id, name, kind: "style", lightUrl, darkUrl, attribution, ...(attributionUrl ? { attributionUrl } : {}) };
+  if (raw.kind === "style") return { id, name, kind: "style", lightUrl, ...(darkUrl ? { darkUrl } : {}), attribution, ...(attributionUrl ? { attributionUrl } : {}) };
   for (const placeholder of ["{z}", "{x}", "{y}"]) {
-    if (!lightUrl.includes(placeholder) || !darkUrl.includes(placeholder)) {
+    if (!lightUrl.includes(placeholder) || (darkUrl ? !darkUrl.includes(placeholder) : false)) {
       throw new BasemapPreferenceError(`Raster URLs must contain ${placeholder}.`);
     }
   }
   const maxZoom = Number(raw.maxZoom);
   if (!Number.isInteger(maxZoom) || maxZoom < 0 || maxZoom > 24) throw new BasemapPreferenceError("Raster max zoom must be an integer from 0 to 24.");
   if (raw.tileSize !== 256 && raw.tileSize !== 512) throw new BasemapPreferenceError("Raster tile size must be 256 or 512.");
-  return { id, name, kind: "raster-xyz", lightUrl, darkUrl, attribution, ...(attributionUrl ? { attributionUrl } : {}), maxZoom, tileSize: raw.tileSize };
+  return { id, name, kind: "raster-xyz", lightUrl, ...(darkUrl ? { darkUrl } : {}), attribution, ...(attributionUrl ? { attributionUrl } : {}), maxZoom, tileSize: raw.tileSize };
 };
 
 export const normalizeUserBasemapPreferences = (

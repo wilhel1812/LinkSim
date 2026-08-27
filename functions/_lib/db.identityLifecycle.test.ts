@@ -7,8 +7,10 @@ import {
   executeUnverifiedIdentityEnsure,
   executeVerifiedIdentityEnsure,
   fetchLibraryForUser,
+  fetchMyUserProfile,
   revertResourceFromChangeCopy,
   setUserAvatarAssets,
+  updateUserProfile,
 } from "./db";
 
 class SqliteStatement {
@@ -17,6 +19,7 @@ class SqliteStatement {
   constructor(
     private readonly db: DatabaseSync,
     private readonly sql: string,
+    private readonly hooks: { beforeRun: ((sql: string) => Promise<void> | void) | null },
   ) {}
 
   bind(...values: unknown[]) {
@@ -33,6 +36,7 @@ class SqliteStatement {
   }
 
   async run() {
+    await this.hooks.beforeRun?.(this.sql);
     this.runSync();
     return { success: true };
   }
@@ -49,6 +53,7 @@ class SqliteStatement {
 class SqliteD1 {
   readonly db = new DatabaseSync(":memory:");
   beforeBatch: (() => void) | null = null;
+  beforeRun: ((sql: string) => Promise<void> | void) | null = null;
 
   constructor() {
     this.db.exec(`
@@ -116,7 +121,7 @@ class SqliteD1 {
   }
 
   prepare(sql: string) {
-    return new SqliteStatement(this.db, sql);
+    return new SqliteStatement(this.db, sql, this);
   }
 
   async batch(statements: SqliteStatement[]) {
@@ -185,6 +190,51 @@ const seedCanonicalAccount = (database: SqliteD1) => {
 };
 
 describe("authoritative identity lifecycle", () => {
+  it("does not overwrite concurrent basemap and radio-default profile patches", async () => {
+    const basemapLast = new SqliteD1();
+    seedCanonicalAccount(basemapLast);
+    await fetchMyUserProfile(envFor(basemapLast) as never, "old-subject");
+    basemapLast.beforeRun = (sql) => {
+      if (!/^\s*UPDATE users\s+SET/.test(sql)) return;
+      basemapLast.beforeRun = null;
+      basemapLast.db.prepare(
+        "UPDATE users SET default_frequency_preset_id = 'meshcore-us-narrow-910525-sf7-bw625-cr5' WHERE id = 'old-subject'",
+      ).run();
+    };
+    await updateUserProfile(envFor(basemapLast) as never, "old-subject", {
+      basemapPreferences: {
+        version: 1,
+        customSources: [{ id: "new-map", name: "New map", kind: "style", lightUrl: "https://maps.test/new.json", attribution: "New data" }],
+      },
+    }, { includeBasemapPreferences: true });
+    const basemapLastRow = basemapLast.db.prepare(
+      "SELECT default_frequency_preset_id, basemap_preferences_json FROM users WHERE id = 'old-subject'",
+    ).get() as { default_frequency_preset_id: string; basemap_preferences_json: string };
+    expect(basemapLastRow.default_frequency_preset_id).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
+    expect(JSON.parse(basemapLastRow.basemap_preferences_json).customSources[0].id).toBe("new-map");
+
+    const radioLast = new SqliteD1();
+    seedCanonicalAccount(radioLast);
+    await fetchMyUserProfile(envFor(radioLast) as never, "old-subject");
+    const concurrentBasemap = JSON.stringify({
+      version: 1,
+      customSources: [{ id: "new-map", name: "New map", kind: "style", lightUrl: "https://maps.test/new.json", attribution: "New data" }],
+    });
+    radioLast.beforeRun = (sql) => {
+      if (!/^\s*UPDATE users\s+SET/.test(sql)) return;
+      radioLast.beforeRun = null;
+      radioLast.db.prepare("UPDATE users SET basemap_preferences_json = ? WHERE id = 'old-subject'").run(concurrentBasemap);
+    };
+    await updateUserProfile(envFor(radioLast) as never, "old-subject", {
+      defaultFrequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+    }, { includeBasemapPreferences: true });
+    const radioLastRow = radioLast.db.prepare(
+      "SELECT default_frequency_preset_id, basemap_preferences_json FROM users WHERE id = 'old-subject'",
+    ).get() as { default_frequency_preset_id: string; basemap_preferences_json: string };
+    expect(radioLastRow.default_frequency_preset_id).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
+    expect(JSON.parse(radioLastRow.basemap_preferences_json).customSources[0].id).toBe("new-map");
+  });
+
   it("returns private basemap preferences after the current user updates an avatar", async () => {
     const database = new SqliteD1();
     seedCanonicalAccount(database);

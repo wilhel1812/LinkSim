@@ -14,8 +14,10 @@ describe("normalizeUserBasemapPreferences", () => {
         { id: "raster", name: "Raster", kind: "raster-xyz", lightUrl: "https://tiles.test/{z}/{x}/{y}.png", attribution: "Tiles", maxZoom: 17, tileSize: 512 },
       ],
     });
-    expect(result.customSources[0]).toMatchObject({ id: "alpine", name: "Alpine", darkUrl: "https://maps.test/style.json?key=browser-safe" });
-    expect(result.customSources[1]).toMatchObject({ darkUrl: "https://tiles.test/{z}/{x}/{y}.png", maxZoom: 17, tileSize: 512 });
+    expect(result.customSources[0]).toMatchObject({ id: "alpine", name: "Alpine" });
+    expect(result.customSources[0]).not.toHaveProperty("darkUrl");
+    expect(result.customSources[1]).toMatchObject({ maxZoom: 17, tileSize: 512 });
+    expect(result.customSources[1]).not.toHaveProperty("darkUrl");
     expect(customBasemapStyleId("alpine")).toBe("custom:alpine");
   });
 
