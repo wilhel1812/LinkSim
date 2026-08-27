@@ -4,18 +4,25 @@
 
 This lane is staged but unavailable until all of these gates are complete:
 
-1. The classifier, Pages job conditions, and trusted
-   `Docs Branch Policy / enforce-main-docs` workflow are released to `main`.
-2. A qualifying `main` pull request proves that exact check context succeeds.
-3. Branch protection is explicitly updated to require the trusted check.
-4. A later protected policy pull request adds `docs/<issue-id>-<slug>` to the
+1. The classifier, Pages job conditions, and non-authorizing trusted
+   `Docs Branch Policy / evaluate-main-docs` evaluator are released to `main`.
+2. A dedicated GitHub App check publisher is provisioned outside
+   head-controlled repository workflows. Its credential and check identity
+   must not be available to pull-request head workflows.
+3. That App publishes `Docs Branch Policy / enforce-main-docs` on the exact
+   pull-request head after applying the protected-base classifier.
+4. A qualifying `main` pull request proves that exact App-sourced context, and
+   branch protection is updated to require the context from that App.
+5. A later protected policy pull request adds `docs/<issue-id>-<slug>` to the
    allowed `main` head branches in `docs/release-flow.md` and the existing PR
    branch-policy workflow.
 
-Do not open or merge a `docs/*` -> `main` pull request before all four gates are
-recorded complete. This staged rollout preserves the currently required
-`PR Branch Policy / enforce-main` check while the new trusted context is being
-installed.
+Do not open or merge a `docs/*` -> `main` pull request before all five gates are
+recorded complete. The staged evaluator is deliberately non-authorizing: its
+`pull_request_target` job runs from the protected base but its native check is
+not attached to the pull-request head and must never be made required. This
+preserves the currently required `PR Branch Policy / enforce-main` check while
+the dedicated publisher is pending.
 
 Use this lane only for repository documentation that can change independently
 of a LinkSim application version. Documentation that defines or changes the
@@ -32,10 +39,11 @@ The complete pull-request diff must contain only:
 - root `CONTRIBUTING.md`
 - root `SECURITY.md`
 
-`CHANGELOG.md`, application code, public assets, configuration, migrations,
-scripts, workflows, and agent skills are not documentation-only for this lane.
-The classifier disables rename detection so a move is evaluated as both the
-removed path and the added path.
+`docs/onboarding.md` is excluded because it is imported into the application
+bundle. `CHANGELOG.md`, application code, public assets, configuration,
+migrations, scripts, workflows, and agent skills are also not
+documentation-only for this lane. The classifier disables rename detection so
+a move is evaluated as both the removed path and the added path.
 
 ## Delivery sequence
 
@@ -63,9 +71,13 @@ After the activation gates are complete:
 
 - Mixed, empty, malformed, or unclassifiable diffs cannot use `docs/*` ->
   `main` and do not bypass deployment.
-- Direct-to-`main` authorization runs the classifier and workflow from the
-  trusted base branch; pull-request content is fetched only as diff data and is
-  never executed by that check.
+- The staged `pull_request_target` evaluator loads its workflow and classifier
+  from the protected base branch and treats pull-request content only as diff
+  data. It is diagnostic foundation, not the future authorization check.
+- Activation requires the dedicated GitHub App to publish
+  `Docs Branch Policy / enforce-main-docs` on the exact pull-request head. Do
+  not substitute a check created by the shared GitHub Actions App because a
+  head-controlled same-repository workflow could spoof that source identity.
 - Manual deployment dispatches always remain deployment-eligible.
 - Required workflows run normally; job-level conditions skip only Pages
   deployment jobs after successful classification.

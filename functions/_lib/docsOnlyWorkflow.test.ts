@@ -28,7 +28,7 @@ describe("documentation-only delivery workflow", () => {
     expect(deployWorkflow.match(/!cancelled\(\)/g)).toHaveLength(3);
   });
 
-  it("stages a distinct trusted check without removing the existing required main check", () => {
+  it("stages a non-authorizing trusted evaluator without removing the required main check", () => {
     expect(branchWorkflow).toContain("  pull_request:\n");
     expect(branchWorkflow).toContain("      - main");
     expect(branchWorkflow).not.toContain("pull_request_target:");
@@ -36,8 +36,10 @@ describe("documentation-only delivery workflow", () => {
 
     expect(docsBranchWorkflow).toContain("pull_request_target:");
     expect(docsBranchWorkflow).toContain(
-      "name: Docs Branch Policy / enforce-main-docs",
+      "name: Docs Branch Policy / evaluate-main-docs",
     );
+    expect(docsBranchWorkflow).not.toContain("checks: write");
+    expect(docsBranchWorkflow).not.toContain("github.rest.checks.create");
     expect(docsBranchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
     expect(docsBranchWorkflow).toContain(
       'test "$HEAD_REPO" = "$GITHUB_REPOSITORY"',
@@ -59,7 +61,10 @@ describe("documentation-only delivery workflow", () => {
   it("documents the required activation ordering", () => {
     const delivery = readRepositoryFile("docs/documentation-delivery.md");
     expect(delivery).toContain("Docs Branch Policy / enforce-main-docs");
-    expect(delivery).toContain("Branch protection is explicitly updated");
+    expect(delivery).toContain("branch protection is updated");
     expect(delivery).toContain("Do not open or merge a `docs/*`");
+    expect(delivery).toContain("`docs/onboarding.md`");
+    expect(delivery).toContain("dedicated GitHub App");
+    expect(delivery).toContain("non-authorizing");
   });
 });

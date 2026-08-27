@@ -7,8 +7,8 @@ on:
       - main
 
 jobs:
-  enforce-main-docs:
-    name: Docs Branch Policy / enforce-main-docs
+  evaluate-main-docs:
+    name: Docs Branch Policy / evaluate-main-docs
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require a documentation-only diff with trusted policy
+      - name: Evaluate the complete diff with trusted base policy
         if: ${{ startsWith(github.event.pull_request.head.ref, 'docs/') }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

@@ -90,6 +90,7 @@ describe("documentation-only change policy", () => {
 
   it.each([
     "CHANGELOG.md",
+    "docs/onboarding.md",
     "public/guide.md",
     "src/README.md",
     ".github/workflows/deploy-pages.yml",

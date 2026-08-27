@@ -11,6 +11,7 @@ const ROOT_DOCUMENTATION_FILES = new Set([
   "CONTRIBUTING.md",
   "SECURITY.md",
 ]);
+const APPLICATION_BUNDLED_DOCUMENTATION_FILES = new Set(["docs/onboarding.md"]);
 
 const hasSafeSegments = (path) =>
   path.length > 0 &&
@@ -20,6 +21,7 @@ const hasSafeSegments = (path) =>
 
 export const isDocumentationOnlyPath = (path) => {
   if (typeof path !== "string" || !hasSafeSegments(path)) return false;
+  if (APPLICATION_BUNDLED_DOCUMENTATION_FILES.has(path)) return false;
   return ROOT_DOCUMENTATION_FILES.has(path) || path.startsWith("docs/");
 };
 
