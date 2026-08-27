@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Fullscreen, ZoomIn, ZoomOut } from "lucide-react";
 import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection, Point } from "geojson";
-import { getLocalFallbackStyle, getOpenFreeMapFallbackStyle } from "../lib/basemaps";
+import { getLocalFallbackStyle, getOpenFreeMapFallbackStyle, shouldAdvanceBasemapFallbackForError } from "../lib/basemaps";
 import type { StatsPayload } from "../lib/stats";
 import type { UiColorTheme } from "../themes/types";
 import { MapControlButton } from "./ui/MapControlButton";
@@ -136,7 +136,11 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         dragPan={!window.matchMedia("(pointer: coarse)").matches}
         scrollZoom={false}
         touchZoomRotate={false}
-        onError={() => { setHovered(null); setUseLocalFallback(true); }}
+        onError={(event) => {
+          if (!shouldAdvanceBasemapFallbackForError(event)) return;
+          setHovered(null);
+          setUseLocalFallback(true);
+        }}
         onLoad={(event) => fitBins(event.target as unknown as MapRef, bins)}
         onMouseLeave={() => setHovered(null)}
         onMouseMove={hoverFromFeature}
@@ -192,7 +196,15 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         </div>
       </div>
       <div className="floating-attribution-pill ui-surface-pill stats-map-attribution">
-        {useLocalFallback ? <span>Local background</span> : <a href="https://openfreemap.org/" rel="noreferrer" target="_blank">OpenFreeMap</a>}
+        {useLocalFallback ? (
+          <span>Local background</span>
+        ) : (
+          <>
+            <a href="https://openfreemap.org/" rel="noreferrer" target="_blank">OpenFreeMap</a>
+            <span>·</span>
+            <a href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">© OpenStreetMap contributors</a>
+          </>
+        )}
         <span>·</span>
         <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">MapLibre</a>
       </div>

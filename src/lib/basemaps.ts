@@ -453,6 +453,7 @@ const APPLICATION_OVERLAY_SOURCE_IDS = new Set([
   "coverage-overlay-source",
   "coverage-target-contour-source",
   "simulation-loading-overlay-source",
+  "stats-density",
   "user-location-accuracy",
   "mqtt-position-precision",
 ]);

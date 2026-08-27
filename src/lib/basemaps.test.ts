@@ -216,6 +216,7 @@ describe("basemap fallback style", () => {
     expect(shouldAdvanceBasemapFallbackForError({ sourceId: "terrain-overlay-source" })).toBe(false);
     expect(shouldAdvanceBasemapFallbackForError({ sourceId: "coverage-overlay-source" })).toBe(false);
     expect(shouldAdvanceBasemapFallbackForError({ sourceId: "simulation-loading-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "stats-density" })).toBe(false);
     expect(shouldAdvanceBasemapFallbackForError({ sourceId: "openmaptiles" })).toBe(true);
     expect(shouldAdvanceBasemapFallbackForError({})).toBe(true);
   });
