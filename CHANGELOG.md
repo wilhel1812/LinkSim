@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.28.0] - 2026-08-27
+
+### Added
+- Added OpenFreeMap as the zero-key default basemap provider, with automatic Positron and Fiord theme pairing, optional CARTO configuration, and account-synced bring-your-own-tiles (BYOT) basemap definitions while keeping the active selection device-local. (#1096)
+
+### Fixed
+- Restored the distinct RX target line in Heatmap overlays without duplicating contributor, radio-frequency, or terrain evaluation work. (#1094)
+
+### Internal
+- Removed the obsolete `REGISTRATION_MODE` runtime, Wrangler, Terraform, documentation, and test configuration while preserving historical registration provenance. (#1085)
+- Added explicit bounded `all-findings` and `no-p1` Codex review modes while preserving maintainer authorization for unmodeled review requests. (#1098)
+- Documented a deterministic exact-tree release fallback for squash-history conflicts. (#1090)
+- Staged a fail-closed documentation-only classifier and non-authorizing protected-base evaluator; direct documentation delivery to `main` remains disabled until the dedicated 0.29 activation gates are complete. (#1092)
+
 ## [0.27.1] - 2026-08-20
 
 ### Added
