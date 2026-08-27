@@ -231,6 +231,18 @@ describe("MapView user location flow", () => {
     expect(cancelTerrainLoad).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the Regional category open after selecting its default style", async () => {
+    useAppStore.setState({ basemapStyleId: "street-linksim" });
+    renderMapView({ showInspector: true });
+
+    const category = screen.getByLabelText("Category");
+    fireEvent.change(category, { target: { value: "regional" } });
+
+    await waitFor(() => expect(category).toHaveValue("regional"));
+    expect(screen.getByLabelText("Map Style")).toHaveValue("topo-kartverket");
+    expect(screen.getByRole("option", { name: /NPolar Satellite/ })).toBeInTheDocument();
+  });
+
   it("opts out at each expensive threshold while allowing a deliberate override", async () => {
     const onPublishNotice = vi.fn();
     renderMapView({ showInspector: true, onPublishNotice });

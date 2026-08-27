@@ -3286,8 +3286,16 @@ export function MapView({
       setBasemapFallbackStage("selected");
       return;
     }
+    const selectedStyleIsRegional = getStylesForCategory("regional", customBasemapSources)
+      .some((style) => style.id === basemapStyleId);
+    if (selectedCategory === "regional" && selectedStyleIsRegional) return;
     setSelectedCategory(getCategoryForStyleId(basemapStyleId));
-  }, [basemapStyleId, currentUser, customBasemapSources, setBasemapStyleId]);
+  }, [basemapStyleId, currentUser, customBasemapSources, selectedCategory, setBasemapStyleId]);
+  useEffect(() => {
+    if (!basemapStyleId.startsWith("custom:")) return;
+    setBasemapFallbackStage("selected");
+    setMapProviderWarning(null);
+  }, [basemapStyleId, resolvedBasemap.style]);
   const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory, customBasemapSources), [customBasemapSources, selectedCategory]);
   const globalCategoryStyles = useMemo(
     () => categoryStyles.filter((s) => !s.regional),

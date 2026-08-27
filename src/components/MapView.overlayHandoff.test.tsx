@@ -293,6 +293,38 @@ describe("MapView overlay handoff", () => {
     expect(mapMock.props?.mapStyle).toBe(selectedStyle);
   });
 
+  it("retries a failed custom style after its account definition changes", async () => {
+    const user = {
+      id: "user-1",
+      username: "Owner",
+      bio: "",
+      avatarUrl: "",
+      isAdmin: false,
+      isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      basemapPreferences: {
+        version: 1 as const,
+        customSources: [{ id: "field", name: "Field", kind: "style" as const, lightUrl: "https://maps.test/broken.json", attribution: "Field" }],
+      },
+    };
+    useAppStore.setState({ currentUser: user, basemapStyleId: "custom:field" });
+    render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector={false} />);
+    expect(mapMock.props?.mapStyle).toBe("https://maps.test/broken.json");
+
+    act(() => mapMock.props?.onError?.({ sourceId: "openmaptiles" }));
+    expect(mapMock.props?.mapStyle).not.toBe("https://maps.test/broken.json");
+    act(() => useAppStore.getState().setCurrentUser({
+      ...user,
+      basemapPreferences: {
+        version: 1,
+        customSources: [{ id: "field", name: "Field", kind: "style", lightUrl: "https://maps.test/fixed.json", attribution: "Field" }],
+      },
+    }));
+
+    await waitFor(() => expect(mapMock.props?.mapStyle).toBe("https://maps.test/fixed.json"));
+  });
+
   it("keeps the displayed raster mounted until the replacement cloud is ready", async () => {
     render(
       <MapView
