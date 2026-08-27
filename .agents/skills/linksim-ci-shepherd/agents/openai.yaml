@@ -1,4 +1,4 @@
 interface:
   display_name: "LinkSim CI Shepherd"
-  short_description: "Monitor and fix LinkSim pull request CI"
-  default_prompt: "Use $linksim-ci-shepherd to monitor this LinkSim pull request and resolve bounded CI failures."
+  short_description: "Shepherd LinkSim PR checks and reviews"
+  default_prompt: "Use $linksim-ci-shepherd to monitor this LinkSim pull request; run repeated native reviews only when I explicitly provide all-findings or no-p1 and an optional budget."
