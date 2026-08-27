@@ -23,6 +23,7 @@ You must not:
 - You remain responsible for content you create or upload.
 - You must respect third-party data and map/source licenses.
 - You must not store sensitive secrets in app content (passwords, private keys, access tokens, or similar credentials).
+- Custom map URLs may contain browser-safe provider query tokens, but they are stored in private profile data, are visible to LinkSim database operators, and are sent directly from the browser. Do not use secret-vault credentials.
 - Resource visibility/access levels are collaboration controls, not confidentiality guarantees or confidential secret storage.
 - Sharing a Simulation shares its saved Site coordinates and the exact coordinates of referenced Sites with everyone who can open that Simulation, even when a referenced Site is separately private in the Library.
 - Saving a Site created from a map position sends its exact coordinates to OpenStreetMap Nominatim for automatic naming.

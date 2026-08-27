@@ -18,7 +18,7 @@ class TestD1 {
       CREATE TABLE users (
         id TEXT PRIMARY KEY, username TEXT, email TEXT, username_set_at TEXT, bio TEXT, access_request_note TEXT,
         idp_email TEXT, idp_email_verified INTEGER NOT NULL DEFAULT 0, avatar_url TEXT, email_public INTEGER,
-        default_frequency_preset_id TEXT, simulation_defaults_preference_json TEXT, avatar_object_key TEXT,
+        default_frequency_preset_id TEXT, simulation_defaults_preference_json TEXT, basemap_preferences_json TEXT, avatar_object_key TEXT,
         avatar_thumb_key TEXT, avatar_hash TEXT, avatar_bytes INTEGER, avatar_content_type TEXT,
         is_admin INTEGER NOT NULL DEFAULT 0, is_moderator INTEGER NOT NULL DEFAULT 0,
         is_approved INTEGER NOT NULL DEFAULT 0, approved_at TEXT, approved_by_user_id TEXT, created_at TEXT, updated_at TEXT

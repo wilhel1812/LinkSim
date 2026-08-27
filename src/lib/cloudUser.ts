@@ -1,4 +1,5 @@
 import type { UserSimulationDefaultsPreference } from "./simulationDefaults";
+import type { UserBasemapPreferences } from "./basemapPreferences";
 
 export type CloudUser = {
   id: string;
@@ -11,6 +12,7 @@ export type CloudUser = {
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;
   simulationDefaultsPreference?: UserSimulationDefaultsPreference | null;
+  basemapPreferences?: UserBasemapPreferences | null;
   isAdmin: boolean;
   isModerator?: boolean;
   isApproved: boolean;
@@ -254,7 +256,7 @@ export const fetchUserById = async (id: string): Promise<CloudUser> => {
   return data.user;
 };
 
-export const updateMyProfile = async (patch: {
+export type CloudUserProfilePatch = {
   username?: string;
   email?: string;
   bio?: string;
@@ -263,13 +265,98 @@ export const updateMyProfile = async (patch: {
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;
   simulationDefaultsPreference?: UserSimulationDefaultsPreference | null;
-}): Promise<CloudUser> => {
-  const data = await apiCall<{ user: CloudUser }>("/api/me", {
-    method: "PATCH",
-    body: JSON.stringify(patch),
+  basemapPreferences?: UserBasemapPreferences | null;
+};
+
+const PROFILE_PATCH_KEYS = [
+  "username",
+  "email",
+  "bio",
+  "accessRequestNote",
+  "avatarUrl",
+  "emailPublic",
+  "defaultFrequencyPresetId",
+  "simulationDefaultsPreference",
+  "basemapPreferences",
+] as const satisfies readonly (keyof CloudUserProfilePatch & keyof CloudUser)[];
+
+type ProfilePatchKey = (typeof PROFILE_PATCH_KEYS)[number];
+type ProfilePatchResponseMetadata = Partial<Record<ProfilePatchKey, number>>;
+const PROFILE_PATCH_RESPONSE_METADATA = Symbol("profilePatchResponseMetadata");
+let nextProfilePatchRevision = 0;
+const latestSuccessfulProfilePatchRevision: ProfilePatchResponseMetadata = {};
+const profilePatchFieldTails: Partial<Record<ProfilePatchKey, Promise<void>>> = {};
+
+export const mergeCloudUserProfilePatch = (
+  current: CloudUser | null,
+  response: CloudUser,
+  patch?: CloudUserProfilePatch,
+): CloudUser => {
+  if (!current || !patch) return response;
+  const merged = { ...current };
+  const responseMetadata = (response as CloudUser & {
+    [PROFILE_PATCH_RESPONSE_METADATA]?: ProfilePatchResponseMetadata;
+  })[PROFILE_PATCH_RESPONSE_METADATA];
+  let acceptedAnyField = false;
+  for (const key of PROFILE_PATCH_KEYS) {
+    if (patch[key] === undefined) continue;
+    const responseRevision = responseMetadata?.[key];
+    if (responseRevision !== undefined && responseRevision !== latestSuccessfulProfilePatchRevision[key]) continue;
+    Object.assign(merged, { [key]: response[key] });
+    acceptedAnyField = true;
+  }
+  const usernameRevision = responseMetadata?.username;
+  if (patch.username !== undefined && (usernameRevision === undefined || usernameRevision === latestSuccessfulProfilePatchRevision.username)) {
+    merged.needsUsername = response.needsUsername;
+  }
+  if (acceptedAnyField && response.updatedAt && (!merged.updatedAt || response.updatedAt > merged.updatedAt)) {
+    merged.updatedAt = response.updatedAt;
+  }
+  return merged;
+};
+
+export const updateMyProfile = (patch: CloudUserProfilePatch): Promise<CloudUser> => {
+  const requestRevision = nextProfilePatchRevision + 1;
+  nextProfilePatchRevision = requestRevision;
+  const responseMetadata: ProfilePatchResponseMetadata = {};
+  const patchKeys: ProfilePatchKey[] = [];
+  for (const key of PROFILE_PATCH_KEYS) {
+    if (patch[key] === undefined) continue;
+    responseMetadata[key] = requestRevision;
+    patchKeys.push(key);
+  }
+  const predecessors = Array.from(new Set(
+    patchKeys.map((key) => profilePatchFieldTails[key]).filter((tail): tail is Promise<void> => Boolean(tail)),
+  ));
+  let releaseTail = () => {};
+  const tail = new Promise<void>((resolve) => {
+    releaseTail = resolve;
   });
-  clearMeCache();
-  return data.user;
+  for (const key of patchKeys) profilePatchFieldTails[key] = tail;
+
+  return (async () => {
+    await Promise.all(predecessors);
+    try {
+      const data = await apiCall<{ user: CloudUser }>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      for (const key of patchKeys) {
+        latestSuccessfulProfilePatchRevision[key] = Math.max(
+          latestSuccessfulProfilePatchRevision[key] ?? 0,
+          requestRevision,
+        );
+      }
+      Object.defineProperty(data.user, PROFILE_PATCH_RESPONSE_METADATA, { value: responseMetadata });
+      clearMeCache();
+      return data.user;
+    } finally {
+      releaseTail();
+      for (const key of patchKeys) {
+        if (profilePatchFieldTails[key] === tail) delete profilePatchFieldTails[key];
+      }
+    }
+  })();
 };
 
 export const fetchUsers = async (): Promise<CloudUser[]> => {

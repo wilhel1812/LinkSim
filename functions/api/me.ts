@@ -1,5 +1,5 @@
 import { verifyAuth } from "../_lib/auth";
-import { ensureUser, fetchUserProfile, updateUserProfile } from "../_lib/db";
+import { ensureUser, fetchMyUserProfile, updateUserProfile } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -20,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return withCors(request, json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS }));
     }
     await ensureUser(env, auth.userId, auth.tokenPayload);
-    const profile = await fetchUserProfile(env, auth.userId);
+    const profile = await fetchMyUserProfile(env, auth.userId);
     if (!profile) {
       return withCors(request, json({ error: "User not found" }, { status: 404, headers: NO_STORE_HEADERS }));
     }
@@ -54,8 +54,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
       emailPublic?: unknown;
       defaultFrequencyPresetId?: unknown;
       simulationDefaultsPreference?: unknown;
+      basemapPreferences?: unknown;
     };
-    const user = await updateUserProfile(env, auth.userId, body);
+    const user = await updateUserProfile(env, auth.userId, body, { includeBasemapPreferences: true });
     return withCors(request, json({ user: withoutInternalIdentity(user) }, { headers: NO_STORE_HEADERS }));
   } catch (error) {
     return errorResponse(request, error, 500);

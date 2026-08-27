@@ -48,6 +48,7 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("Detect shared D1 schema change");
     expect(previewJob).toContain("db/migrations/2026-08-12_identity_lifecycle.sql");
     expect(previewJob).toContain("db/migrations/2026-08-20_site_notice.sql");
+    expect(previewJob).toContain("db/migrations/2026-08-27_basemap_preferences.sql");
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
@@ -207,6 +208,26 @@ describe("Deploy LinkSim Pages workflow", () => {
       expect(job).not.toContain(`if ! npx wrangler d1 execute ${database} --remote --command "SELECT revision FROM site_notice`);
       expect(job.indexOf(step)).toBeLessThan(job.indexOf("Deploy "));
     }
+  });
+
+  it("idempotently applies and verifies private basemap preferences before deployment", () => {
+    for (const [job, database, label] of [
+      [stagingJob, "linksim_staging", "staging"],
+      [productionJob, "linksim", "production"],
+    ] as const) {
+      const step = `- name: Apply ${label} basemap preferences migration`;
+      expect(job).toContain(step);
+      expect(job).toContain(`if ! npx wrangler d1 execute ${database} --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"`);
+      expect(job).toContain(`npx wrangler d1 execute ${database} --remote --file db/migrations/2026-08-27_basemap_preferences.sql --yes`);
+      expect(job.indexOf(step)).toBeLessThan(job.indexOf("Deploy "));
+    }
+    expect(deployScript).toContain("users.basemap_preferences_json");
+  });
+
+  it("keeps MapTiler required and passes CARTO only as an optional build secret", () => {
+    expect(deployScript).toContain('staging: ["VITE_MAPTILER_KEY"]');
+    expect(deployScript).not.toContain('staging: ["VITE_MAPTILER_KEY", "VITE_CARTO_KEY"]');
+    expect(workflow).toContain("VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}");
   });
 
   it("fetches the production baseline before validating a staging deployment", () => {

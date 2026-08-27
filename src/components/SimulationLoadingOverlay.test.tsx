@@ -28,7 +28,7 @@ const mapMock = vi.hoisted(() => {
       state.sourcePresent = true;
     }),
     getLayer: vi.fn((id: string) => {
-      if (id === "link-lines-casing") return state.anchorLayerPresent ? {} : undefined;
+      if (id === "linksim-link-lines-casing") return state.anchorLayerPresent ? {} : undefined;
       return state.layerPresent ? {} : undefined;
     }),
     getSource: vi.fn(() => (state.sourcePresent ? source : undefined)),
@@ -152,12 +152,12 @@ describe("SimulationLoadingOverlay", () => {
       repaintCountAtReady,
     );
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
       "raster-opacity-transition",
       { duration: 350 },
     );
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
       "raster-opacity",
       0.68,
     );
@@ -176,7 +176,7 @@ describe("SimulationLoadingOverlay", () => {
 
     expect(onCloudEntered).not.toHaveBeenCalled();
     expect(mapMock.map.setPaintProperty).not.toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
       "raster-opacity-transition",
       { duration: 500 },
     );
@@ -186,12 +186,12 @@ describe("SimulationLoadingOverlay", () => {
     act(() => vi.advanceTimersByTime(1));
     expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
       "raster-opacity-transition",
       { duration: 500 },
     );
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
       "raster-opacity",
       0,
     );
@@ -200,10 +200,10 @@ describe("SimulationLoadingOverlay", () => {
     expect(mapMock.map.removeLayer).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(mapMock.map.removeLayer).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
+      "linksim-simulation-loading-overlay-layer",
     );
     expect(mapMock.map.removeSource).toHaveBeenCalledWith(
-      "simulation-loading-overlay-source",
+      "linksim-simulation-loading-overlay-source",
     );
     expect(onCloudExited).toHaveBeenCalledWith("heatmap");
   });
@@ -218,7 +218,7 @@ describe("SimulationLoadingOverlay", () => {
 
     render(
       <SimulationLoadingOverlay
-        beforeLayerId="link-lines-casing"
+        beforeLayerId="linksim-link-lines-casing"
         bounds={bounds}
         handoffKey="heatmap"
         loading
@@ -227,14 +227,14 @@ describe("SimulationLoadingOverlay", () => {
     );
 
     expect(mapMock.map.addLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "simulation-loading-overlay-layer" }),
-      "link-lines-casing",
+      expect.objectContaining({ id: "linksim-simulation-loading-overlay-layer" }),
+      "linksim-link-lines-casing",
     );
 
     act(() => mapMock.state.styleDataListener?.());
     expect(mapMock.map.moveLayer).toHaveBeenCalledWith(
-      "simulation-loading-overlay-layer",
-      "link-lines-casing",
+      "linksim-simulation-loading-overlay-layer",
+      "linksim-link-lines-casing",
     );
   });
 

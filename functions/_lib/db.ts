@@ -17,6 +17,7 @@ import {
   LibraryValidationError,
 } from "../../src/lib/libraryLimits";
 import { thumbnailAvatarUrl } from "../../src/lib/avatarLimits";
+import { normalizeUserBasemapPreferences, type UserBasemapPreferences } from "../../src/lib/basemapPreferences";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -233,6 +234,12 @@ const sanitizeSimulationDefaultsPreference = (value: unknown): string | null | u
   return JSON.stringify(normalized);
 };
 
+const sanitizeBasemapPreferences = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return JSON.stringify(normalizeUserBasemapPreferences(value, { strict: true }));
+};
+
 const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknown>): string => {
   const fromEmail = sanitizeEmail(tokenPayload?.email);
   if (fromEmail) return fromEmail;
@@ -270,6 +277,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "email_public",
     "default_frequency_preset_id",
     "simulation_defaults_preference_json",
+    "basemap_preferences_json",
     "avatar_object_key",
     "avatar_thumb_key",
     "avatar_hash",
@@ -431,6 +439,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             email_public INTEGER NOT NULL DEFAULT 1,
             default_frequency_preset_id TEXT,
             simulation_defaults_preference_json TEXT,
+            basemap_preferences_json TEXT,
             avatar_object_key TEXT,
             avatar_thumb_key TEXT,
             avatar_hash TEXT,
@@ -601,6 +610,9 @@ const ensureSchema = async (env: Env): Promise<void> => {
       if (!userColumns.has("simulation_defaults_preference_json")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN simulation_defaults_preference_json TEXT").run();
       }
+      if (!userColumns.has("basemap_preferences_json")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN basemap_preferences_json TEXT").run();
+      }
       if (!userColumns.has("username_set_at")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN username_set_at TEXT").run();
         await env.DB
@@ -657,6 +669,7 @@ type UserRow = {
   email_public: number;
   default_frequency_preset_id: string | null;
   simulation_defaults_preference_json: string | null;
+  basemap_preferences_json: string | null;
   avatar_object_key: string | null;
   avatar_thumb_key: string | null;
   avatar_hash: string | null;
@@ -905,6 +918,7 @@ export const executeVerifiedIdentityEnsure = async (
              email_public = source.email_public,
              default_frequency_preset_id = source.default_frequency_preset_id,
              simulation_defaults_preference_json = source.simulation_defaults_preference_json,
+             basemap_preferences_json = source.basemap_preferences_json,
              avatar_object_key = source.avatar_object_key,
              avatar_thumb_key = source.avatar_thumb_key,
              avatar_hash = source.avatar_hash,
@@ -1216,7 +1230,7 @@ export const executeUnverifiedIdentityEnsure = async (
   if (!state?.live_user_id) throw new Error("User lifecycle invariant failed");
 };
 
-const toUserProfile = (row: UserRow) => ({
+const toUserProfile = (row: UserRow, includeBasemapPreferences = false) => ({
   id: row.id,
   username: sanitizeName(row.username) ?? "",
   needsUsername: !row.username_set_at,
@@ -1236,6 +1250,16 @@ const toUserProfile = (row: UserRow) => ({
       return null;
     }
   })(),
+  ...(includeBasemapPreferences ? {
+    basemapPreferences: (() => {
+      if (!row.basemap_preferences_json) return { version: 1, customSources: [] } satisfies UserBasemapPreferences;
+      try {
+        return normalizeUserBasemapPreferences(JSON.parse(row.basemap_preferences_json));
+      } catch {
+        return { version: 1, customSources: [] } satisfies UserBasemapPreferences;
+      }
+    })(),
+  } : {}),
   avatarObjectKey: row.avatar_object_key ?? "",
   avatarThumbKey: row.avatar_thumb_key ?? "",
   avatarHash: row.avatar_hash ?? "",
@@ -1268,7 +1292,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -1304,6 +1328,11 @@ export const ensureUser = async (
 export const fetchUserProfile = async (env: Env, userId: string) => {
   const row = await readUserRow(env, userId);
   return row ? toUserProfile(row) : null;
+};
+
+export const fetchMyUserProfile = async (env: Env, userId: string) => {
+  const row = await readUserRow(env, userId);
+  return row ? toUserProfile(row, true) : null;
 };
 
 export const fetchUserDiagnosticAccessState = async (
@@ -1353,7 +1382,9 @@ export const updateUserProfile = async (
     emailPublic?: unknown;
     defaultFrequencyPresetId?: unknown;
     simulationDefaultsPreference?: unknown;
+    basemapPreferences?: unknown;
   },
+  options: { includeBasemapPreferences?: boolean } = {},
 ) => {
   const existing = await readUserRow(env, userId);
   if (!existing) throw new Error("User not found.");
@@ -1376,6 +1407,10 @@ export const updateUserProfile = async (
     patch.simulationDefaultsPreference === undefined
       ? (existing.simulation_defaults_preference_json ?? null)
       : sanitizeSimulationDefaultsPreference(patch.simulationDefaultsPreference);
+  const nextBasemapPreferences =
+    patch.basemapPreferences === undefined
+      ? (existing.basemap_preferences_json ?? null)
+      : sanitizeBasemapPreferences(patch.basemapPreferences);
   const shouldClearAvatarMetadata =
     patch.avatarUrl !== undefined && (nextAvatar ?? "") !== (existing.avatar_url ?? "");
 
@@ -1383,53 +1418,54 @@ export const updateUserProfile = async (
   if (!nextEmail) throw new Error("Email is required and must be valid.");
   if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL.");
 
-  const duplicateUser = await env.DB
-    .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
-    .bind(nextName, userId)
-    .first<{ id: string }>();
-  if (duplicateUser?.id) throw new Error("Username is already in use.");
+  if (patch.username !== undefined) {
+    const duplicateUser = await env.DB
+      .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
+      .bind(nextName, userId)
+      .first<{ id: string }>();
+    if (duplicateUser?.id) throw new Error("Username is already in use.");
+  }
 
-  await env.DB.prepare(
-    `UPDATE users
-     SET username = ?,
-         username_set_at = CASE WHEN ? = 1 THEN COALESCE(username_set_at, ?) ELSE username_set_at END,
-         email = ?,
-         bio = ?,
-         access_request_note = ?,
-         avatar_url = ?,
-          email_public = ?,
-          default_frequency_preset_id = ?,
-          simulation_defaults_preference_json = ?,
-          avatar_object_key = ?,
-         avatar_thumb_key = ?,
-         avatar_hash = ?,
-         avatar_bytes = ?,
-         avatar_content_type = ?,
-         updated_at = ?
-     WHERE id = ?`,
-  )
-    .bind(
-      nextName,
-      patch.username === undefined ? 0 : 1,
-      new Date().toISOString(),
-      nextEmail,
-      nextBio,
-      nextAccessRequestNote,
-      nextAvatar ?? "",
-      nextEmailPublic ? 1 : 0,
-      nextDefaultFrequencyPresetId ?? null,
-      nextSimulationDefaultsPreference ?? null,
-      shouldClearAvatarMetadata ? null : existing.avatar_object_key,
-      shouldClearAvatarMetadata ? null : existing.avatar_thumb_key,
-      shouldClearAvatarMetadata ? null : existing.avatar_hash,
-      shouldClearAvatarMetadata ? null : existing.avatar_bytes,
-      shouldClearAvatarMetadata ? null : existing.avatar_content_type,
-      new Date().toISOString(),
-      userId,
-    )
+  const now = new Date().toISOString();
+  const assignments: string[] = [];
+  const bindings: unknown[] = [];
+  const assign = (sql: string, value: unknown) => {
+    assignments.push(sql);
+    bindings.push(value);
+  };
+  if (patch.username !== undefined) {
+    assign("username = ?", nextName);
+    assign("username_set_at = COALESCE(username_set_at, ?)", now);
+  }
+  if (patch.email !== undefined) assign("email = ?", nextEmail);
+  if (patch.bio !== undefined) assign("bio = ?", nextBio);
+  if (patch.accessRequestNote !== undefined) assign("access_request_note = ?", nextAccessRequestNote);
+  if (patch.avatarUrl !== undefined) {
+    assign("avatar_url = ?", nextAvatar ?? "");
+    if (shouldClearAvatarMetadata) {
+      assignments.push(
+        "avatar_object_key = NULL",
+        "avatar_thumb_key = NULL",
+        "avatar_hash = NULL",
+        "avatar_bytes = NULL",
+        "avatar_content_type = NULL",
+      );
+    }
+  }
+  if (patch.emailPublic !== undefined) assign("email_public = ?", nextEmailPublic ? 1 : 0);
+  if (patch.defaultFrequencyPresetId !== undefined) assign("default_frequency_preset_id = ?", nextDefaultFrequencyPresetId ?? null);
+  if (patch.simulationDefaultsPreference !== undefined) assign("simulation_defaults_preference_json = ?", nextSimulationDefaultsPreference ?? null);
+  if (patch.basemapPreferences !== undefined) assign("basemap_preferences_json = ?", nextBasemapPreferences ?? null);
+  assign("updated_at = ?", now);
+
+  await env.DB
+    .prepare(`UPDATE users SET ${assignments.join(", ")} WHERE id = ?`)
+    .bind(...bindings, userId)
     .run();
 
-  const profile = await fetchUserProfile(env, userId);
+  const profile = options.includeBasemapPreferences
+    ? await fetchMyUserProfile(env, userId)
+    : await fetchUserProfile(env, userId);
   if (!profile) throw new Error("User not found after update.");
   return profile;
 };
@@ -1471,7 +1507,7 @@ export const setUserAvatarAssets = async (
       userId,
     )
     .run();
-  const profile = await fetchUserProfile(env, userId);
+  const profile = await fetchMyUserProfile(env, userId);
   if (!profile) throw new Error("User not found after avatar update.");
   return profile;
 };
@@ -1495,7 +1531,7 @@ export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map((row) => {

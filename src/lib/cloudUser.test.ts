@@ -4,6 +4,7 @@ import {
   fetchAuthStatus,
   fetchMe,
   fetchUsers,
+  mergeCloudUserProfilePatch,
   fetchResourceChanges,
   fetchAdminAuditEvents,
   updateUserRole,
@@ -74,6 +75,73 @@ describe("cloudUser client", () => {
     const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
     const headers = new Headers((init as RequestInit | undefined)?.headers ?? {});
     expect(headers.get("content-type")).toBe("application/json");
+  });
+
+  it("merges only patched response fields and keeps the newest timestamp", () => {
+    const current = {
+      id: "u1", username: "", needsUsername: true, bio: "", avatarUrl: "", isAdmin: false, isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-03T00:00:00.000Z",
+      defaultFrequencyPresetId: "new-radio",
+    };
+    const staleResponse = {
+      ...current,
+      username: "Owner",
+      needsUsername: false,
+      defaultFrequencyPresetId: "old-radio",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    };
+
+    expect(mergeCloudUserProfilePatch(current, staleResponse, { username: "Owner" })).toMatchObject({
+      username: "Owner",
+      needsUsername: false,
+      defaultFrequencyPresetId: "new-radio",
+      updatedAt: "2026-01-03T00:00:00.000Z",
+    });
+  });
+
+  it("serializes same-field requests and keeps submission order despite inverted timestamps", async () => {
+    const resolvers: Array<(response: Response) => void> = [];
+    vi.mocked(globalThis.fetch).mockImplementation(() => new Promise<Response>((resolve) => resolvers.push(resolve)));
+    const base = {
+      id: "u1", username: "Alice", bio: "", avatarUrl: "", isAdmin: false, isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const bobRequest = updateMyProfile({ username: "Bob" });
+    const carolRequest = updateMyProfile({ username: "Carol" });
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+    resolvers[0]?.(new Response(JSON.stringify({ user: { ...base, username: "Bob", updatedAt: "2026-01-03T00:00:00.000Z" } }), { status: 200 }));
+    const bob = await bobRequest;
+    let current = mergeCloudUserProfilePatch(base, bob, { username: "Bob" });
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    resolvers[1]?.(new Response(JSON.stringify({ user: { ...base, username: "Carol", updatedAt: "2026-01-02T00:00:00.000Z" } }), { status: 200 }));
+    const carol = await carolRequest;
+    current = mergeCloudUserProfilePatch(current, carol, { username: "Carol" });
+
+    expect(current).toMatchObject({ username: "Carol", updatedAt: "2026-01-03T00:00:00.000Z" });
+  });
+
+  it("accepts an older successful response when the newer same-field request fails", async () => {
+    const resolvers: Array<(response: Response) => void> = [];
+    vi.mocked(globalThis.fetch).mockImplementation(() => new Promise<Response>((resolve) => resolvers.push(resolve)));
+    const base = {
+      id: "u1", username: "Alice", bio: "", avatarUrl: "", isAdmin: false, isApproved: true,
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const bobRequest = updateMyProfile({ username: "Bob" });
+    const carolRequest = updateMyProfile({ username: "Carol" });
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+    resolvers[0]?.(new Response(JSON.stringify({ user: { ...base, username: "Bob", updatedAt: "2026-01-02T00:00:00.000Z" } }), { status: 200 }));
+    const bob = await bobRequest;
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    resolvers[1]?.(new Response(JSON.stringify({ error: "Username save failed." }), { status: 500, statusText: "Internal Server Error" }));
+    await expect(carolRequest).rejects.toThrow("Username save failed.");
+
+    expect(mergeCloudUserProfilePatch(base, bob, { username: "Bob" })).toMatchObject({
+      username: "Bob",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
   });
 
   it("normalizes non-array users and changes payloads", async () => {

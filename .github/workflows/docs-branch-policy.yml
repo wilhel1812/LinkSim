@@ -1,0 +1,47 @@
+name: Docs Branch Policy
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+    branches:
+      - main
+
+jobs:
+  evaluate-main-docs:
+    name: Docs Branch Policy / evaluate-main-docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Accept non-documentation branches
+        if: ${{ !startsWith(github.event.pull_request.head.ref, 'docs/') }}
+        run: echo "Not a documentation-lane pull request."
+
+      - name: Validate documentation branch identity
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'docs/') }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_REF" =~ ^docs/[0-9]+-[a-z0-9-]+$ ]]
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+
+      - name: Checkout trusted base policy
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'docs/') }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Evaluate the complete diff with trusted base policy
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'docs/') }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          node scripts/docs-only-policy.mjs require \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --mode three-dot

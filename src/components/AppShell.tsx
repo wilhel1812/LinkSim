@@ -25,7 +25,7 @@ import {
   upsertUiNotification,
 } from "../lib/uiNotifications";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
-import { resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapAttributionCredits, resolveBasemapSelection, type RenderedBasemapAttribution } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -45,6 +45,7 @@ import { MapEditorPanel } from "./map/MapEditorPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
+import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 
 initializeMigrations();
 
@@ -329,9 +330,10 @@ export function AppShell() {
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
 
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
-    [basemapStyleId, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, currentUser?.basemapPreferences?.customSources ?? []),
+    [basemapStyleId, colorTheme, currentUser?.basemapPreferences?.customSources, theme],
   );
+  const [renderedBasemapAttribution, setRenderedBasemapAttribution] = useState<RenderedBasemapAttribution | null>(null);
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
@@ -2082,6 +2084,7 @@ export function AppShell() {
             onOpenSettings={() => openSettings("profile")}
             onSignInRequested={handleUserSignInRequested}
             readOnly={!canPersistWorkspace}
+            renderedBasemapAttribution={renderedBasemapAttribution}
             panelToggleControl={
               isMobileViewport ? (
                 panelSizeControls("Navigator")
@@ -2145,6 +2148,7 @@ export function AppShell() {
           ) : null}
         </div>
         <MapView
+          onRenderedBasemapChange={setRenderedBasemapAttribution}
           isMapExpanded={isMapExpanded}
           showInspector={
             (!isMapExpanded || inspectorMotionPhase === "exiting") &&
@@ -2300,6 +2304,7 @@ export function AppShell() {
                 onOpenSettings={() => openSettings("profile")}
                 onSignInRequested={handleUserSignInRequested}
                 readOnly={!canPersistWorkspace}
+                renderedBasemapAttribution={renderedBasemapAttribution}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
             ) : null}
@@ -2363,14 +2368,7 @@ export function AppShell() {
       ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill ui-surface-pill">
-          <span>&copy;</span>
-          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
-            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
-          </a>
-          <span>&copy;</span>
-          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
-            MapLibre
-          </a>
+          <BasemapAttributionLinks credits={renderedBasemapAttribution?.credits ?? getBasemapAttributionCredits(resolvedBasemap)} />
         </div>
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />

@@ -23,6 +23,23 @@ type GridCell = {
   v01: number;
 };
 
+export type DenseCoverageContourInput = {
+  height: number;
+  latByRow: Float64Array;
+  lonByCol: Float64Array;
+  pointMask?: ((lat: number, lon: number) => boolean) | null;
+  targetDbm: number;
+  valuesDbm: Float32Array;
+  width: number;
+};
+
+export type ContourWorkRunner = (
+  total: number,
+  runner: (index: number) => void,
+  progressStartPercent: number,
+  progressEndPercent: number,
+) => Promise<void>;
+
 const emptyContour = (): ContourLineFeatureCollection => ({ type: "FeatureCollection", features: [] });
 
 const pointKey = (point: [number, number]): string => `${point[0].toFixed(8)},${point[1].toFixed(8)}`;
@@ -53,10 +70,18 @@ const cellSegments = (cell: GridCell, targetDbm: number): Array<[[number, number
     edgeCrossing(bottomRight, topRight, targetDbm),
     edgeCrossing(topRight, topLeft, targetDbm),
     edgeCrossing(topLeft, bottomLeft, targetDbm),
-  ].filter((point): point is [number, number] => point !== null);
+  ]
+    .filter((point): point is [number, number] => point !== null)
+    .filter((point, index, points) => points.findIndex((candidate) => pointKey(candidate) === pointKey(point)) === index);
 
   if (crossings.length < 2) return [];
   if (crossings.length === 2) return [[crossings[0], crossings[1]]];
+  if (crossings.length === 3) {
+    return [
+      [crossings[0], crossings[1]],
+      [crossings[1], crossings[2]],
+    ];
+  }
   return [
     [crossings[0], crossings[1]],
     [crossings[2], crossings[3]],
@@ -80,17 +105,11 @@ const stitchSegments = (segments: Array<[[number, number], [number, number]]>): 
         const [a, b] = unused[i];
         const aKey = pointKey(a);
         const bKey = pointKey(b);
-        if (bKey === startKey) {
-          line.unshift(a);
-        } else if (aKey === startKey) {
-          line.unshift(b);
-        } else if (aKey === endKey) {
-          line.push(b);
-        } else if (bKey === endKey) {
-          line.push(a);
-        } else {
-          continue;
-        }
+        if (bKey === startKey) line.unshift(a);
+        else if (aKey === startKey) line.unshift(b);
+        else if (aKey === endKey) line.push(b);
+        else if (bKey === endKey) line.push(a);
+        else continue;
         unused.splice(i, 1);
         extended = true;
         break;
@@ -102,6 +121,18 @@ const stitchSegments = (segments: Array<[[number, number], [number, number]]>): 
 
   return lines;
 };
+
+const featuresFromSegments = (
+  segments: Array<[[number, number], [number, number]]>,
+  targetDbm: number,
+): ContourLineFeatureCollection => ({
+  type: "FeatureCollection",
+  features: stitchSegments(segments).map((line) => ({
+    type: "Feature",
+    properties: { targetDbm },
+    geometry: { type: "LineString", coordinates: smoothLine(line) },
+  })),
+});
 
 const smoothLine = (line: Array<[number, number]>): Array<[number, number]> => {
   if (line.length < 3) return line;
@@ -194,11 +225,214 @@ export const buildCoverageTargetContourFeatures = (
     }
   }
 
-  const features: ContourLineFeatureCollection["features"] = stitchSegments(segments).map((line) => ({
-    type: "Feature",
-    properties: { targetDbm },
-    geometry: { type: "LineString", coordinates: smoothLine(line) },
-  }));
+  return featuresFromSegments(segments, targetDbm);
+};
 
+const isValidDenseContourInput = ({
+  height,
+  latByRow,
+  lonByCol,
+  targetDbm,
+  valuesDbm,
+  width,
+}: DenseCoverageContourInput): boolean =>
+  width >= 2 &&
+  height >= 2 &&
+  latByRow.length === height &&
+  lonByCol.length === width &&
+  valuesDbm.length === width * height &&
+  Number.isFinite(targetDbm);
+
+const visitDenseCellSegments = (
+  input: DenseCoverageContourInput,
+  cellIndex: number,
+  visit: (segment: [[number, number], [number, number]]) => void,
+): void => {
+  const { height, latByRow, lonByCol, pointMask, targetDbm, valuesDbm, width } = input;
+  const cellWidth = width - 1;
+  const y = Math.floor(cellIndex / cellWidth);
+  if (y >= height - 1) return;
+  const x = cellIndex - y * cellWidth;
+  const topLeftIndex = y * width + x;
+  const topRightIndex = topLeftIndex + 1;
+  const bottomLeftIndex = topLeftIndex + width;
+  const bottomRightIndex = bottomLeftIndex + 1;
+  const v00 = valuesDbm[bottomLeftIndex];
+  const v10 = valuesDbm[bottomRightIndex];
+  const v11 = valuesDbm[topRightIndex];
+  const v01 = valuesDbm[topLeftIndex];
+  if (![v00, v10, v11, v01].every(Number.isFinite)) return;
+  if (targetDbm < Math.min(v00, v10, v11, v01) || targetDbm > Math.max(v00, v10, v11, v01)) return;
+
+  const segments = cellSegments(
+    {
+      lat0: latByRow[y + 1],
+      lat1: latByRow[y],
+      lon0: lonByCol[x],
+      lon1: lonByCol[x + 1],
+      v00,
+      v10,
+      v11,
+      v01,
+    },
+    targetDbm,
+  );
+  for (const segment of segments) {
+    const midLon = (segment[0][0] + segment[1][0]) / 2;
+    const midLat = (segment[0][1] + segment[1][1]) / 2;
+    if (
+      pointMask &&
+      (!pointMask(segment[0][1], segment[0][0]) ||
+        !pointMask(midLat, midLon) ||
+        !pointMask(segment[1][1], segment[1][0]))
+    ) {
+      continue;
+    }
+    visit(segment);
+  }
+};
+
+export const buildDenseCoverageTargetContourFeatures = (
+  input: DenseCoverageContourInput,
+): ContourLineFeatureCollection => {
+  if (!isValidDenseContourInput(input)) return emptyContour();
+  const segments: Array<[[number, number], [number, number]]> = [];
+  const totalCells = (input.width - 1) * (input.height - 1);
+  for (let cellIndex = 0; cellIndex < totalCells; cellIndex += 1) {
+    visitDenseCellSegments(input, cellIndex, (segment) => segments.push(segment));
+  }
+  return featuresFromSegments(segments, input.targetDbm);
+};
+
+const stitchSegmentsCooperatively = async (
+  segments: Array<[[number, number], [number, number]]>,
+  runWork: ContourWorkRunner,
+): Promise<Array<Array<[number, number]>>> => {
+  if (segments.length === 0) return [];
+
+  const connectedByPoint = new Map<string, number[]>();
+  await runWork(segments.length, (index) => {
+    for (const point of segments[index]) {
+      const key = pointKey(point);
+      const connected = connectedByPoint.get(key);
+      if (connected) connected.push(index);
+      else connectedByPoint.set(key, [index]);
+    }
+  }, 55, 65);
+
+  const candidates: Array<{ point: [number, number]; segmentIndex: number }> = [];
+  await runWork(segments.length, (index) => {
+    const [a, b] = segments[index];
+    if (connectedByPoint.get(pointKey(a))?.length === 1) candidates.push({ point: a, segmentIndex: index });
+    if (connectedByPoint.get(pointKey(b))?.length === 1) candidates.push({ point: b, segmentIndex: index });
+  }, 65, 70);
+  await runWork(segments.length, (index) => {
+    candidates.push({ point: segments[index][0], segmentIndex: index });
+  }, 70, 72);
+
+  const used = new Uint8Array(segments.length);
+  const lines: Array<Array<[number, number]>> = [];
+  let candidateIndex = 0;
+  let activeLine: Array<[number, number]> | null = null;
+  let activeEndpoint: [number, number] | null = null;
+
+  await runWork(segments.length * 4, () => {
+    if (activeLine && activeEndpoint) {
+      const connected = connectedByPoint.get(pointKey(activeEndpoint));
+      const nextSegmentIndex = connected?.find((index) => used[index] === 0);
+      if (nextSegmentIndex !== undefined) {
+        const [a, b] = segments[nextSegmentIndex];
+        const nextPoint = pointKey(a) === pointKey(activeEndpoint) ? b : a;
+        used[nextSegmentIndex] = 1;
+        activeLine.push(nextPoint);
+        activeEndpoint = nextPoint;
+        return;
+      }
+      lines.push(activeLine);
+      activeLine = null;
+      activeEndpoint = null;
+      return;
+    }
+
+    const candidate = candidates[candidateIndex];
+    candidateIndex += 1;
+    if (!candidate || used[candidate.segmentIndex]) return;
+    const [a, b] = segments[candidate.segmentIndex];
+    const startsAtA = pointKey(a) === pointKey(candidate.point);
+    activeLine = startsAtA ? [a, b] : [b, a];
+    activeEndpoint = startsAtA ? b : a;
+    used[candidate.segmentIndex] = 1;
+  }, 72, 84);
+
+  if (activeLine) lines.push(activeLine);
+  return lines;
+};
+
+const smoothLinesOnceCooperatively = async (
+  lines: Array<Array<[number, number]>>,
+  runWork: ContourWorkRunner,
+  progressStartPercent: number,
+  progressEndPercent: number,
+): Promise<Array<Array<[number, number]>>> => {
+  const nextLines: Array<Array<[number, number]>> = new Array(lines.length);
+  const eligibleLineIndexes: number[] = [];
+  let totalEdges = 0;
+  const setupEndPercent = progressStartPercent + (progressEndPercent - progressStartPercent) * 0.1;
+  await runWork(lines.length, (index) => {
+    const line = lines[index];
+    if (line.length < 3) {
+      nextLines[index] = line;
+      return;
+    }
+    nextLines[index] = [line[0]];
+    eligibleLineIndexes.push(index);
+    totalEdges += line.length - 1;
+  }, progressStartPercent, setupEndPercent);
+
+  let eligibleIndex = 0;
+  let edgeIndex = 0;
+  await runWork(totalEdges, () => {
+    const lineIndex = eligibleLineIndexes[eligibleIndex];
+    const line = lines[lineIndex];
+    const [x0, y0] = line[edgeIndex];
+    const [x1, y1] = line[edgeIndex + 1];
+    nextLines[lineIndex].push(
+      [x0 * 0.75 + x1 * 0.25, y0 * 0.75 + y1 * 0.25],
+      [x0 * 0.25 + x1 * 0.75, y0 * 0.25 + y1 * 0.75],
+    );
+    edgeIndex += 1;
+    if (edgeIndex === line.length - 1) {
+      nextLines[lineIndex].push(line[line.length - 1]);
+      eligibleIndex += 1;
+      edgeIndex = 0;
+    }
+  }, setupEndPercent, progressEndPercent);
+  return nextLines;
+};
+
+export const buildDenseCoverageTargetContourFeaturesAsync = async (
+  input: DenseCoverageContourInput,
+  runWork: ContourWorkRunner,
+): Promise<ContourLineFeatureCollection> => {
+  if (!isValidDenseContourInput(input)) return emptyContour();
+
+  const segments: Array<[[number, number], [number, number]]> = [];
+  const totalCells = (input.width - 1) * (input.height - 1);
+  await runWork(totalCells, (cellIndex) => {
+    visitDenseCellSegments(input, cellIndex, (segment) => segments.push(segment));
+  }, 0, 55);
+
+  const lines = await stitchSegmentsCooperatively(segments, runWork);
+  const smoothedOnce = await smoothLinesOnceCooperatively(lines, runWork, 84, 91);
+  const smoothedTwice = await smoothLinesOnceCooperatively(smoothedOnce, runWork, 91, 98);
+  const features: ContourLineFeatureCollection["features"] = new Array(smoothedTwice.length);
+  await runWork(Math.max(1, smoothedTwice.length), (index) => {
+    if (index >= smoothedTwice.length) return;
+    features[index] = {
+      type: "Feature",
+      properties: { targetDbm: input.targetDbm },
+      geometry: { type: "LineString", coordinates: smoothedTwice[index] },
+    };
+  }, 98, 100);
   return { type: "FeatureCollection", features };
 };

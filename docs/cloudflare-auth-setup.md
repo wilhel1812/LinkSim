@@ -55,17 +55,14 @@ Notes:
   then enters an initially empty username.
 - Passkeys are handled by your identity provider (GitHub), not by Access itself.
 
-## 4) Registration Mode
+## 4) Registration Behavior
 
-Set in `wrangler.toml`:
+Registration is part of the application behavior and is not controlled by an
+environment variable:
 
-- `REGISTRATION_MODE = "open"`
-- `ADMIN_USER_IDS = "<comma-separated user ids>"`
-
-In this mode:
 - First login creates a user profile
 - Users choose a username before library/sync onboarding continues
-- Admin IDs bootstrap admin access for the listed identities
+- `ADMIN_USER_IDS` bootstraps admin access for the listed identities
 
 ## 5) Configure Pages Environment Variables
 
@@ -75,7 +72,6 @@ In Pages project env vars (Production + Preview):
 - `ACCESS_AUD` = comma-separated Access app AUD tags for every hostname served
   by that Pages environment
 - `ADMIN_USER_IDS` = one-time bootstrap admin user IDs
-- `REGISTRATION_MODE` = `open`
 
 `ADMIN_USER_IDS` is consulted only when a listed identity is first inserted.
 After that, the role and revocation state stored in D1 is authoritative, so an
