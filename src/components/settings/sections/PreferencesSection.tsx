@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
-import { updateMyProfile, type CloudUser } from "../../../lib/cloudUser";
+import { updateMyProfile, type CloudUser, type CloudUserProfilePatch } from "../../../lib/cloudUser";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../../lib/frequencyPlans";
 import {
   MAX_CUSTOM_RADIO_PRESETS,
@@ -32,7 +32,7 @@ import { DEFAULT_BASEMAP_STYLE_ID } from "../../../lib/basemaps";
 
 type PreferencesSectionProps = {
   me: CloudUser | null;
-  onMeUpdated: (user: CloudUser) => void;
+  onMeUpdated: (user: CloudUser, patch?: CloudUserProfilePatch) => void;
 };
 
 type SelectFieldState = {
@@ -70,7 +70,6 @@ const emptyBasemapDraft = (): BasemapDraft => ({
 });
 
 function CustomBasemapManager({ me, onMeUpdated }: PreferencesSectionProps) {
-  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setAuthState = useAppStore((state) => state.setAuthState);
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
   const setBasemapStyleId = useAppStore((state) => state.setBasemapStyleId);
@@ -97,8 +96,7 @@ function CustomBasemapManager({ me, onMeUpdated }: PreferencesSectionProps) {
     try {
       const basemapPreferences = normalizeUserBasemapPreferences({ version: 1, customSources: nextSources }, { strict: true });
       const updated = await updateMyProfile({ basemapPreferences });
-      onMeUpdated(updated);
-      setCurrentUser(updated);
+      onMeUpdated(updated, { basemapPreferences });
       setAuthState("signed_in");
       setStatus(success);
       return true;
@@ -182,7 +180,6 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
-  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setAuthState = useAppStore((state) => state.setAuthState);
   const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
@@ -243,8 +240,10 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
         if (isLatest) {
           persistedRevisionRef.current = request.revision;
           if (mountedRef.current) {
-            onMeUpdated(updated);
-            setCurrentUser(updated);
+            onMeUpdated(updated, {
+              defaultFrequencyPresetId: request.preference.presetId,
+              simulationDefaultsPreference: request.preference,
+            });
             setAuthState("signed_in");
             setPresetState({ state: "saved", error: null });
             if (savedTimerRef.current != null) window.clearTimeout(savedTimerRef.current);
@@ -265,7 +264,7 @@ function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps)
         if (queuedSaveRef.current) await drainPreferenceSaveQueue();
       }
     },
-    [onMeUpdated, setAuthState, setCurrentUser],
+    [onMeUpdated, setAuthState],
   );
 
   const flushPendingPreferenceSave = useCallback(() => {

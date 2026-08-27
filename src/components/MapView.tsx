@@ -153,7 +153,7 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
-const LINK_LAYER_ANCHOR_ID = "link-lines-casing";
+const LINK_LAYER_ANCHOR_ID = "linksim-link-lines-casing";
 
 const mapLineCasingLayer = (color: string): LayerProps => ({
   id: LINK_LAYER_ANCHOR_ID,
@@ -173,7 +173,7 @@ const mapLineCasingLayer = (color: string): LayerProps => ({
 });
 
 const mapLineLayer = (linkColor: string): LayerProps => ({
-  id: "link-lines",
+  id: "linksim-link-lines",
   type: "line",
   filter: ["!=", ["get", "selected"], 1],
   paint: {
@@ -195,7 +195,7 @@ const mapLineLayer = (linkColor: string): LayerProps => ({
 });
 
 const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
-  id: "link-lines-selected",
+  id: "linksim-link-lines-selected",
   type: "line",
   filter: ["==", ["get", "selected"], 1],
   paint: {
@@ -206,7 +206,7 @@ const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
 });
 
 const profileLineLayer = (color: string): LayerProps => ({
-  id: "profile-line",
+  id: "linksim-profile-line",
   type: "line",
   paint: {
     "line-color": color,
@@ -216,7 +216,7 @@ const profileLineLayer = (color: string): LayerProps => ({
 });
 
 const panoramaRayLayer = (color: string): LayerProps => ({
-  id: "panorama-ray-line",
+  id: "linksim-panorama-ray-line",
   type: "line",
   paint: {
     "line-color": color,
@@ -229,7 +229,7 @@ const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProp
   const transition = resolveSimulationOverlayTransition(fadedForCloud);
   return {
     beforeId: LINK_LAYER_ANCHOR_ID,
-    id: "coverage-overlay-layer",
+    id: "linksim-coverage-overlay-layer",
     type: "raster",
     paint: {
       "raster-opacity": hidden ? 0 : transition.coverageOpacity,
@@ -248,7 +248,7 @@ const targetContourHaloLayer = (
   hidden: boolean,
 ): LayerProps => ({
   beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-halo-layer",
+  id: "linksim-coverage-target-contour-halo-layer",
   type: "line",
   paint: {
     "line-color": color,
@@ -266,7 +266,7 @@ const targetContourLineLayer = (
   hidden: boolean,
 ): LayerProps => ({
   beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-line-layer",
+  id: "linksim-coverage-target-contour-line-layer",
   type: "line",
   paint: {
     "line-color": color,
@@ -3077,7 +3077,7 @@ export function MapView({
       setSelectedDiscoveryLibraryEntryId(null);
       return;
     }
-    const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
+    const interactiveFeature = event.features?.find((feature) => feature.layer.id === "linksim-link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
     if (!id && mapRef.current) {
       const clickPoint = event.point;
@@ -3087,7 +3087,7 @@ export function MapView({
           [clickPoint.x - buffer, clickPoint.y - buffer],
           [clickPoint.x + buffer, clickPoint.y + buffer],
         ],
-        { layers: ["link-lines"] },
+        { layers: ["linksim-link-lines"] },
       );
       const nearby = features.find((feature) => feature.properties && typeof feature.properties.id !== "undefined");
       id = nearby?.properties ? String(nearby.properties.id ?? "") : "";
@@ -4235,7 +4235,7 @@ export function MapView({
           });
           setMapProviderWarning(`${basemapFallbackStage === "selected" ? resolvedBasemap.providerLabel : "OpenFreeMap"} failed (network, quota, or style error).`);
         }}
-        interactiveLayerIds={["link-lines"]}
+        interactiveLayerIds={["linksim-link-lines"]}
         onClick={onMapClick}
         onTouchStart={() => {
           mapRef.current?.getMap().stop();
@@ -4256,16 +4256,16 @@ export function MapView({
         onMoveEnd={onMoveEnd}
       >
         {themedOverlay ? (
-          <Source data={WORLD_POLYGON_GEOJSON} id="theme-tint-source" type="geojson">
+          <Source data={WORLD_POLYGON_GEOJSON} id="linksim-theme-tint-source" type="geojson">
             <Layer
-              id="theme-tint-overlay"
+              id="linksim-theme-tint-overlay"
               paint={{ "fill-color": themedOverlay.color, "fill-opacity": themedOverlay.opacity }}
               type="fill"
             />
           </Source>
         ) : null}
 
-        <Source data={lineFeatures} id="links" type="geojson">
+        <Source data={lineFeatures} id="linksim-links" type="geojson">
           <Layer {...mapLineCasingLayer(linkCasingColor)} />
           <Layer {...mapLineLayer(linkColor)} />
           <Layer {...mapLineSelectedLayer(linkColor)} />
@@ -4274,13 +4274,13 @@ export function MapView({
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
-            id="terrain-overlay-source"
+            id="linksim-terrain-overlay-source"
             type="image"
             url={simulationTerrainOverlay.url}
           >
             <Layer
               beforeId={LINK_LAYER_ANCHOR_ID}
-              id="terrain-overlay-layer"
+              id="linksim-terrain-overlay-layer"
               type="raster"
               paint={{
                 ...terrainRasterPaint,
@@ -4297,17 +4297,17 @@ export function MapView({
           </Source>
         ) : null}
 
-        <Source data={profileFeatures} id="profile-path" type="geojson">
+        <Source data={profileFeatures} id="linksim-profile-path" type="geojson">
           <Layer {...profileLineLayer(profileColor)} />
         </Source>
-        <Source data={panoramaRayFeatures} id="panorama-ray-path" type="geojson">
+        <Source data={panoramaRayFeatures} id="linksim-panorama-ray-path" type="geojson">
           <Layer {...panoramaRayLayer(profileColor)} />
         </Source>
 
         {coverageOverlay ? (
           <Source
             coordinates={coverageOverlay.coordinates}
-            id="coverage-overlay-source"
+            id="linksim-coverage-overlay-source"
             type="image"
             url={coverageOverlay.url}
           >
@@ -4323,7 +4323,7 @@ export function MapView({
         {coverageOverlay?.targetContour?.features.length ? (
           <Source
             data={coverageOverlay.targetContour}
-            id="coverage-target-contour-source"
+            id="linksim-coverage-target-contour-source"
             type="geojson"
           >
             <Layer
@@ -4371,16 +4371,16 @@ export function MapView({
         />
 
         {userLocationFix ? (
-          <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
-            <Layer {...positionAreaLayer("user-location-accuracy-layer", userLocationSelectionColor)} />
+          <Source data={userLocationAccuracyGeoJson} id="linksim-user-location-accuracy" type="geojson">
+            <Layer {...positionAreaLayer("linksim-user-location-accuracy-layer", userLocationSelectionColor)} />
           </Source>
         ) : null}
 
         {mqttPositionPrecisionGeoJson.features.length ? (
-          <Source data={mqttPositionPrecisionGeoJson} id="mqtt-position-precision" type="geojson">
+          <Source data={mqttPositionPrecisionGeoJson} id="linksim-mqtt-position-precision" type="geojson">
             <Layer
               {...positionAreaLayer(
-                "mqtt-position-precision-layer",
+                "linksim-mqtt-position-precision-layer",
                 variant.cssVars["--temporary"] ?? userLocationSelectionColor,
               )}
             />

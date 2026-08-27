@@ -444,23 +444,11 @@ export const nextBasemapFallbackStage = (
   return "openfreemap";
 };
 
-const APPLICATION_OVERLAY_SOURCE_IDS = new Set([
-  "theme-tint-source",
-  "links",
-  "terrain-overlay-source",
-  "profile-path",
-  "panorama-ray-path",
-  "coverage-overlay-source",
-  "coverage-target-contour-source",
-  "simulation-loading-overlay-source",
-  "stats-density",
-  "user-location-accuracy",
-  "mqtt-position-precision",
-]);
+export const LINKSIM_MAP_RESOURCE_PREFIX = "linksim-";
 
 export const shouldAdvanceBasemapFallbackForError = (event: unknown): boolean => {
   const sourceId = typeof event === "object" && event !== null && "sourceId" in event
     ? event.sourceId
     : undefined;
-  return typeof sourceId !== "string" || !APPLICATION_OVERLAY_SOURCE_IDS.has(sourceId);
+  return typeof sourceId !== "string" || !sourceId.startsWith(LINKSIM_MAP_RESOURCE_PREFIX);
 };

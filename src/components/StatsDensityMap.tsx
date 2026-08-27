@@ -145,11 +145,11 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         onMouseLeave={() => setHovered(null)}
         onMouseMove={hoverFromFeature}
         onClick={hoverFromFeature}
-        interactiveLayerIds={["stats-density-bins"]}
+        interactiveLayerIds={["linksim-stats-density-bins"]}
       >
-        <Source data={featureCollection} id="stats-density" type="geojson">
+        <Source data={featureCollection} id="linksim-stats-density" type="geojson">
           <Layer
-            id="stats-density-bins"
+            id="linksim-stats-density-bins"
             type="circle"
             paint={{
               "circle-color": accentColor || colorVar("--accent"),

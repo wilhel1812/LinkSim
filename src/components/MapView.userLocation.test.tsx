@@ -351,34 +351,34 @@ describe("MapView user location flow", () => {
 
     renderMapView();
 
-    const linksSource = mapMock.sourceProps.find((props) => props.id === "links");
+    const linksSource = mapMock.sourceProps.find((props) => props.id === "linksim-links");
     expect(linksSource?.data).toMatchObject({
       features: [expect.objectContaining({ properties: expect.objectContaining({ color: "#654321", selected: 1 }) })],
     });
     expect(mapMock.layerProps.map((props) => props.id)).toEqual(expect.arrayContaining([
-      "link-lines-casing",
-      "link-lines",
-      "link-lines-selected",
+      "linksim-link-lines-casing",
+      "linksim-link-lines",
+      "linksim-link-lines-selected",
     ]));
     expect(mapMock.layerProps.map((props) => props.id)).not.toEqual(expect.arrayContaining([
       "link-lines-selection",
       "link-lines-dark-casing",
       "link-lines-light-casing",
     ]));
-    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-color"]).toEqual([
+    expect(mapMock.layerProps.find((props) => props.id === "linksim-link-lines")?.paint?.["line-color"]).toEqual([
       "coalesce",
       ["get", "color"],
       expect.any(String),
     ]);
-    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-dasharray"]).toEqual([1.5, 1]);
-    expect(mapMock.layerProps.find((props) => props.id === "link-lines-selected")?.paint).not.toHaveProperty("line-dasharray");
-    expect(mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-opacity"]).toBeLessThan(0.7);
+    expect(mapMock.layerProps.find((props) => props.id === "linksim-link-lines")?.paint?.["line-dasharray"]).toEqual([1.5, 1]);
+    expect(mapMock.layerProps.find((props) => props.id === "linksim-link-lines-selected")?.paint).not.toHaveProperty("line-dasharray");
+    expect(mapMock.layerProps.find((props) => props.id === "linksim-link-lines-casing")?.paint?.["line-opacity"]).toBeLessThan(0.7);
 
-    const lightCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    const lightCasingColor = mapMock.layerProps.find((props) => props.id === "linksim-link-lines-casing")?.paint?.["line-color"];
     expect(lightCasingColor).toBe("#ffffff");
     mapMock.layerProps = [];
     act(() => useAppStore.setState({ uiThemePreference: "dark" }));
-    const darkCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    const darkCasingColor = mapMock.layerProps.find((props) => props.id === "linksim-link-lines-casing")?.paint?.["line-color"];
     expect(darkCasingColor).toBe("#000000");
   });
 
@@ -577,7 +577,7 @@ describe("MapView user location flow", () => {
     await waitFor(() => {
       const source = [...mapMock.sourceProps]
         .reverse()
-        .find((props) => props.id === "mqtt-position-precision");
+        .find((props) => props.id === "linksim-mqtt-position-precision");
       expect(source?.data).toEqual({
         type: "FeatureCollection",
         features: [
@@ -615,7 +615,7 @@ describe("MapView user location flow", () => {
     fireEvent.mouseEnter(marker);
 
     expect(await screen.findByText(/Position precision unavailable/)).toBeVisible();
-    expect(mapMock.sourceProps.some((props) => props.id === "mqtt-position-precision")).toBe(false);
+    expect(mapMock.sourceProps.some((props) => props.id === "linksim-mqtt-position-precision")).toBe(false);
 
     fireEvent.click(marker);
     expect(await screen.findByText(/Opened MQTT node in the site editor/)).toBeVisible();

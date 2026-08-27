@@ -225,11 +225,16 @@ describe("basemap fallback style", () => {
   });
 
   it("does not advance basemap fallback for application overlay source errors", () => {
-    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "terrain-overlay-source" })).toBe(false);
-    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "coverage-overlay-source" })).toBe(false);
-    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "simulation-loading-overlay-source" })).toBe(false);
-    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "stats-density" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "linksim-terrain-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "linksim-coverage-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "linksim-simulation-loading-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "linksim-stats-density" })).toBe(false);
     expect(shouldAdvanceBasemapFallbackForError({ sourceId: "openmaptiles" })).toBe(true);
     expect(shouldAdvanceBasemapFallbackForError({})).toBe(true);
+  });
+
+  it("treats an arbitrary custom-style source named links as a basemap failure", () => {
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "links" })).toBe(true);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "linksim-links" })).toBe(false);
   });
 });

@@ -113,7 +113,7 @@ vi.mock("react-map-gl/maplibre", async () => {
     ),
     Layer: (props: { beforeId?: string; id?: string; paint?: Record<string, unknown> }) => {
       layerMock.props.push(props);
-      if (props.id === "coverage-overlay-layer") {
+      if (props.id === "linksim-coverage-overlay-layer") {
         layerMock.coveragePaint = props.paint ?? null;
       }
       return null;
@@ -287,9 +287,9 @@ describe("MapView overlay handoff", () => {
     );
 
     const selectedStyle = mapMock.props?.mapStyle;
-    act(() => mapMock.props?.onError?.({ sourceId: "coverage-overlay-source" }));
+    act(() => mapMock.props?.onError?.({ sourceId: "linksim-coverage-overlay-source" }));
     expect(mapMock.props?.mapStyle).toBe(selectedStyle);
-    act(() => mapMock.props?.onError?.({ sourceId: "simulation-loading-overlay-source" }));
+    act(() => mapMock.props?.onError?.({ sourceId: "linksim-simulation-loading-overlay-source" }));
     expect(mapMock.props?.mapStyle).toBe(selectedStyle);
   });
 
@@ -305,22 +305,22 @@ describe("MapView overlay handoff", () => {
 
     await resolveNextRaster();
     await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
-    expect(loadingOverlayMock.props?.beforeLayerId).toBe("link-lines-casing");
+    expect(loadingOverlayMock.props?.beforeLayerId).toBe("linksim-link-lines-casing");
     const firstKey = loadingOverlayMock.props?.handoffKey;
     expect(firstKey).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(firstKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),
     );
-    expect(layerMock.props.find((props) => props.id === "coverage-overlay-layer")?.beforeId).toBe(
-      "link-lines-casing",
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-overlay-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
     );
     expect(
-      screen.getByTestId("links").compareDocumentPosition(screen.getByTestId("coverage-overlay-source")) &
+      screen.getByTestId("linksim-links").compareDocumentPosition(screen.getByTestId("linksim-coverage-overlay-source")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudExited?.(firstKey!));
@@ -328,7 +328,7 @@ describe("MapView overlay handoff", () => {
     act(() => useAppStore.getState().setMapOverlayMode("contours"));
     await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
 
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
@@ -338,24 +338,24 @@ describe("MapView overlay handoff", () => {
     expect(layerMock.coveragePaint?.["raster-opacity"]).toBe(0);
 
     await resolveNextRaster(true);
-    expect(screen.queryByTestId("coverage-target-contour-source")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("linksim-coverage-target-contour-source")).not.toBeInTheDocument();
 
     act(() => loadingOverlayMock.props?.onCloudReady?.(replacementKey!));
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
     act(() => loadingOverlayMock.props?.onCloudEntered?.(replacementKey!));
     act(() => loadingOverlayMock.props?.onCloudExited?.(replacementKey!));
-    await waitFor(() => expect(screen.getByTestId("coverage-target-contour-source")).toBeInTheDocument());
-    expect(layerMock.props.find((props) => props.id === "coverage-target-contour-halo-layer")?.beforeId).toBe(
-      "link-lines-casing",
+    await waitFor(() => expect(screen.getByTestId("linksim-coverage-target-contour-source")).toBeInTheDocument());
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-halo-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
     );
-    expect(layerMock.props.find((props) => props.id === "coverage-target-contour-line-layer")?.beforeId).toBe(
-      "link-lines-casing",
+    expect(layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-line-layer")?.beforeId).toBe(
+      "linksim-link-lines-casing",
     );
     expect(
-      layerMock.props.find((props) => props.id === "coverage-target-contour-line-layer")?.paint?.["line-color"],
+      layerMock.props.find((props) => props.id === "linksim-coverage-target-contour-line-layer")?.paint?.["line-color"],
     ).toBeTruthy();
   });
 
@@ -696,7 +696,7 @@ describe("MapView overlay handoff", () => {
     act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),
@@ -713,7 +713,7 @@ describe("MapView overlay handoff", () => {
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
     expect(overlayMock.buildCoverage).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+    expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
@@ -735,7 +735,7 @@ describe("MapView overlay handoff", () => {
     act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
     act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
     await waitFor(() =>
-      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
         "data-url",
         "data:image/mock-1",
       ),

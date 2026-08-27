@@ -34,7 +34,7 @@ vi.mock("react-map-gl/maplibre", () => ({
         <button onClick={() => onLoad?.({ target: { fitBounds: mockFitBounds, project: () => ({ x: 120, y: 80 }) } })} type="button">Load map</button>
         <button onClick={() => onMouseMove?.(event)} type="button">Hover bin</button>
         <button onClick={() => onClick?.(event)} type="button">Click bin</button>
-        <button onClick={() => onError?.({ sourceId: "stats-density" })} type="button">Fail density overlay</button>
+        <button onClick={() => onError?.({ sourceId: "linksim-stats-density" })} type="button">Fail density overlay</button>
         <button onClick={() => onError?.({ sourceId: "openmaptiles" })} type="button">Fail basemap</button>
         {children}
       </div>

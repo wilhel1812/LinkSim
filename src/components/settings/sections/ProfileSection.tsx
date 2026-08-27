@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchMe, updateMyProfile, type CloudUser } from "../../../lib/cloudUser";
+import { fetchMe, updateMyProfile, type CloudUser, type CloudUserProfilePatch } from "../../../lib/cloudUser";
 import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
 import { formatDate } from "../../../lib/locale";
@@ -9,7 +9,7 @@ import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicato
 
 type ProfileSectionProps = {
   me: CloudUser | null;
-  onMeUpdated: (user: CloudUser) => void;
+  onMeUpdated: (user: CloudUser, patch?: CloudUserProfilePatch) => void;
   onSignOut?: () => void;
 };
 
@@ -43,18 +43,17 @@ export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionPro
   }, [me, onMeUpdated, setAuthState, setCurrentUser]);
 
   const applyUpdate = useCallback(
-    (user: CloudUser) => {
-      onMeUpdated(user);
-      setCurrentUser(user);
+    (user: CloudUser, patch?: CloudUserProfilePatch) => {
+      onMeUpdated(user, patch);
       setAuthState("signed_in");
     },
-    [onMeUpdated, setAuthState, setCurrentUser],
+    [onMeUpdated, setAuthState],
   );
 
   const saveField = useCallback(
     async (patch: Parameters<typeof updateMyProfile>[0]) => {
       const updated = await updateMyProfile(patch);
-      applyUpdate(updated);
+      applyUpdate(updated, patch);
     },
     [applyUpdate],
   );
@@ -65,7 +64,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionPro
       setEmailPublicError(null);
       try {
         const updated = await updateMyProfile({ emailPublic: nextValue });
-        applyUpdate(updated);
+        applyUpdate(updated, { emailPublic: nextValue });
         setEmailPublicState("saved");
         window.setTimeout(() => {
           setEmailPublicState((current) => (current === "saved" ? "idle" : current));
@@ -109,7 +108,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionPro
 
       <div className="settings-profile-grid">
         <div className="settings-profile-avatar">
-          <AvatarDropZone name={displayName} avatarUrl={me.avatarUrl} onUpdated={applyUpdate} />
+          <AvatarDropZone name={displayName} avatarUrl={me.avatarUrl} onUpdated={(user) => applyUpdate(user, { avatarUrl: user.avatarUrl })} />
           <dl className="settings-profile-meta">
             <div>
               <dt>ID</dt>
