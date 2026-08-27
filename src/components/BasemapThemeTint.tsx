@@ -41,6 +41,10 @@ export function BasemapThemeTint({ colorTheme, enabled, theme }: BasemapThemeTin
     if (map.isStyleLoaded()) captureAndApply();
     return () => {
       map.off("style.load", captureAndApply);
+      for (const update of resolveBasemapPaintUpdates(snapshotRef.current, false, settingsRef.current.colorTheme, settingsRef.current.theme)) {
+        if (map.getLayer(update.layerId)) map.setPaintProperty(update.layerId, update.property, update.value);
+      }
+      snapshotRef.current = [];
     };
   }, [map]);
 
