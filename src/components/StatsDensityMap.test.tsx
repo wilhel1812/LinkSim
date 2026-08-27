@@ -42,6 +42,7 @@ vi.mock("react-map-gl/maplibre", () => ({
   },
   Layer: () => <div data-testid="mock-layer" />,
   Source: ({ children }: { children: ReactNode }) => <div data-testid="mock-source">{children}</div>,
+  useMap: () => ({ current: undefined }),
 }));
 
 import { StatsDensityMap } from "./StatsDensityMap";

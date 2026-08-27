@@ -66,6 +66,23 @@ describe("PreferencesSection custom radio presets", () => {
     vi.useRealTimers();
   });
 
+  it("keeps device themes together and places Custom maps last", () => {
+    render(<PreferencesSection me={userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false })} onMeUpdated={vi.fn()} />);
+
+    const uiTheme = document.getElementById("pref-ui-theme");
+    const colorTheme = document.getElementById("pref-color-theme");
+    const radioPreference = document.getElementById("pref-default-preset");
+    const customMaps = document.getElementById("pref-custom-basemap-manager");
+
+    expect(uiTheme).not.toBeNull();
+    expect(colorTheme).not.toBeNull();
+    expect(radioPreference).not.toBeNull();
+    expect(customMaps).not.toBeNull();
+    expect(uiTheme!.compareDocumentPosition(colorTheme!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(colorTheme!.compareDocumentPosition(radioPreference!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(radioPreference!.compareDocumentPosition(customMaps!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("shows the migrated legacy custom preset and blocks deleting the active default", async () => {
     const me = userWithPreference({
       mode: "custom",

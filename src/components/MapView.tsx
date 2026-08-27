@@ -113,6 +113,7 @@ import { useMapControls } from "./map/useMapControls";
 import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./map/mapCamera";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
+import { BasemapThemeTint } from "./BasemapThemeTint";
 import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
 import {
   MAP_CONTRAST_DARK,
@@ -143,16 +144,6 @@ const readSectionBool = (key: string, fallback: boolean): boolean => {
 
 const writeSectionBool = (key: string, value: boolean): void => {
   try { localStorage.setItem(key, String(value)); } catch {}
-};
-
-// Full-world polygon used for the themed basemap color overlay.
-const WORLD_POLYGON_GEOJSON = {
-  type: "Feature" as const,
-  geometry: {
-    type: "Polygon" as const,
-    coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]],
-  },
-  properties: {},
 };
 
 const LINK_LAYER_ANCHOR_ID = "linksim-link-lines-casing";
@@ -3267,10 +3258,11 @@ export function MapView({
   const openFreeMapFallbackStyle = useMemo(() => getOpenFreeMapFallbackStyle(theme, colorTheme), [theme, colorTheme]);
   const localFallbackStyle = useMemo(() => getLocalFallbackStyle(theme, colorTheme), [theme, colorTheme]);
   const transformMapRequest = useCallback((url: string) => transformCartoRequest(url), []);
-  // Themed styles show an official style URL + a translucent color overlay using the app's terrain token.
-  const themedOverlay = basemapFallbackStage !== "local" && ((basemapFallbackStage === "openfreemap" && !(theme === "dark" && colorTheme === "blue")) || resolvedBasemap.isThemed)
-    ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
-    : null;
+  const basemapThemeTintEnabled = basemapFallbackStage !== "local" && (
+    basemapFallbackStage === "openfreemap"
+      ? !(theme === "dark" && colorTheme === "blue")
+      : resolvedBasemap.isThemed
+  );
   const userLocationAccuracyGeoJson = useMemo(
     () => buildUserLocationAccuracyGeoJson(userLocationFix),
     [userLocationFix],
@@ -4271,15 +4263,7 @@ export function MapView({
         }}
         onMoveEnd={onMoveEnd}
       >
-        {themedOverlay ? (
-          <Source data={WORLD_POLYGON_GEOJSON} id="linksim-theme-tint-source" type="geojson">
-            <Layer
-              id="linksim-theme-tint-overlay"
-              paint={{ "fill-color": themedOverlay.color, "fill-opacity": themedOverlay.opacity }}
-              type="fill"
-            />
-          </Source>
-        ) : null}
+        <BasemapThemeTint colorTheme={colorTheme} enabled={basemapThemeTintEnabled} theme={theme} />
 
         <Source data={lineFeatures} id="linksim-links" type="geojson">
           <Layer {...mapLineCasingLayer(linkCasingColor)} />

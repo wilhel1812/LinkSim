@@ -2563,7 +2563,6 @@ button {
   height: 28px;
   padding: 0 7px;
   font-size: 0.72rem;
-  box-shadow: none;
 }
 
 .map-link-color-controls {
@@ -2806,7 +2805,7 @@ button {
   border-radius: 10px;
   cursor: pointer;
   font-weight: 600;
-  box-shadow: var(--shadow-elev-3);
+  box-shadow: none;
 }
 
 .btn-icon {
