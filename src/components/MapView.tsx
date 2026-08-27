@@ -44,6 +44,7 @@ import {
   getStylesForCategory,
   nextBasemapFallbackStage,
   resolveBasemapSelection,
+  shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   type BasemapCategory,
 } from "../lib/basemaps";
@@ -4222,7 +4223,8 @@ export function MapView({
         mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
         transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
-        onError={() => {
+        onError={(event) => {
+          if (!shouldAdvanceBasemapFallbackForError(event)) return;
           if (basemapFallbackStage === "local") return;
           const nextStage = nextBasemapFallbackStage(basemapFallbackStage, resolvedBasemap.styleId);
           setBasemapFallbackStage(nextStage);

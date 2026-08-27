@@ -2083,6 +2083,7 @@ export function AppShell() {
             onOpenSettings={() => openSettings("profile")}
             onSignInRequested={handleUserSignInRequested}
             readOnly={!canPersistWorkspace}
+            renderedBasemapAttribution={renderedBasemapAttribution}
             panelToggleControl={
               isMobileViewport ? (
                 panelSizeControls("Navigator")
@@ -2302,6 +2303,7 @@ export function AppShell() {
                 onOpenSettings={() => openSettings("profile")}
                 onSignInRequested={handleUserSignInRequested}
                 readOnly={!canPersistWorkspace}
+                renderedBasemapAttribution={renderedBasemapAttribution}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
             ) : null}

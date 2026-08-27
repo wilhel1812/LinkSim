@@ -42,6 +42,7 @@ type SidebarProps = {
   panelClassName?: string;
   /** Override the computed simulation name shown in the Simulation section header. */
   simulationDisplayLabel?: string;
+  renderedBasemapAttribution?: { text: string; url: string } | null;
 };
 
 export function Sidebar({
@@ -54,6 +55,7 @@ export function Sidebar({
   panelToggleControl,
   panelClassName,
   simulationDisplayLabel,
+  renderedBasemapAttribution,
 }: SidebarProps) {
   const { theme, colorTheme } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -663,9 +665,13 @@ export function Sidebar({
       <footer className="sidebar-footer">
         <div className="sidebar-footer-links">
           <span>©</span>
-          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
-            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
-          </a>
+          {(renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl) ? (
+            <a href={renderedBasemapAttribution?.url ?? resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+              {(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}
+            </a>
+          ) : (
+            <span>{(renderedBasemapAttribution?.text ?? resolvedBasemap.attribution).replace(/©/g, "").trim()}</span>
+          )}
           <span>©</span>
           <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
             MapLibre

@@ -45,6 +45,13 @@ const layerMock = vi.hoisted(() => ({
   props: [] as Array<{ beforeId?: string; id?: string; paint?: Record<string, unknown> }>,
 }));
 
+const mapMock = vi.hoisted(() => ({
+  props: null as null | {
+    mapStyle?: unknown;
+    onError?: (event: { sourceId?: string }) => void;
+  },
+}));
+
 vi.hoisted(() => {
   const data = new Map<string, string>();
   vi.stubGlobal("localStorage", {
@@ -93,9 +100,10 @@ vi.mock("react-map-gl/maplibre", async () => {
   return {
     default: ReactMock.forwardRef(
       (
-        props: { children?: React.ReactNode },
+        props: { children?: React.ReactNode; mapStyle?: unknown; onError?: (event: { sourceId?: string }) => void },
         ref: React.ForwardedRef<{ easeTo: () => void; queryRenderedFeatures: () => unknown[] }>,
       ) => {
+        mapMock.props = props;
         ReactMock.useImperativeHandle(ref, () => ({
           easeTo: () => undefined,
           queryRenderedFeatures: () => [],
@@ -230,6 +238,7 @@ describe("MapView overlay handoff", () => {
     loadingOverlayMock.props = null;
     layerMock.coveragePaint = null;
     layerMock.props = [];
+    mapMock.props = null;
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
       value: vi.fn(() => ({})),
@@ -265,6 +274,23 @@ describe("MapView overlay handoff", () => {
       calculationCycleSource: null,
       recomputeCoverage: recomputeCoverageAction,
     });
+  });
+
+  it("keeps a healthy basemap when an application overlay source errors", () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    const selectedStyle = mapMock.props?.mapStyle;
+    act(() => mapMock.props?.onError?.({ sourceId: "coverage-overlay-source" }));
+    expect(mapMock.props?.mapStyle).toBe(selectedStyle);
+    act(() => mapMock.props?.onError?.({ sourceId: "simulation-loading-overlay-source" }));
+    expect(mapMock.props?.mapStyle).toBe(selectedStyle);
   });
 
   it("keeps the displayed raster mounted until the replacement cloud is ready", async () => {

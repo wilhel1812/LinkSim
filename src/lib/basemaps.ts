@@ -443,3 +443,23 @@ export const nextBasemapFallbackStage = (
   if (current === "openfreemap" || selectedStyleId === DEFAULT_BASEMAP_STYLE_ID) return "local";
   return "openfreemap";
 };
+
+const APPLICATION_OVERLAY_SOURCE_IDS = new Set([
+  "theme-tint-source",
+  "links",
+  "terrain-overlay-source",
+  "profile-path",
+  "panorama-ray-path",
+  "coverage-overlay-source",
+  "coverage-target-contour-source",
+  "simulation-loading-overlay-source",
+  "user-location-accuracy",
+  "mqtt-position-precision",
+]);
+
+export const shouldAdvanceBasemapFallbackForError = (event: unknown): boolean => {
+  const sourceId = typeof event === "object" && event !== null && "sourceId" in event
+    ? event.sourceId
+    : undefined;
+  return typeof sourceId !== "string" || !APPLICATION_OVERLAY_SOURCE_IDS.has(sourceId);
+};

@@ -6,6 +6,7 @@ import {
   getOpenFreeMapFallbackStyle,
   getStylesForCategory,
   nextBasemapFallbackStage,
+  shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   resolveBasemapSelection,
 } from "./basemaps";
@@ -209,5 +210,13 @@ describe("basemap fallback style", () => {
     expect(nextBasemapFallbackStage("openfreemap", "street-maptiler")).toBe("local");
     expect(nextBasemapFallbackStage("selected", DEFAULT_BASEMAP_STYLE_ID)).toBe("local");
     expect(nextBasemapFallbackStage("local", "street-maptiler")).toBe("local");
+  });
+
+  it("does not advance basemap fallback for application overlay source errors", () => {
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "terrain-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "coverage-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "simulation-loading-overlay-source" })).toBe(false);
+    expect(shouldAdvanceBasemapFallbackForError({ sourceId: "openmaptiles" })).toBe(true);
+    expect(shouldAdvanceBasemapFallbackForError({})).toBe(true);
   });
 });

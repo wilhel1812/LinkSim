@@ -326,4 +326,11 @@ describe("Sidebar read-only simulation site actions", () => {
     expect(screen.queryByText(warning)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: privateTooltip })).not.toBeInTheDocument();
   });
+
+  it("shows attribution for the basemap actually rendered after fallback", () => {
+    render(<Sidebar renderedBasemapAttribution={{ text: "Local background", url: "" }} />);
+
+    expect(screen.getByText("Local background")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Local background" })).not.toBeInTheDocument();
+  });
 });
