@@ -326,4 +326,24 @@ describe("Sidebar read-only simulation site actions", () => {
     expect(screen.queryByText(warning)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: privateTooltip })).not.toBeInTheDocument();
   });
+
+  it("shows attribution for the basemap actually rendered after fallback", () => {
+    render(<Sidebar renderedBasemapAttribution={{ credits: [{ text: "Local background", url: "" }] }} />);
+
+    expect(screen.getByText("Local background")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Local background" })).not.toBeInTheDocument();
+  });
+
+  it("renders OpenFreeMap and OpenStreetMap as separate attribution links", () => {
+    render(<Sidebar renderedBasemapAttribution={{ credits: [
+      { text: "OpenFreeMap", url: "https://openfreemap.org/" },
+      { text: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+    ] }} />);
+
+    expect(screen.getByRole("link", { name: "OpenFreeMap" })).toHaveAttribute("href", "https://openfreemap.org/");
+    expect(screen.getByRole("link", { name: "© OpenStreetMap contributors" })).toHaveAttribute(
+      "href",
+      "https://www.openstreetmap.org/copyright",
+    );
+  });
 });

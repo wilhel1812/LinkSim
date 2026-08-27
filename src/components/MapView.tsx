@@ -37,12 +37,18 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
   BASEMAP_CATEGORIES,
   DEFAULT_BASEMAP_STYLE_ID,
+  getBasemapAttributionCredits,
   getCategoryForStyleId,
-  getCartoFallbackStyle,
+  getLocalFallbackStyle,
+  getOpenFreeMapFallbackStyle,
   getDefaultStyleIdForCategory,
   getStylesForCategory,
+  nextBasemapFallbackStage,
   resolveBasemapSelection,
+  shouldAdvanceBasemapFallbackForError,
+  transformCartoRequest,
   type BasemapCategory,
+  type RenderedBasemapAttribution,
 } from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
@@ -149,7 +155,7 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
-const LINK_LAYER_ANCHOR_ID = "link-lines-casing";
+const LINK_LAYER_ANCHOR_ID = "linksim-link-lines-casing";
 
 const mapLineCasingLayer = (color: string): LayerProps => ({
   id: LINK_LAYER_ANCHOR_ID,
@@ -169,7 +175,7 @@ const mapLineCasingLayer = (color: string): LayerProps => ({
 });
 
 const mapLineLayer = (linkColor: string): LayerProps => ({
-  id: "link-lines",
+  id: "linksim-link-lines",
   type: "line",
   filter: ["!=", ["get", "selected"], 1],
   paint: {
@@ -191,7 +197,7 @@ const mapLineLayer = (linkColor: string): LayerProps => ({
 });
 
 const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
-  id: "link-lines-selected",
+  id: "linksim-link-lines-selected",
   type: "line",
   filter: ["==", ["get", "selected"], 1],
   paint: {
@@ -202,7 +208,7 @@ const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
 });
 
 const profileLineLayer = (color: string): LayerProps => ({
-  id: "profile-line",
+  id: "linksim-profile-line",
   type: "line",
   paint: {
     "line-color": color,
@@ -212,7 +218,7 @@ const profileLineLayer = (color: string): LayerProps => ({
 });
 
 const panoramaRayLayer = (color: string): LayerProps => ({
-  id: "panorama-ray-line",
+  id: "linksim-panorama-ray-line",
   type: "line",
   paint: {
     "line-color": color,
@@ -225,7 +231,7 @@ const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProp
   const transition = resolveSimulationOverlayTransition(fadedForCloud);
   return {
     beforeId: LINK_LAYER_ANCHOR_ID,
-    id: "coverage-overlay-layer",
+    id: "linksim-coverage-overlay-layer",
     type: "raster",
     paint: {
       "raster-opacity": hidden ? 0 : transition.coverageOpacity,
@@ -244,7 +250,7 @@ const targetContourHaloLayer = (
   hidden: boolean,
 ): LayerProps => ({
   beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-halo-layer",
+  id: "linksim-coverage-target-contour-halo-layer",
   type: "line",
   paint: {
     "line-color": color,
@@ -262,7 +268,7 @@ const targetContourLineLayer = (
   hidden: boolean,
 ): LayerProps => ({
   beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-line-layer",
+  id: "linksim-coverage-target-contour-line-layer",
   type: "line",
   paint: {
     "line-color": color,
@@ -467,6 +473,7 @@ type MapViewProps = {
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
   onPublishNotice?: (notice: { id: string; message: string; tone: "info" | "warning" | "error"; persistent: boolean }) => void;
+  onRenderedBasemapChange?: (attribution: RenderedBasemapAttribution) => void;
 };
 
 type MarkerActionButtonProps = {
@@ -696,8 +703,10 @@ export function MapView({
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
   onPublishNotice,
+  onRenderedBasemapChange,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
+  const currentUser = useAppStore((state) => state.currentUser);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
@@ -847,7 +856,7 @@ export function MapView({
     existingId: string;
     existingName: string;
   } | null>(null);
-  const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
+  const [basemapFallbackStage, setBasemapFallbackStage] = useState<"selected" | "openfreemap" | "local">("selected");
   const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
   const [isUserLocationActive, setIsUserLocationActive] = useState(false);
   const [userLocationFix, setUserLocationFix] = useState<UserLocationFix | null>(null);
@@ -3070,7 +3079,7 @@ export function MapView({
       setSelectedDiscoveryLibraryEntryId(null);
       return;
     }
-    const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
+    const interactiveFeature = event.features?.find((feature) => feature.layer.id === "linksim-link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
     if (!id && mapRef.current) {
       const clickPoint = event.point;
@@ -3080,7 +3089,7 @@ export function MapView({
           [clickPoint.x - buffer, clickPoint.y - buffer],
           [clickPoint.x + buffer, clickPoint.y + buffer],
         ],
-        { layers: ["link-lines"] },
+        { layers: ["linksim-link-lines"] },
       );
       const nearby = features.find((feature) => feature.properties && typeof feature.properties.id !== "undefined");
       id = nearby?.properties ? String(nearby.properties.id ?? "") : "";
@@ -3247,13 +3256,19 @@ export function MapView({
     );
   }
 
-  const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
-    [basemapStyleId, theme, colorTheme],
+  const customBasemapSources = useMemo(
+    () => currentUser?.basemapPreferences?.customSources ?? [],
+    [currentUser?.basemapPreferences?.customSources],
   );
-  const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const resolvedBasemap = useMemo(
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme, customBasemapSources),
+    [basemapStyleId, colorTheme, customBasemapSources, theme],
+  );
+  const openFreeMapFallbackStyle = useMemo(() => getOpenFreeMapFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const localFallbackStyle = useMemo(() => getLocalFallbackStyle(theme, colorTheme), [theme, colorTheme]);
+  const transformMapRequest = useCallback((url: string) => transformCartoRequest(url), []);
   // Themed styles show an official style URL + a translucent color overlay using the app's terrain token.
-  const themedOverlay = resolvedBasemap.isThemed
+  const themedOverlay = basemapFallbackStage !== "local" && ((basemapFallbackStage === "openfreemap" && !(theme === "dark" && colorTheme === "blue")) || resolvedBasemap.isThemed)
     ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
     : null;
   const userLocationAccuracyGeoJson = useMemo(
@@ -3266,7 +3281,24 @@ export function MapView({
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
     () => getCategoryForStyleId(basemapStyleId),
   );
-  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory), [selectedCategory]);
+  useEffect(() => {
+    if (currentUser && basemapStyleId.startsWith("custom:") && !customBasemapSources.some((source) => `custom:${source.id}` === basemapStyleId)) {
+      setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
+      setSelectedCategory("street");
+      setBasemapFallbackStage("selected");
+      return;
+    }
+    const selectedStyleIsRegional = getStylesForCategory("regional", customBasemapSources)
+      .some((style) => style.id === basemapStyleId);
+    if (selectedCategory === "regional" && selectedStyleIsRegional) return;
+    setSelectedCategory(getCategoryForStyleId(basemapStyleId));
+  }, [basemapStyleId, currentUser, customBasemapSources, selectedCategory, setBasemapStyleId]);
+  useEffect(() => {
+    if (!basemapStyleId.startsWith("custom:")) return;
+    setBasemapFallbackStage("selected");
+    setMapProviderWarning(null);
+  }, [basemapStyleId, resolvedBasemap.style]);
+  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory, customBasemapSources), [customBasemapSources, selectedCategory]);
   const globalCategoryStyles = useMemo(
     () => categoryStyles.filter((s) => !s.regional),
     [categoryStyles],
@@ -3276,6 +3308,8 @@ export function MapView({
     [categoryStyles],
   );
   const providerMaxZoom = useMemo(() => {
+    if (basemapFallbackStage !== "selected") return basemapFallbackStage === "local" ? 24 : 22;
+    if (resolvedBasemap.maxZoom !== 22) return resolvedBasemap.maxZoom;
     switch (resolvedBasemap.provider) {
       case "kartverket":
         return 20;
@@ -3284,7 +3318,24 @@ export function MapView({
       default:
         return 22;
     }
-  }, [resolvedBasemap.provider]);
+  }, [basemapFallbackStage, resolvedBasemap.maxZoom, resolvedBasemap.provider]);
+
+  useEffect(() => {
+    if (!onRenderedBasemapChange) return;
+    if (basemapFallbackStage === "selected") {
+      onRenderedBasemapChange({ credits: getBasemapAttributionCredits(resolvedBasemap) });
+    } else if (basemapFallbackStage === "openfreemap") {
+      onRenderedBasemapChange({
+        credits: getBasemapAttributionCredits({
+          provider: "openfreemap",
+          attribution: "© OpenStreetMap contributors",
+          attributionUrl: "https://openfreemap.org/",
+        }),
+      });
+    } else {
+      onRenderedBasemapChange({ credits: [{ text: "Local background", url: "" }] });
+    }
+  }, [basemapFallbackStage, onRenderedBasemapChange, resolvedBasemap.attribution, resolvedBasemap.attributionUrl, resolvedBasemap.provider]);
   const { isMultiSelectMode, setIsMultiSelectMode, fitControlActive, clearFitControlActive, zoomBy, fitToNodes } = useMapControls({
     activeViewState,
     fitBottomInset,
@@ -3389,8 +3440,9 @@ export function MapView({
   );
   const inspectorLines: string[] = [];
   if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
-  if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
-  if (useFallbackMapStyle) inspectorLines.push("Base map provider failed. Auto-switched to CARTO fallback style.");
+  if (resolvedBasemap.fallbackReason && basemapFallbackStage === "selected") inspectorLines.push(resolvedBasemap.fallbackReason);
+  if (basemapFallbackStage === "openfreemap") inspectorLines.push("Base map provider failed. Temporarily showing the OpenFreeMap LinkSim style.");
+  if (basemapFallbackStage === "local") inspectorLines.push("Online base maps failed. Showing the local background while LinkSim overlays remain available.");
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
@@ -3742,15 +3794,15 @@ export function MapView({
                   onChange={(event) => {
                     const nextCategory = event.target.value as BasemapCategory;
                     setSelectedCategory(nextCategory);
-                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory);
+                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory, customBasemapSources);
                     setBasemapStyleId(nextStyleId);
-                    setUseFallbackMapStyle(false);
+                    setBasemapFallbackStage("selected");
                     setMapProviderWarning(null);
                   }}
                   value={selectedCategory}
                 >
                   {BASEMAP_CATEGORIES.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
+                    <option disabled={cat.id === "custom" && customBasemapSources.length === 0} key={cat.id} value={cat.id}>
                       {cat.label}
                     </option>
                   ))}
@@ -3762,7 +3814,7 @@ export function MapView({
                   className="locale-select"
                   onChange={(event) => {
                     setBasemapStyleId(event.target.value);
-                    setUseFallbackMapStyle(false);
+                    setBasemapFallbackStage("selected");
                     setMapProviderWarning(null);
                   }}
                   value={resolvedBasemap.styleId}
@@ -4184,23 +4236,22 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
+        mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
+        transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
-        onError={() => {
-          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
-            setUseFallbackMapStyle(true);
-            setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
-            setInteractionViewState({
-              longitude: activeViewState.longitude,
-              latitude: activeViewState.latitude,
-              zoom: Math.min(activeViewState.zoom, 20),
-            });
-            setMapProviderWarning(
-              `${resolvedBasemap.providerLabel} failed (network, quota, or style error).`,
-            );
-          }
+        onError={(event) => {
+          if (!shouldAdvanceBasemapFallbackForError(event)) return;
+          if (basemapFallbackStage === "local") return;
+          const nextStage = nextBasemapFallbackStage(basemapFallbackStage, resolvedBasemap.styleId);
+          setBasemapFallbackStage(nextStage);
+          setInteractionViewState({
+            longitude: activeViewState.longitude,
+            latitude: activeViewState.latitude,
+            zoom: Math.min(activeViewState.zoom, 20),
+          });
+          setMapProviderWarning(`${basemapFallbackStage === "selected" ? resolvedBasemap.providerLabel : "OpenFreeMap"} failed (network, quota, or style error).`);
         }}
-        interactiveLayerIds={["link-lines"]}
+        interactiveLayerIds={["linksim-link-lines"]}
         onClick={onMapClick}
         onTouchStart={() => {
           mapRef.current?.getMap().stop();
@@ -4221,16 +4272,16 @@ export function MapView({
         onMoveEnd={onMoveEnd}
       >
         {themedOverlay ? (
-          <Source data={WORLD_POLYGON_GEOJSON} id="theme-tint-source" type="geojson">
+          <Source data={WORLD_POLYGON_GEOJSON} id="linksim-theme-tint-source" type="geojson">
             <Layer
-              id="theme-tint-overlay"
+              id="linksim-theme-tint-overlay"
               paint={{ "fill-color": themedOverlay.color, "fill-opacity": themedOverlay.opacity }}
               type="fill"
             />
           </Source>
         ) : null}
 
-        <Source data={lineFeatures} id="links" type="geojson">
+        <Source data={lineFeatures} id="linksim-links" type="geojson">
           <Layer {...mapLineCasingLayer(linkCasingColor)} />
           <Layer {...mapLineLayer(linkColor)} />
           <Layer {...mapLineSelectedLayer(linkColor)} />
@@ -4239,13 +4290,13 @@ export function MapView({
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
-            id="terrain-overlay-source"
+            id="linksim-terrain-overlay-source"
             type="image"
             url={simulationTerrainOverlay.url}
           >
             <Layer
               beforeId={LINK_LAYER_ANCHOR_ID}
-              id="terrain-overlay-layer"
+              id="linksim-terrain-overlay-layer"
               type="raster"
               paint={{
                 ...terrainRasterPaint,
@@ -4262,17 +4313,17 @@ export function MapView({
           </Source>
         ) : null}
 
-        <Source data={profileFeatures} id="profile-path" type="geojson">
+        <Source data={profileFeatures} id="linksim-profile-path" type="geojson">
           <Layer {...profileLineLayer(profileColor)} />
         </Source>
-        <Source data={panoramaRayFeatures} id="panorama-ray-path" type="geojson">
+        <Source data={panoramaRayFeatures} id="linksim-panorama-ray-path" type="geojson">
           <Layer {...panoramaRayLayer(profileColor)} />
         </Source>
 
         {coverageOverlay ? (
           <Source
             coordinates={coverageOverlay.coordinates}
-            id="coverage-overlay-source"
+            id="linksim-coverage-overlay-source"
             type="image"
             url={coverageOverlay.url}
           >
@@ -4288,7 +4339,7 @@ export function MapView({
         {coverageOverlay?.targetContour?.features.length ? (
           <Source
             data={coverageOverlay.targetContour}
-            id="coverage-target-contour-source"
+            id="linksim-coverage-target-contour-source"
             type="geojson"
           >
             <Layer
@@ -4336,16 +4387,16 @@ export function MapView({
         />
 
         {userLocationFix ? (
-          <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
-            <Layer {...positionAreaLayer("user-location-accuracy-layer", userLocationSelectionColor)} />
+          <Source data={userLocationAccuracyGeoJson} id="linksim-user-location-accuracy" type="geojson">
+            <Layer {...positionAreaLayer("linksim-user-location-accuracy-layer", userLocationSelectionColor)} />
           </Source>
         ) : null}
 
         {mqttPositionPrecisionGeoJson.features.length ? (
-          <Source data={mqttPositionPrecisionGeoJson} id="mqtt-position-precision" type="geojson">
+          <Source data={mqttPositionPrecisionGeoJson} id="linksim-mqtt-position-precision" type="geojson">
             <Layer
               {...positionAreaLayer(
-                "mqtt-position-precision-layer",
+                "linksim-mqtt-position-precision-layer",
                 variant.cssVars["--temporary"] ?? userLocationSelectionColor,
               )}
             />

@@ -1248,7 +1248,7 @@ const appendUniqueWindowId = (ids: string[], nextId: string): string[] =>
 
 const initialHolidayWindowState = readHolidayWindowState();
 const normalizeBasemapStyleId = (value: unknown): string =>
-  typeof value === "string" && BASEMAP_STYLE_REGISTRY.some((e) => e.id === value.trim())
+  typeof value === "string" && (BASEMAP_STYLE_REGISTRY.some((e) => e.id === value.trim()) || value.trim().startsWith("custom:"))
     ? value.trim()
     : DEFAULT_BASEMAP_STYLE_ID;
 

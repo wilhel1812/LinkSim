@@ -10,7 +10,7 @@ const { verifyAuthMock, ensureUserMock, fetchUserProfileMock, updateUserProfileM
 vi.mock("../_lib/auth", () => ({ verifyAuth: verifyAuthMock }));
 vi.mock("../_lib/db", () => ({
   ensureUser: ensureUserMock,
-  fetchUserProfile: fetchUserProfileMock,
+  fetchMyUserProfile: fetchUserProfileMock,
   updateUserProfile: updateUserProfileMock,
 }));
 
@@ -84,7 +84,26 @@ describe("api/me", () => {
       env,
       "u1",
       expect.objectContaining({ defaultFrequencyPresetId: "mt-us" }),
+      { includeBasemapPreferences: true },
     );
+  });
+
+  it("round-trips private basemap preferences through only the current-user endpoint", async () => {
+    const basemapPreferences = {
+      version: 1,
+      customSources: [{ id: "field", name: "Field tiles", kind: "style", lightUrl: "https://maps.test/style.json", attribution: "Map data" }],
+    };
+    fetchUserProfileMock.mockResolvedValueOnce({ id: "u1", username: "User", basemapPreferences });
+    const getResponse = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));
+    expect((await getResponse.json()).user.basemapPreferences).toEqual(basemapPreferences);
+
+    const request = new Request("https://example.test/api/me", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ basemapPreferences }),
+    });
+    await onRequestPatch(mkCtx(request));
+    expect(updateUserProfileMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({ basemapPreferences }), { includeBasemapPreferences: true });
   });
 
   it("passes username through PATCH for first username setup", async () => {
@@ -99,6 +118,7 @@ describe("api/me", () => {
       env,
       "u1",
       expect.objectContaining({ username: "Ranger" }),
+      { includeBasemapPreferences: true },
     );
   });
 });

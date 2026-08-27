@@ -173,6 +173,7 @@ Primary configs:
 
 Optional basemap provider environment variables (admin-configured only):
 - `VITE_MAPTILER_KEY`
+- `VITE_CARTO_KEY` (optional shared browser-visible key; domain-restrict it to the deployment domains)
 - `VITE_STADIA_KEY`
 - `VITE_KARTVERKET_API_KEY`
 - `VITE_KARTVERKET_WMTS_BASE_URL` (optional override)
@@ -202,7 +203,8 @@ npm run refresh:staging:r2
 - Terrain data is fetched on demand and cached client-side.
 - Browser forward location search uses the same-origin API, with bounded provider responses, a five-minute cache, configured per-caller limiting, and a per-isolate cache-miss gate.
 - In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
-- Basemap provider failures auto-fallback to CARTO with a non-blocking warning.
+- Basemap provider failures transiently fall back to the OpenFreeMap LinkSim style, then to a provider-independent local background without changing the saved device selection.
+- Custom MapLibre style and raster XYZ definitions sync in private account preferences; the active style remains device-local and requests go directly from the browser.
 
 ## Project Structure
 

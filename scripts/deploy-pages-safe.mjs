@@ -206,6 +206,7 @@ async function verifyRemoteSchema(targetName, databaseName) {
   let simulationsResult;
   let identityClaimsResult;
   let identityMetaResult;
+  let usersResult;
   try {
     resourceChangesResult = await run(
       wrangler,
@@ -225,6 +226,11 @@ async function verifyRemoteSchema(targetName, databaseName) {
     identityMetaResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
+      { capture: true },
+    );
+    usersResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(users);"],
       { capture: true },
     );
   } catch (err) {
@@ -278,6 +284,13 @@ async function verifyRemoteSchema(targetName, databaseName) {
   assert(
     identityMetaRows.some((row) => row?.version === "2026-08-12-identity-lifecycle-v1"),
     "Preflight failed: D1 identity lifecycle migration marker is missing or outdated.",
+  );
+
+  const usersParsed = parseWranglerJsonPayload(usersResult.stdout);
+  const userRows = Array.isArray(usersParsed?.[0]?.results) ? usersParsed[0].results : [];
+  assert(
+    userRows.some((row) => row?.name === "basemap_preferences_json"),
+    "Preflight failed: D1 schema missing users.basemap_preferences_json. Apply migration db/migrations/2026-08-27_basemap_preferences.sql before deploy.",
   );
 }
 

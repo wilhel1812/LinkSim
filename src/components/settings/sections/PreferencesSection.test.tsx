@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simulationDefaultsFromPreset, type UserSimulationDefaultsPreference } from "../../../lib/simulationDefaults";
@@ -16,6 +17,8 @@ const hoisted = vi.hoisted(() => ({
     setUiThemePreference: vi.fn(),
     uiColorTheme: "blue",
     setUiColorTheme: vi.fn(),
+    basemapStyleId: "street-linksim",
+    setBasemapStyleId: vi.fn(),
     setCurrentUser: vi.fn(),
     setAuthState: vi.fn(),
   } as Record<string, unknown>,
@@ -239,5 +242,126 @@ describe("PreferencesSection custom radio presets", () => {
     await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
     expect(hoisted.updateMyProfile.mock.calls[0]?.[0].simulationDefaultsPreference.customPresets[0].defaults.propagationEnvironment.polarization).toBe("Horizontal");
     vi.useRealTimers();
+  });
+
+  it("creates an account-synced custom MapLibre style source", async () => {
+    const me = userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false });
+    hoisted.updateMyProfile.mockImplementation(async (patch) => ({ ...me, basemapPreferences: patch.basemapPreferences }));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map name" }), "Field Map");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map light URL" }), "https://maps.test/style.json?token=browser-safe");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map attribution" }), "Field data");
+    await userEvent.click(screen.getByRole("button", { name: "Create custom map" }));
+
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1));
+    expect(hoisted.updateMyProfile.mock.calls[0]?.[0].basemapPreferences.customSources[0]).toMatchObject({
+      name: "Field Map", kind: "style", lightUrl: "https://maps.test/style.json?token=browser-safe",
+    });
+  });
+
+  it("keeps an in-flight radio save alive when a custom map save updates account state", async () => {
+    const initial = userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false });
+    let resolveRadio: ((user: CloudUser) => void) | null = null;
+    let savedBasemaps: CloudUser["basemapPreferences"] = initial.basemapPreferences;
+    hoisted.updateMyProfile.mockImplementation(async (patch) => {
+      if (patch.basemapPreferences) {
+        savedBasemaps = patch.basemapPreferences;
+        return { ...initial, basemapPreferences: savedBasemaps };
+      }
+      return new Promise<CloudUser>((resolve) => {
+        resolveRadio = resolve;
+      });
+    });
+    const Harness = () => {
+      const [me, setMe] = useState(initial);
+      return <PreferencesSection me={me} onMeUpdated={(user) => setMe(user)} />;
+    };
+    render(<Harness />);
+
+    const defaultSettings = document.getElementById("pref-default-preset");
+    expect(defaultSettings).toBeInstanceOf(HTMLSelectElement);
+    fireEvent.change(defaultSettings!, { target: { value: "mt-eu_868" } });
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1));
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map name" }), "Field Map");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map light URL" }), "https://maps.test/style.json");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map attribution" }), "Field data");
+    await userEvent.click(screen.getByRole("button", { name: "Create custom map" }));
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(2));
+
+    const radioPatch = hoisted.updateMyProfile.mock.calls[0]?.[0];
+    await act(async () => {
+      resolveRadio?.({
+        ...initial,
+        defaultFrequencyPresetId: radioPatch.defaultFrequencyPresetId,
+        simulationDefaultsPreference: radioPatch.simulationDefaultsPreference,
+        basemapPreferences: savedBasemaps,
+      });
+    });
+
+    await waitFor(() => expect(document.getElementById("pref-default-preset")).toHaveValue("mt-eu_868"));
+  });
+
+  it("adopts account radio preferences that load after the section mounts", () => {
+    const loaded = userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false });
+    const view = render(<PreferencesSection me={null} onMeUpdated={vi.fn()} />);
+
+    view.rerender(<PreferencesSection me={loaded} onMeUpdated={vi.fn()} />);
+
+    expect(document.getElementById("pref-default-preset")).toHaveValue("mt-us");
+  });
+
+  it("keeps a custom map draft mounted when a concurrent radio save completes first", async () => {
+    const initial = userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false });
+    let rejectBasemap: ((error: Error) => void) | null = null;
+    hoisted.updateMyProfile.mockImplementation(async (patch) => {
+      if (patch.basemapPreferences) {
+        return new Promise<CloudUser>((_resolve, reject) => {
+          rejectBasemap = reject;
+        });
+      }
+      return {
+        ...initial,
+        defaultFrequencyPresetId: patch.defaultFrequencyPresetId,
+        simulationDefaultsPreference: patch.simulationDefaultsPreference,
+      };
+    });
+    const Harness = () => {
+      const [me, setMe] = useState(initial);
+      return <PreferencesSection me={me} onMeUpdated={(user) => setMe(user)} />;
+    };
+    render(<Harness />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map name" }), "Field Map");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map light URL" }), "https://maps.test/style.json");
+    await userEvent.type(screen.getByRole("textbox", { name: "Custom map attribution" }), "Field data");
+    await userEvent.click(screen.getByRole("button", { name: "Create custom map" }));
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1));
+
+    const defaultSettings = document.getElementById("pref-default-preset");
+    expect(defaultSettings).toBeInstanceOf(HTMLSelectElement);
+    fireEvent.change(defaultSettings!, { target: { value: "mt-eu_868" } });
+    await waitFor(() => expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.getElementById("pref-default-preset")).toHaveValue("mt-eu_868"));
+
+    await act(async () => rejectBasemap?.(new Error("Custom map save failed")));
+
+    expect(screen.getByRole("textbox", { name: "Custom map name" })).toHaveValue("Field Map");
+    expect(await screen.findByText("Custom map save failed")).toBeInTheDocument();
+  });
+
+  it("returns the device to LinkSim when deleting its active custom source", async () => {
+    const me = {
+      ...userWithPreference({ mode: "preset", presetId: "mt-us", overridePresetDefaults: false }),
+      basemapPreferences: { version: 1 as const, customSources: [{ id: "field", name: "Field Map", kind: "style" as const, lightUrl: "https://maps.test/style.json", attribution: "Field data" }] },
+    };
+    hoisted.store.basemapStyleId = "custom:field";
+    hoisted.updateMyProfile.mockImplementation(async (patch) => ({ ...me, basemapPreferences: patch.basemapPreferences }));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Custom maps/ }), "field");
+    await userEvent.click(screen.getByRole("button", { name: "Delete custom map: Field Map" }));
+
+    await waitFor(() => expect(hoisted.store.setBasemapStyleId).toHaveBeenCalledWith("street-linksim"));
   });
 });

@@ -17,8 +17,8 @@ import {
 } from "../lib/simulationLoadingOverlay";
 
 const CLOUD_FRAME_INTERVAL_MS = 50;
-const SOURCE_ID = "simulation-loading-overlay-source";
-const LAYER_ID = "simulation-loading-overlay-layer";
+const SOURCE_ID = "linksim-simulation-loading-overlay-source";
+const LAYER_ID = "linksim-simulation-loading-overlay-layer";
 
 type SimulationLoadingOverlayProps = {
   beforeLayerId?: string;
