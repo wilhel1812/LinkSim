@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.28.1] - 2026-09-08
+
+### Fixed
+- Reduced database reads during Library synchronization and routine identity checks, while preserving access revocation and account migration safeguards. (#1104)
+
 ## [0.28.0] - 2026-08-27
 
 ### Added
