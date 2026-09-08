@@ -36,6 +36,17 @@ test('rejects missing IDs, extra bindings, routes and environment overrides', ()
   }
 });
 
+test('rejects runtime drift that would invalidate compatibility and CPU evidence', () => {
+  for (const changes of [
+    { compatibility_date: '2026-09-08' }, { compatibility_date: undefined },
+    { compatibility_flags: [] }, { compatibility_flags: undefined },
+    { compatibility_flags: ['nodejs_compat_v2'] },
+    { compatibility_flags: ['nodejs_compat', 'no_nodejs_compat_v2'] },
+  ]) {
+    assert.throws(() => validateProbeConfig({ ...config(), ...changes }), /probe runtime/);
+  }
+});
+
 test('every remote setup action rejects protected IDs before invoking Wrangler', () => {
   const dir = mkdtempSync(join(tmpdir(), 'auth-setup-test-'));
   const configPath = join(dir, 'probe.json');

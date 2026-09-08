@@ -25,6 +25,8 @@ export function validateProbeConfig(config) {
   for (const key of Object.keys(config)) assert.ok(allowedKeys.has(key), `unsupported probe config key: ${key}`);
   assert.match(config.name, /^linksim-auth-probe-[a-z0-9-]+$/);
   assert.equal(config.main, 'worker.mjs');
+  assert.equal(config.compatibility_date, '2026-03-12', 'probe runtime date must match the measured Pages bundle');
+  assert.deepEqual(config.compatibility_flags, ['nodejs_compat'], 'probe runtime flags must match the measured Pages bundle');
   assert.equal(config.workers_dev, true);
   assert.equal(config.vars.PROBE_ENABLED, 'isolated-auth-probe');
   const origin = config.vars.PROBE_ORIGIN;

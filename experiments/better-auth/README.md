@@ -77,6 +77,8 @@ Each setup command validates the actual `database_id` against both repository
 Wrangler configurations **before invoking Wrangler**, then uses the validated
 configuration snapshot. Missing/invalid IDs, protected IDs (regardless of display
 name), additional bindings, routes and environment overrides fail closed. The
+runtime must be exactly `2026-03-12` with only `nodejs_compat`, matching the Pages
+bundle; missing or different dates/flags are rejected before setup. The
 runner reuses this check before any HTTP request. This rejects known protected
 resources; confirm the remaining ID belongs to the newly created disposable D1
 database in the intended account. No command grants authority for a remote run.
