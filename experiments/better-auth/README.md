@@ -16,7 +16,8 @@ npm test
 npm run bundle
 ```
 
-The five tests use the real pinned Better Auth library and in-memory SQLite.
+The auth tests use the real pinned Better Auth library and in-memory SQLite;
+setup regression tests also protect production/staging D1 bindings.
 `npm run schema` regenerates `schema.sql` from that library. Never apply this
 fixture schema to an application database. The Pages bundle checks the existing
 LinkSim compatibility date, 2026-03-12, with `nodejs_compat` added only here.
@@ -32,7 +33,7 @@ Create a new D1 database and a Worker with a `linksim-auth-probe-` name. The
 Worker must have no routes, application data, R2 bindings, production OAuth
 credentials, or production/staging database bindings.
 
-Create ignored `wrangler.probe.jsonc` with this shape, replacing the placeholders:
+Create ignored `wrangler.probe.jsonc` as strict JSON with this shape, replacing the placeholders:
 
 ```json
 {
@@ -56,14 +57,31 @@ Create ignored `wrangler.probe.jsonc` with this shape, replacing the placeholder
 
 Generate independent random `PROBE_KEY` and `BETTER_AUTH_SECRET` values with a
 trusted secret generator. Save them in ignored `.probe-secrets.json` (mode 0600),
-then install them with `wrangler secret bulk` on this Worker only. Every remote
+then install them using the guarded setup command below. Every remote
 request must supply the probe key, including fixture creation and auth routes;
 missing configuration fails closed before touching D1. The fixture uses Better
 Auth's own test utilities to create a synthetic user/session. It is not an OAuth
 login, production session-creation API, or account recovery implementation.
 
-After reviewing the resource names/IDs, apply `schema.sql` to the new database,
-deploy the probe, and run `node run-remote.mjs`. The runner does not follow OAuth
+Use these guarded commands for all remote setup; do not invoke schema application
+or deployment directly through Wrangler:
+
+```sh
+node remote-setup.mjs schema
+node remote-setup.mjs deploy
+node remote-setup.mjs secrets
+node run-remote.mjs
+```
+
+Each setup command validates the actual `database_id` against both repository
+Wrangler configurations **before invoking Wrangler**, then uses the validated
+configuration snapshot. Missing/invalid IDs, protected IDs (regardless of display
+name), additional bindings, routes and environment overrides fail closed. The
+runner reuses this check before any HTTP request. This rejects known protected
+resources; confirm the remaining ID belongs to the newly created disposable D1
+database in the intended account. No command grants authority for a remote run.
+
+The runner does not follow OAuth
 redirects, emits only aggregate cost/status fields, and respects the library's
 stricter social-login rate limit. Its test Turnstile secret is Cloudflare's
 published always-pass test key. Successful validation with it does **not** prove

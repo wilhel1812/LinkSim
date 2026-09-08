@@ -1,16 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { readProbeConfig } from './probe-config.mjs';
 
-const config = JSON.parse(readFileSync('wrangler.probe.jsonc', 'utf8'));
+const config = readProbeConfig();
 const secrets = JSON.parse(readFileSync('.probe-secrets.json', 'utf8'));
 const origin = config.vars.PROBE_ORIGIN;
-assert.match(config.name, /^linksim-auth-probe-/);
-const target = new URL(origin);
-assert.equal(target.protocol, 'https:');
-assert.equal(target.origin, origin);
-assert.ok(target.hostname.startsWith(`${config.name}.`) && target.hostname.endsWith('.workers.dev'));
-assert.equal(config.d1_databases.length, 1);
-assert.equal(config.d1_databases[0].database_name, config.name);
 const results = [];
 async function call(path, { method = 'GET', cookie, body, captcha = false, expected = 200 } = {}) {
   const headers = new Headers({ authorization: `Bearer ${secrets.PROBE_KEY}`, origin });
