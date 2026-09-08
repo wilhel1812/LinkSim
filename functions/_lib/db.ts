@@ -696,6 +696,36 @@ type SerializedIdentityLocation =
   | { table: "sites" | "simulations"; column: "payload_json"; bumpTimestamp: true }
   | { table: "resource_changes"; column: "snapshot_json"; bumpTimestamp: false };
 
+// Materialize the migration source before enumerating any resource rows. A
+// same-subject request must not scan tables merely to discover its UPDATE is a
+// no-op. Keep this SQL gate inside the identity transaction (not a JS pre-read).
+const identityMigrationSourceSql = `SELECT current_user_id AS id
+  FROM verified_identity_claims
+  WHERE normalized_email = ?1 AND status = 'active' AND current_user_id <> ?2
+    AND EXISTS (SELECT 1 FROM users WHERE id = ?2)`;
+
+const prepareIdentityColumnMigration = (
+  env: Pick<Env, "DB">,
+  location: {
+    table: "sites" | "simulations" | "resource_changes" | "simulation_path_leaderboard_entries" | "users";
+    columns: string[];
+    bumpTimestamp?: boolean;
+  },
+  normalizedEmail: string,
+  targetUserId: string,
+  now: string,
+): D1PreparedStatement => env.DB.prepare(
+  `WITH identity_source AS MATERIALIZED (${identityMigrationSourceSql}),
+   candidates AS MATERIALIZED (
+     SELECT target.rowid AS target_rowid
+     FROM identity_source CROSS JOIN ${location.table} target
+     WHERE ${location.columns.map((column) => `target.${column} = identity_source.id`).join(" OR ")}
+   )
+   UPDATE ${location.table}
+   SET ${location.columns.map((column) => `${column} = CASE WHEN ${column} = (SELECT id FROM identity_source) THEN ?2 ELSE ${column} END`).join(", ")}${location.bumpTimestamp ? ", updated_at = ?3" : ""}
+   WHERE rowid IN (SELECT target_rowid FROM candidates)`,
+).bind(...(location.bumpTimestamp ? [normalizedEmail, targetUserId, now] : [normalizedEmail, targetUserId]));
+
 const prepareSerializedGrantIdentityMigration = (
   env: Pick<Env, "DB">,
   location: SerializedIdentityLocation,
@@ -706,10 +736,17 @@ const prepareSerializedGrantIdentityMigration = (
   const timestampAssignment = location.bumpTimestamp ? ", updated_at = ?3" : "";
   return env.DB
     .prepare(
-      `WITH identity_source AS (
-         SELECT current_user_id AS id
-         FROM verified_identity_claims
-         WHERE normalized_email = ?1 AND status = 'active'
+      `WITH identity_source AS MATERIALIZED (${identityMigrationSourceSql}),
+       candidates AS MATERIALIZED (
+         SELECT target.rowid AS target_rowid
+         FROM identity_source CROSS JOIN ${location.table} target
+         WHERE json_valid(${location.column})
+           AND EXISTS (
+             SELECT 1
+             FROM json_each(${location.column}, '$.sharedWith') AS j
+             WHERE j.type = 'object'
+               AND trim(json_extract(j.value, '$.userId')) = (SELECT id FROM identity_source)
+           )
        )
        UPDATE ${location.table}
        SET ${location.column} = json_set(
@@ -738,15 +775,7 @@ const prepareSerializedGrantIdentityMigration = (
              GROUP BY CASE WHEN user_id = (SELECT id FROM identity_source) THEN ?2 ELSE user_id END
            ) migrated_grants
          )))${timestampAssignment}
-       WHERE json_valid(${location.column})
-         AND (SELECT id FROM identity_source) <> ?2
-         AND EXISTS (SELECT 1 FROM users WHERE id = ?2)
-         AND EXISTS (
-           SELECT 1
-           FROM json_each(${location.column}, '$.sharedWith') AS j
-           WHERE j.type = 'object'
-             AND trim(json_extract(j.value, '$.userId')) = (SELECT id FROM identity_source)
-         )`,
+       WHERE rowid IN (SELECT target_rowid FROM candidates)`,
     )
     .bind(...(location.bumpTimestamp ? [normalizedEmail, targetUserId, now] : [normalizedEmail, targetUserId]));
 };
@@ -761,17 +790,11 @@ const prepareSerializedMetadataIdentityMigration = (
   const timestampAssignment = location.bumpTimestamp ? ", updated_at = ?3" : "";
   return env.DB
     .prepare(
-      `WITH identity_source AS (
-         SELECT current_user_id AS id
-         FROM verified_identity_claims
-         WHERE normalized_email = ?1 AND status = 'active'
-       ),
+      `WITH identity_source AS MATERIALIZED (${identityMigrationSourceSql}),
        candidates AS MATERIALIZED (
-         SELECT rowid AS target_rowid, ${location.column} AS migrated_json
-         FROM ${location.table}
+         SELECT target.rowid AS target_rowid, ${location.column} AS migrated_json
+         FROM identity_source CROSS JOIN ${location.table} target
          WHERE json_valid(${location.column})
-           AND (SELECT id FROM identity_source) <> ?2
-           AND EXISTS (SELECT 1 FROM users WHERE id = ?2)
            AND (
              trim(json_extract(${location.column}, '$.ownerUserId')) = (SELECT id FROM identity_source)
              OR trim(json_extract(${location.column}, '$.createdByUserId')) = (SELECT id FROM identity_source)
@@ -889,17 +912,19 @@ export const executeVerifiedIdentityEnsure = async (
       ),
     env.DB
       .prepare(
-        `INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
+        `WITH identity_source AS MATERIALIZED (${identityMigrationSourceSql})
+         INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
          SELECT singleton, version, applied_at
          FROM identity_lifecycle_meta
          WHERE singleton = 1
            AND EXISTS (
              SELECT 1
-             FROM simulations source_simulation
-             JOIN simulations target_simulation
-               ON lower(target_simulation.name) = lower(source_simulation.name)
-             WHERE source_simulation.owner_user_id = (${activeSourceSql})
-               AND target_simulation.owner_user_id = ?
+             FROM identity_source
+             CROSS JOIN simulations source_simulation
+             CROSS JOIN simulations target_simulation
+             WHERE lower(target_simulation.name) = lower(source_simulation.name)
+               AND source_simulation.owner_user_id = identity_source.id
+               AND target_simulation.owner_user_id = ?2
                AND source_simulation.owner_user_id <> target_simulation.owner_user_id
                AND source_simulation.status = 'active'
                AND target_simulation.status = 'active'
@@ -937,40 +962,12 @@ export const executeVerifiedIdentityEnsure = async (
            AND source.id <> ?`,
       )
       .bind(now, userId, normalizedEmail, userId),
-    env.DB
-      .prepare(
-        `UPDATE sites
-         SET owner_user_id = ?, updated_at = ?
-         WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`,
-      )
-      .bind(userId, now, normalizedEmail, normalizedEmail, userId, userId),
-    env.DB
-      .prepare(
-        `UPDATE sites
-         SET created_by_user_id = CASE WHEN created_by_user_id = (${activeSourceSql}) THEN ? ELSE created_by_user_id END,
-             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = (${activeSourceSql}) THEN ? ELSE last_edited_by_user_id END,
-             updated_at = ?
-         WHERE ${sourceDiffersSql}
-           AND (created_by_user_id = (${activeSourceSql}) OR last_edited_by_user_id = (${activeSourceSql}))`,
-      )
-      .bind(normalizedEmail, userId, normalizedEmail, userId, now, normalizedEmail, userId, userId, normalizedEmail, normalizedEmail),
-    env.DB
-      .prepare(
-        `UPDATE simulations
-         SET owner_user_id = ?, updated_at = ?
-         WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`,
-      )
-      .bind(userId, now, normalizedEmail, normalizedEmail, userId, userId),
-    env.DB
-      .prepare(
-        `UPDATE simulations
-         SET created_by_user_id = CASE WHEN created_by_user_id = (${activeSourceSql}) THEN ? ELSE created_by_user_id END,
-             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = (${activeSourceSql}) THEN ? ELSE last_edited_by_user_id END,
-             updated_at = ?
-         WHERE ${sourceDiffersSql}
-           AND (created_by_user_id = (${activeSourceSql}) OR last_edited_by_user_id = (${activeSourceSql}))`,
-      )
-      .bind(normalizedEmail, userId, normalizedEmail, userId, now, normalizedEmail, userId, userId, normalizedEmail, normalizedEmail),
+    prepareIdentityColumnMigration(env, {
+      table: "sites", columns: ["owner_user_id", "created_by_user_id", "last_edited_by_user_id"], bumpTimestamp: true,
+    }, normalizedEmail, userId, now),
+    prepareIdentityColumnMigration(env, {
+      table: "simulations", columns: ["owner_user_id", "created_by_user_id", "last_edited_by_user_id"], bumpTimestamp: true,
+    }, normalizedEmail, userId, now),
     env.DB
       .prepare(
         `INSERT INTO site_roles (site_id, user_id, role, created_at)
@@ -1057,15 +1054,9 @@ export const executeVerifiedIdentityEnsure = async (
       userId,
       now,
     ),
-    env.DB
-      .prepare(`UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
-      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
-    env.DB
-      .prepare(`UPDATE simulation_path_leaderboard_entries SET owner_user_id = ? WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
-      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
-    env.DB
-      .prepare(`UPDATE users SET approved_by_user_id = ? WHERE approved_by_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
-      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    prepareIdentityColumnMigration(env, { table: "resource_changes", columns: ["actor_user_id"] }, normalizedEmail, userId, now),
+    prepareIdentityColumnMigration(env, { table: "simulation_path_leaderboard_entries", columns: ["owner_user_id"] }, normalizedEmail, userId, now),
+    prepareIdentityColumnMigration(env, { table: "users", columns: ["approved_by_user_id"] }, normalizedEmail, userId, now),
     env.DB
       .prepare(
         `INSERT INTO user_identity_audit
@@ -2677,6 +2668,8 @@ export const fetchLibraryForUser = async (
         .bind(userId, userId, userId, userId, ...pageBind())
         .all<{ id: string }>();
 
+  // Historical access before any eligible change is equivalent to access before
+  // the greatest eligible change ID. Check it once, rather than once per edit.
   const removedRowsFor = async (kind: "site" | "simulation"): Promise<{ results: Array<{ id: string }> }> => {
     const phase = kind === "site" ? "removed_sites" : "removed_simulations";
     if (canReadAllResources || (paged && opts?.phase !== phase)) return { results: [] };
@@ -2695,14 +2688,21 @@ export const fetchLibraryForUser = async (
            AND live.visibility = 'private'
            AND current_role.user_id IS NULL${statusClause}
            AND EXISTS (
-             SELECT 1 FROM resource_changes changed
-             WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
+             WITH eligible_changes AS MATERIALIZED (
+               SELECT changed.id, changed.details_json
+               FROM resource_changes changed
+               WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
+             ), latest_change AS (
+               SELECT MAX(id) AS id FROM eligible_changes
+             )
+             SELECT 1 FROM latest_change
+             WHERE latest_change.id IS NOT NULL
                AND (
                  EXISTS (
                    SELECT 1 FROM resource_changes history
-                   WHERE history.resource_kind = changed.resource_kind
-                     AND history.resource_id = changed.resource_id
-                     AND history.id < changed.id
+                   WHERE history.resource_kind = '${kind}'
+                     AND history.resource_id = live.id
+                     AND history.id < latest_change.id
                      AND (
                        json_extract(history.snapshot_json, '$.ownerUserId') = ?
                        OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
@@ -2712,10 +2712,13 @@ export const fetchLibraryForUser = async (
                        )
                      )
                  )
-                 OR json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
                  OR EXISTS (
-                   SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
-                   WHERE json_extract(previous_grant.value, '$.userId') = ?
+                   SELECT 1 FROM eligible_changes changed
+                   WHERE json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
+                     OR EXISTS (
+                       SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
+                       WHERE json_extract(previous_grant.value, '$.userId') = ?
+                     )
                  )
                )
            )${pagination}`,
