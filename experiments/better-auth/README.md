@@ -150,7 +150,7 @@ and cover handlers that currently rely on that outer boundary.
 
 | Existing routes | Current application-level behavior / migration requirement |
 | --- | --- |
-| `/api/me`, Libraries, users, collaborators, notifications, changes, admin/diagnostics | Use `verifyAuth()` and existing DB role/resource policies; adapt identity, retain authorization. |
+| `/api/me`, `/api/avatar-upload`, `/api/stats/path-leaderboard`, Libraries, users, collaborators, notifications, changes, admin/diagnostics | Use `verifyAuth()` and existing DB role/resource policies; adapt identity, retain authorization. |
 | `/api/deep-link-status`, `/api/public-simulation` | Inspect optional identity/resource visibility; retain intentional guest behavior. |
 | `/api/v1/calculate`, job submission and job status aliases | No direct `verifyAuth()`; preserve the outer API authentication boundary before removing Access. Audit all aliases together. |
 | `/api/geocode`, `/api/health`, `/api/stats`, `/api/avatar/*` | No direct `verifyAuth()`; reconcile intended guest use with effective live Access exceptions before cutover. Do not infer public intent from absence of a check. |
