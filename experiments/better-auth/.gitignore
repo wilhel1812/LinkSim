@@ -1,0 +1,4 @@
+.probe-secrets.json
+wrangler.probe.jsonc
+probe-results.json
+probe-tail.jsonl
