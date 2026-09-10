@@ -107,8 +107,10 @@ test('live routes exclude fixture/linking and enforce origin, freshness and sess
       assert.equal(metrics.initialized, false);
       assert.equal(metrics.queries, 1, 'a warm joined session lookup uses one database query');
     }
-    // The actual library session freshness policy must protect credential removal.
+    // The actual library session freshness policy must protect enrollment and removal.
     db.prepare('UPDATE probe_session SET createdAt = ?').run(Date.now() - 600000);
+    assert.equal((await request('/api/auth/passkey/generate-register-options')).status, 403);
+    assert.equal((await request('/api/auth/passkey/verify-registration', 'POST', headers, { response: {} })).status, 403);
     assert.equal((await request('/api/auth/passkey/delete-passkey', 'POST', headers, { id: 'missing' })).status, 403);
     const signedOut = await request('/api/auth/sign-out', 'POST', headers, {});
     assert.equal(signedOut.status, 200);

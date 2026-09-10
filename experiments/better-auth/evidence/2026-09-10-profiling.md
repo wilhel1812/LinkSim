@@ -87,3 +87,31 @@ Sources:
 - [Better Auth performance guidance](https://better-auth.com/docs/guides/optimizing-for-performance)
 - [Better Auth database configuration](https://better-auth.com/docs/concepts/database)
 - [SimpleWebAuthn v13.3.3 public assertion fixture](https://github.com/MasterKale/SimpleWebAuthn/blob/v13.3.3/packages/server/src/authentication/verifyAuthenticationResponse.test.ts)
+
+## Deployed join follow-up
+
+The maintainer repeated authenticated session measurements after deployment of
+`d7898dfa4babc810adf74fe2321f9a1f91c1ea4a`, Worker version
+`6984d23e-7345-4613-b98a-4d30d7fe5e5e`. All 12 measurements returned HTTP 200.
+
+| Phase | Queries/request | Cloudflare CPU | Browser elapsed |
+| --- | ---: | --- | --- |
+| Public session, warm | 3 | 11, 11, 12 ms | 167, 166, 148 ms |
+| Internal session, warm | 1 | 5, 4, 4 ms | 59, 66, 66 ms |
+| Explicit fresh instance | 2 | 17, 9, 10 ms | 191, 115, 137 ms |
+| Concurrent: reused instance | 1 | 5 ms | 72 ms |
+| Concurrent: two initialized instances | 2 each | 16 and 60 ms | 554 and 566 ms |
+
+Concurrent CPU values cannot be assigned reliably to individual browser samples
+without a correlation ID; only the set is reported. Internal lookups still read
+two rows and wrote none. Public session requests still wrote one row each.
+Earlier post-deployment anonymous initialization used 40 and 90 ms CPU; the
+maintainer's initial authenticated page load used 76 ms.
+
+The reduced query count is verified remotely. Browser latency improved in these
+samples, but there is no demonstrated CPU reduction or reliable free-tier
+headroom. The compatibility/capacity gate remains unpassed. Further migration
+is paused for architecture reassessment; no additional browser ceremonies are
+needed to establish the already-observed initialization problem. Real post-join
+OAuth/passkey ceremonies remain unverified and would be needed if this candidate
+were later advanced.
