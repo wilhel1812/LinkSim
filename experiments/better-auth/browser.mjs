@@ -58,17 +58,19 @@ document.getElementById('measure').addEventListener('click', () => perform(async
       const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
       await response.arrayBuffer(); // Consume without displaying cookies, profiles or session tokens.
       rows.push({ path, sample, status: response.status, elapsedMs: Math.round(performance.now() - start),
+        objectElapsedMs: JSON.parse(response.headers.get('x-probe-object-elapsed-ms') ?? 'null'),
         d1: JSON.parse(response.headers.get('x-probe-d1') ?? 'null') });
       if (!response.ok) throw new Error(`Session measurement stopped: HTTP ${response.status}`);
     }
   }
-  const concurrent = await Promise.all(Array.from({ length: 3 }, async (_, sample) => {
+  const concurrent = await Promise.all(Array.from({ length: 50 }, async (_, sample) => {
     const start = performance.now();
     const response = await fetch('/probe/session/reused', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
     await response.arrayBuffer();
     if (!response.ok) throw new Error(`Concurrent session measurement stopped: HTTP ${response.status}`);
     return { path: '/probe/session/reused', concurrent: true, sample: sample + 1, status: response.status,
-      elapsedMs: Math.round(performance.now() - start), d1: JSON.parse(response.headers.get('x-probe-d1') ?? 'null') };
+      elapsedMs: Math.round(performance.now() - start), objectElapsedMs: JSON.parse(response.headers.get('x-probe-object-elapsed-ms') ?? 'null'),
+        d1: JSON.parse(response.headers.get('x-probe-d1') ?? 'null') };
   }));
   rows.push(...concurrent);
   result.textContent = JSON.stringify(rows, null, 2);

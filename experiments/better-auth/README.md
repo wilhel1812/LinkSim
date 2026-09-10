@@ -270,3 +270,60 @@ library's native database joins to reduce a warm internal session lookup from
 two queries to one. Schema, revocation and freshness checks remain in place.
 This does not establish free-tier compatibility; initialized requests and real
 OAuth/passkey callbacks still require deployed measurements.
+
+## Private Durable Object runtime experiment (0.29.0 gate)
+
+The optional paired deployment derives strictly from the existing disposable
+`wrangler.probe.jsonc`. It keeps the same demo origin and D1; it never resets the
+database. The gateway only imports route policy and browser assets. Better Auth,
+provider secrets and D1 live in the private `-runtime` Worker's SQLite-backed
+`AuthProbe` Durable Object. A single named object is selected per deployment.
+Its HTTP worker returns 404 and has no public workers.dev or preview URL.
+Internal session checks use a private binding method, never a public internal URL.
+The public benchmark returns only authentication and verified-email booleans.
+
+Run from this directory:
+
+```sh
+npm test
+node remote-setup.mjs bundle-runtime
+node remote-setup.mjs bundle-gateway
+node durable-local.mjs
+```
+
+The last command uses local workerd, a temporary in-memory fixture database and
+Miniflare D1; it creates 1,000 synthetic accounts through library test utilities,
+checks 50 simultaneous sessions, initiates 20 mocked OAuth flows without GitHub
+authorizations, and verifies immediate revocation. It never reads the live config
+or secrets. Its mocked Turnstile result is not an abuse-protection acceptance test.
+
+After independent review, the explicitly authorized disposable deployment order is:
+
+```sh
+node remote-setup.mjs deploy-runtime
+node remote-setup.mjs secrets-runtime
+node remote-setup.mjs deploy-gateway
+```
+
+The secrets command uses the existing ignored `.probe-secrets.json`. Do not print
+its contents. There is deliberately no schema action for this pair. Restoring the
+original demo runtime uses `node remote-setup.mjs deploy`; preserve the existing D1
+and secrets. This rollback affects only the disposable experiment.
+
+Local evidence on 2026-09-10: all 50 warm session calls used one query, two rows
+read and zero writes. Initial object auth setup used two queries and 23 rows read.
+All 20 mocked initiations returned 200 (three queries, two rows read, six writes
+each, including persistent rate limiting and OAuth state). Revocation returned
+401 on the next call. Compressed bundles: gateway 19.08 KiB, auth runtime 534.48 KiB.
+`npm audit --omit=dev` reported no advisories for pinned production dependencies.
+
+**Capacity acceptance remains pending.** Local elapsed time is not Cloudflare CPU
+measurement. Collect gateway CPU including cold starts, object duration/latency,
+real D1 counters, refresh writes, 50-call bursts and actual individual GitHub and
+passkey ceremonies through the private binding. The `x-probe-object-elapsed-ms`
+header measures gateway waiting, not object CPU or billable duration. Keep logs
+sanitized with the existing tail summarizer. Recalculate account-wide quotas with
+staging and abuse overhead before application integration. The published
+[DO allowances](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+are 100,000 requests/day and 13,000 GB-s/day; the approved normal-use gate is below
+50% of both, as well as the relevant Pages/Workers and D1 allowances.

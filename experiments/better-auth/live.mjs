@@ -3,16 +3,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware, freshSessionMiddleware } from 'better-auth/api';
 import { probeOptions } from './probe.mjs';
 
-const routes = new Map([
-  ['/api/auth/sign-in/social', 'POST'], ['/api/auth/callback/github', 'GET'],
-  ['/api/auth/get-session', 'GET'], ['/api/auth/sign-out', 'POST'],
-  ['/api/auth/passkey/generate-register-options', 'GET'],
-  ['/api/auth/passkey/verify-registration', 'POST'],
-  ['/api/auth/passkey/generate-authenticate-options', 'GET'],
-  ['/api/auth/passkey/verify-authentication', 'POST'],
-  ['/api/auth/passkey/list-user-passkeys', 'GET'],
-  ['/api/auth/passkey/delete-passkey', 'POST'],
-]);
+import { routes, securityHeaders, enabled, isBenchmark } from './live-policy.mjs';
 
 export function liveOptions(env) {
   const options = probeOptions(env);
@@ -69,19 +60,15 @@ export function createLiveWorker({ page, script }, makeAuth = betterAuth) {
   return {
     async fetch(request, env) {
       const url = new URL(request.url);
-      if (env.PROBE_ENABLED !== 'github-passkey-validation' || !env.GITHUB_CLIENT_ID ||
-          !env.GITHUB_CLIENT_SECRET || !env.BETTER_AUTH_SECRET || !/^\d+$/.test(env.PROBE_GITHUB_ID ?? '') ||
-          !(Date.parse(env.PROBE_EXPIRES_AT) > Date.now()) || url.origin !== env.PROBE_ORIGIN) {
+      if (!enabled(request, env) || !env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET || !env.BETTER_AUTH_SECRET) {
         return new Response(null, { status: 404 });
       }
-      const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer',
-        'x-content-type-options': 'nosniff',
-        'content-security-policy': "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
+      const headers = securityHeaders;
       if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/client.js')) {
         return new Response(url.pathname === '/' ? page : script, { headers: { ...headers,
           'content-type': url.pathname === '/' ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8' } });
       }
-      const benchmark = request.method === 'GET' && ['/probe/session/reused', '/probe/session/fresh'].includes(url.pathname);
+      const benchmark = isBenchmark(request);
       if (!benchmark && routes.get(url.pathname) !== request.method) return new Response(null, { status: 404, headers });
       if (request.method !== 'GET' && request.headers.get('origin') !== env.PROBE_ORIGIN) {
         return new Response(null, { status: 403, headers });

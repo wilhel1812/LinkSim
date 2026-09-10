@@ -91,3 +91,24 @@ test('every remote setup action rejects protected IDs before invoking Wrangler',
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Durable Object actions retain guarded targets and cannot execute schema reset', () => {
+  const directory=mkdtempSync(join(tmpdir(),'durable-setup-test-'));
+  const value=config(); value.main='live-worker.mjs'; value.vars={...value.vars,
+    PROBE_ENABLED:'github-passkey-validation',PROBE_GITHUB_ID:'88513',
+    PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString()};
+  const path=join(directory,'config.json');writeFileSync(path,JSON.stringify(value));
+  try {
+    for(const action of ['deploy-runtime','secrets-runtime','bundle-runtime','deploy-gateway','bundle-gateway']) {
+      runSetup(action,{configPath:path,run(_command,args) {
+        const snapshot=JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8'));
+        assert.equal(snapshot.name,action.endsWith('runtime')?`${value.name}-runtime`:value.name);
+        assert.equal(args.includes('d1'),false);
+        assert.equal(snapshot.workers_dev,action.endsWith('gateway'));
+        assert.equal(args.includes('--dry-run'),action.startsWith('bundle-'));
+        return {status:0};
+      }});
+    }
+    assert.throws(()=>runSetup('schema-runtime',{configPath:path}));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
