@@ -152,6 +152,11 @@ the verified-email flag. They preserve library session-refresh response headers.
 
 Reused instances are scoped to the Workers environment object, with request-local
 D1 metrics held in Node `AsyncLocalStorage` to avoid mixing concurrent requests.
+Context initialization and the library's schema check are awaited before an
+instance is cached or its first response is returned. This prevents a later
+request from inheriting schema-check I/O abandoned by a completed/canceled
+request. Browser HTTP calls time out after 20 seconds; OAuth initiation does not
+launch another session fetch while navigation is starting.
 `initialized` marks a library instance creation, not proof of a cold isolate.
 Use sanitized Wrangler tail CPU events alongside the browser measurements. Do
 not infer CPU time from elapsed time, or claim cold-isolate coverage from the

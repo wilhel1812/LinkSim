@@ -40,6 +40,32 @@ test('real-provider secrets disable the synthetic fixture wrapper', async () => 
   assert.equal(response.status, 404);
 });
 
+test('pending schema checks are not cached across requests or abandoned after a response', async () => {
+  let finishSchema;
+  const pendingSchema = new Promise(resolve => { finishSchema = resolve; });
+  let creations = 0;
+  const worker = createLiveWorker({ page: 'test', script: 'test' }, () => {
+    const first = ++creations === 1;
+    return { $context: Promise.resolve({ checkSchema: () => first ? pendingSchema : undefined }),
+      handler: async () => Response.json(null) };
+  });
+  const controller = new AbortController();
+  const env = { ...configuration(), DB: {} };
+  let finished = false;
+  const first = worker.fetch(new Request(`${origin}/api/auth/get-session`, { signal: controller.signal }), env)
+    .then(response => { finished = true; return response; });
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(finished, false, 'response must retain the request until schema validation finishes');
+    controller.abort();
+    const second = await worker.fetch(new Request(`${origin}/api/auth/get-session`), env);
+    assert.equal(second.status, 200);
+    assert.equal(creations, 2, 'next request must not inherit pending initialization');
+  } finally { finishSchema(); await first; }
+  await worker.fetch(new Request(`${origin}/api/auth/get-session`), env);
+  assert.equal(creations, 2, 'the completed healthy instance remains reusable');
+});
+
 async function fixture() {
   const db = new DatabaseSync(':memory:');
   const env = { ...configuration(), DB: db };

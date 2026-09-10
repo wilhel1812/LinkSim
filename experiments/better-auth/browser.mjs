@@ -2,7 +2,8 @@ import { createAuthClient } from 'better-auth/client';
 import { passkeyClient } from '@better-auth/passkey/client';
 import { getUiErrorMessage } from '../../src/lib/uiError.ts';
 
-const auth = createAuthClient({ baseURL: location.origin, plugins: [passkeyClient()] });
+const auth = createAuthClient({ baseURL: location.origin, plugins: [passkeyClient()],
+  fetchOptions: { timeout: 20000, retry: 0 } });
 const status = document.querySelector('#status');
 const list = document.querySelector('#passkeys');
 const result = document.querySelector('#results');
@@ -34,18 +35,18 @@ async function refresh() {
   }
 }
 let busy = false;
-async function perform(action) {
+async function perform(action, refreshAfter = true) {
   if (busy) return;
   busy = true;
   status.textContent = 'Working…';
-  try { await action(); await refresh(); }
+  try { await action(); if (refreshAfter) await refresh(); }
   catch (error) { status.textContent = getUiErrorMessage(error); }
   finally { busy = false; }
 }
 document.getElementById('github').addEventListener('click', () => perform(async () => {
   checked(await auth.signIn.social({ provider: 'github', callbackURL: '/', errorCallbackURL: '/' },
     { headers: { 'x-captcha-response': 'XXXX.DUMMY.TOKEN.XXXX' } }));
-}));
+}, false));
 document.getElementById('passkey').addEventListener('click', () => perform(async () => checked(await auth.signIn.passkey())));
 document.getElementById('add').addEventListener('click', () => perform(async () => checked(await auth.passkey.addPasskey({ name: 'LinkSim validation' }))));
 document.getElementById('logout').addEventListener('click', () => perform(async () => checked(await auth.signOut())));
@@ -54,7 +55,7 @@ document.getElementById('measure').addEventListener('click', () => perform(async
   for (const path of ['/api/auth/get-session', '/probe/session/reused', '/probe/session/fresh']) {
     for (let sample = 1; sample <= 3; sample++) {
       const start = performance.now();
-      const response = await fetch(path, { cache: 'no-store' });
+      const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
       await response.arrayBuffer(); // Consume without displaying cookies, profiles or session tokens.
       rows.push({ path, sample, status: response.status, elapsedMs: Math.round(performance.now() - start),
         d1: JSON.parse(response.headers.get('x-probe-d1') ?? 'null') });
@@ -63,7 +64,7 @@ document.getElementById('measure').addEventListener('click', () => perform(async
   }
   const concurrent = await Promise.all(Array.from({ length: 3 }, async (_, sample) => {
     const start = performance.now();
-    const response = await fetch('/probe/session/reused', { cache: 'no-store' });
+    const response = await fetch('/probe/session/reused', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
     await response.arrayBuffer();
     if (!response.ok) throw new Error(`Concurrent session measurement stopped: HTTP ${response.status}`);
     return { path: '/probe/session/reused', concurrent: true, sample: sample + 1, status: response.status,

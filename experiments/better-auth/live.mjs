@@ -36,7 +36,7 @@ export function liveOptions(env) {
   };
 }
 
-export function createLiveWorker({ page, script }) {
+export function createLiveWorker({ page, script }, makeAuth = betterAuth) {
   const requests = new AsyncLocalStorage();
   const instances = new WeakMap();
   function instrument(db) {
@@ -93,9 +93,14 @@ export function createLiveWorker({ page, script }) {
           const fresh = url.pathname === '/probe/session/fresh';
           let auth = fresh ? undefined : instances.get(env);
           if (!auth) {
-            auth = betterAuth(liveOptions({ ...env, DB: instrument(env.DB) }));
+            auth = makeAuth(liveOptions({ ...env, DB: instrument(env.DB) }));
             metrics.initialized = true;
-            if (!fresh) instances.set(env, auth);
+            // Better Auth starts schema validation in the background. Workers
+            // can discard that I/O when its originating request ends. Complete
+            // it within this request before either replying or sharing auth.
+            const context = await auth.$context;
+            await context.checkSchema?.();
+            if (!fresh && !request.signal.aborted) instances.set(env, auth);
           }
           if (benchmark) {
             const session = await auth.api.getSession({ headers: request.headers, returnHeaders: true });
