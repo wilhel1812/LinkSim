@@ -133,3 +133,17 @@ describe("SiteNoticeBanner", () => {
     expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2);
   } finally { vi.useRealTimers(); }
 });
+
+it("clears an expired notice locally without fetching again", async () => {
+  vi.useFakeTimers();
+  const view = render(<SiteNoticeBanner />);
+  try {
+    fetchPublicSiteNoticeMock.mockResolvedValue({tone:"incident",message:"Temporary incident",dismissible:false,
+      revision:15,updatedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+1000).toISOString()});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
+    expect(screen.getByRole("alert")).toHaveTextContent("Temporary incident");
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+  } finally {view.unmount();vi.useRealTimers();}
+});

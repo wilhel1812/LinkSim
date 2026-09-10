@@ -25,6 +25,19 @@ export function selectExportTables(names) {
   }
   return applicationTables.filter(name => names.includes(name));
 }
+export function selectRefreshTables(source, target) {
+  const tables = selectExportTables(source);
+  const targetTables = selectExportTables(target);
+  if (target.some(name => name.startsWith('auth_'))) throw new Error('Staging auth tables exist; explicit credential reset workflow required');
+  if (!tables.includes('users') || !targetTables.includes('users')) throw new Error('User schema missing');
+  if (tables.join(',') !== targetTables.join(',')) throw new Error('Application schema mismatch; align staging and production schemas before refresh');
+  return tables;
+}
+const readInventory = path => {
+  const responses = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Array.isArray(responses) || responses.some(r => !r.success || !Array.isArray(r.results))) throw new Error('Invalid table inventory');
+  return responses.flatMap(r => r.results.map(row => row.name));
+};
 const identifier = value => `"${value.replaceAll('"', '""')}"`;
 const literal = value => {
   if (value === null) return 'NULL';
@@ -78,18 +91,10 @@ export function sanitizeExport(sql) {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [mode, input, output] = process.argv.slice(2);
-  if (mode === 'tables') {
-    const responses = JSON.parse(readFileSync(input, 'utf8'));
-    if (!Array.isArray(responses) || responses.some(r => !r.success || !Array.isArray(r.results))) throw new Error('Invalid table inventory');
-    const names = responses.flatMap(r => r.results.map(row => row.name));
-    const tables = selectExportTables(names);
-    if (!tables.includes('users')) throw new Error('User schema missing');
-    if (names.some(name => name.startsWith('auth_'))) {
-      // Until an explicit staging-auth reset workflow exists, fail closed on refresh.
-      if (output === 'target') throw new Error('Staging auth tables exist; explicit credential reset workflow required');
-    }
+  if (mode === 'tables' && output) {
+    const tables = selectRefreshTables(readInventory(input), readInventory(output));
     process.stdout.write(tables.join('\n') + '\n');
   } else if (mode === 'sanitize' && output) {
     writeFileSync(output, sanitizeExport(readFileSync(input, 'utf8')), { mode: 0o600, flag: 'wx' });
-  } else throw new Error('Usage: staging-export.mjs tables inventory.json [target] | sanitize input.sql output.sql');
+  } else throw new Error('Usage: staging-export.mjs tables source.json target.json | sanitize input.sql output.sql');
 }

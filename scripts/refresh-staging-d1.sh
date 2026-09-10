@@ -11,8 +11,7 @@ trap 'rm -rf -- "${REFRESH_DIR}"' EXIT
 INVENTORY_SQL="SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
 npx wrangler d1 execute linksim --config wrangler.toml --remote --command "${INVENTORY_SQL}" --json > "${REFRESH_DIR}/source.json"
 npx wrangler d1 execute linksim_staging --config wrangler.staging.toml --remote --command "${INVENTORY_SQL}" --json > "${REFRESH_DIR}/target.json"
-node scripts/staging-export.mjs tables "${REFRESH_DIR}/source.json" > "${REFRESH_DIR}/tables.txt"
-node scripts/staging-export.mjs tables "${REFRESH_DIR}/target.json" target > /dev/null
+node scripts/staging-export.mjs tables "${REFRESH_DIR}/source.json" "${REFRESH_DIR}/target.json" > "${REFRESH_DIR}/tables.txt"
 TABLE_ARGS=()
 while IFS= read -r table; do TABLE_ARGS+=(--table "${table}"); done < "${REFRESH_DIR}/tables.txt"
 # Auth tables are never included in this export, even in the private temporary directory.

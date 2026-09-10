@@ -1,9 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { selectExportTables, sanitizeExport } from './staging-export.mjs';
+import { selectExportTables, selectRefreshTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
 describe('staging export boundary', () => {
+  it('rejects application schema drift before export or import', () => {
+    expect(() => selectRefreshTables(['users'], ['users', 'sites'])).toThrow(/schema mismatch/);
+    expect(() => selectRefreshTables(['users', 'sites'], ['users'])).toThrow(/schema mismatch/);
+    expect(selectRefreshTables(['users', 'calculation_jobs'], ['users'])).toEqual(['users']);
+    expect(() => selectRefreshTables(['users'], ['users', 'auth_session'])).toThrow(/credential reset/);
+  });
   it('classifies the deployed schema including transient calculation jobs without exporting jobs', () => {
     const db = new DatabaseSync(':memory:');
     try {

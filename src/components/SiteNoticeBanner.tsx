@@ -84,6 +84,20 @@ export function SiteNoticeBanner() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!notice?.expiresAt) return;
+    const expires = Date.parse(notice.expiresAt);
+    if (!Number.isFinite(expires)) return;
+    let timer: number;
+    const expire = () => {
+      const remaining = expires - Date.now();
+      if (remaining <= 0) setNotice(null);
+      else timer = window.setTimeout(expire, Math.min(remaining, 2_147_483_647));
+    };
+    expire();
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   if (!notice) return null;
   return (
     <SiteNoticeSurface

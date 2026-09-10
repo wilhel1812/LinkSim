@@ -45,7 +45,8 @@ it for routine verification.
 npm run refresh:staging:d1
 ```
 
-The refresh inventories both databases and rejects unclassified tables. It exports
+The refresh inventories both databases and rejects unclassified tables or mismatched
+application table sets; align schemas before refreshing. It exports
 only the explicitly listed application tables; authentication tables, sessions,
 provider credentials, passkeys, mappings, and migration proofs are excluded. User
 contact/display fields and avatar references are sanitized locally **before**
