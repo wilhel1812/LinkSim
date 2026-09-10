@@ -261,3 +261,12 @@ References: [approved issue](https://github.com/wilhel1812/LinkSim/issues/1107),
 [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/),
 [GitLab provider](https://better-auth.com/docs/authentication/gitlab),
 [Turnstile test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/).
+
+### September 10 profiling follow-up
+
+[Profiling evidence and decision](evidence/2026-09-10-profiling.md) distinguish
+local profiles from Cloudflare CPU measurements. The probe enables the pinned
+library's native database joins to reduce a warm internal session lookup from
+two queries to one. Schema, revocation and freshness checks remain in place.
+This does not establish free-tier compatibility; initialized requests and real
+OAuth/passkey callbacks still require deployed measurements.

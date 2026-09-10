@@ -28,6 +28,7 @@ export function probeOptions(env) {
     verification: { modelName: 'probe_verification' },
     advanced: {
       useSecureCookies: true,
+      database: { joins: true },
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
     },
     rateLimit: { enabled: true, storage: 'database', modelName: 'probe_rate_limit', window: 60, max: 100 },

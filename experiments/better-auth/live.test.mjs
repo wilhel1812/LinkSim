@@ -105,7 +105,7 @@ test('live routes exclude fixture/linking and enforce origin, freshness and sess
       assert.equal(response.status, 200);
       const metrics = JSON.parse(response.headers.get('x-probe-d1'));
       assert.equal(metrics.initialized, false);
-      assert.ok(metrics.queries > 0);
+      assert.equal(metrics.queries, 1, 'a warm joined session lookup uses one database query');
     }
     // The actual library session freshness policy must protect credential removal.
     db.prepare('UPDATE probe_session SET createdAt = ?').run(Date.now() - 600000);
