@@ -6,7 +6,8 @@ import { createProbe, probeOptions } from './probe.mjs';
 // All requests, including library endpoints, require the disposable probe secret.
 export default {
   async fetch(request, env) {
-    if (env.PROBE_ENABLED !== 'isolated-auth-probe' || !env.PROBE_KEY ||
+    if (env.GITHUB_CLIENT_SECRET || env.GITLAB_CLIENT_SECRET ||
+        env.PROBE_ENABLED !== 'isolated-auth-probe' || !env.PROBE_KEY ||
         request.headers.get('authorization') !== `Bearer ${env.PROBE_KEY}`) {
       return new Response(null, { status: 404 });
     }

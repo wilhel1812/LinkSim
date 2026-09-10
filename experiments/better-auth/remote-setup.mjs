@@ -4,19 +4,21 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readProbeConfig } from './probe-config.mjs';
+import { buildBrowser } from './build-browser.mjs';
 
 const directory = fileURLToPath(new URL('.', import.meta.url));
 
 export function runSetup(action, { configPath, run = spawnSync } = {}) {
   assert.ok(['schema', 'deploy', 'secrets'].includes(action), 'expected schema, deploy or secrets');
   const config = readProbeConfig(configPath);
+  if (action === 'deploy' && config.main === 'live-worker.mjs') buildBrowser();
   // Pass the validated snapshot to Wrangler so setup cannot select another config.
   const scratch = join(directory, '.wrangler');
   mkdirSync(scratch, { recursive: true });
   const temporary = mkdtempSync(join(scratch, 'setup-'));
   try {
     const snapshot = join(temporary, 'wrangler.json');
-    writeFileSync(snapshot, JSON.stringify({ ...config, main: join(directory, 'worker.mjs') }), { mode: 0o600 });
+    writeFileSync(snapshot, JSON.stringify({ ...config, main: join(directory, config.main) }), { mode: 0o600 });
     const commands = {
       schema: ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'schema.sql')],
       deploy: ['deploy'],

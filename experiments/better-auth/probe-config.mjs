@@ -24,11 +24,20 @@ export function protectedDatabaseIds() {
 export function validateProbeConfig(config) {
   for (const key of Object.keys(config)) assert.ok(allowedKeys.has(key), `unsupported probe config key: ${key}`);
   assert.match(config.name, /^linksim-auth-probe-[a-z0-9-]+$/);
-  assert.equal(config.main, 'worker.mjs');
+  const live = config.vars?.PROBE_ENABLED === 'github-passkey-validation';
+  assert.equal(config.main, live ? 'live-worker.mjs' : 'worker.mjs');
   assert.equal(config.compatibility_date, '2026-03-12', 'probe runtime date must match the measured Pages bundle');
   assert.deepEqual(config.compatibility_flags, ['nodejs_compat'], 'probe runtime flags must match the measured Pages bundle');
   assert.equal(config.workers_dev, true);
-  assert.equal(config.vars.PROBE_ENABLED, 'isolated-auth-probe');
+  assert.equal(config.vars.PROBE_ENABLED, live ? 'github-passkey-validation' : 'isolated-auth-probe');
+  const variableKeys = ['PROBE_ENABLED', 'PROBE_ORIGIN'];
+  if (live) {
+    variableKeys.push('PROBE_GITHUB_ID', 'PROBE_EXPIRES_AT');
+    assert.match(config.vars.PROBE_GITHUB_ID, /^\d+$/, 'one stable tester ID required');
+    const expires = Date.parse(config.vars.PROBE_EXPIRES_AT);
+    assert.ok(expires > Date.now() && expires <= Date.now() + 7 * 86400000, 'live probe must expire within seven days');
+  }
+  assert.deepEqual(Object.keys(config.vars).sort(), variableKeys.sort(), 'only approved non-secret variables allowed');
   const origin = config.vars.PROBE_ORIGIN;
   const target = new URL(origin);
   assert.equal(target.protocol, 'https:');

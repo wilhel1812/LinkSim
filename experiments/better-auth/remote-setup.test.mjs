@@ -47,6 +47,23 @@ test('rejects runtime drift that would invalidate compatibility and CPU evidence
   }
 });
 
+test('live mode requires the fixture-free entrypoint, one tester and bounded expiry', () => {
+  const live = { ...config(), main: 'live-worker.mjs', vars: { ...config().vars,
+    PROBE_ENABLED: 'github-passkey-validation', PROBE_GITHUB_ID: '88513',
+    PROBE_EXPIRES_AT: new Date(Date.now() + 3600000).toISOString() } };
+  assert.doesNotThrow(() => validateProbeConfig(live));
+  for (const changes of [{ main: 'worker.mjs' }, { vars: { ...live.vars, PROBE_GITHUB_ID: '' } },
+    { vars: { ...live.vars, PROBE_EXPIRES_AT: 'invalid' } },
+    { vars: { ...live.vars, PROBE_EXPIRES_AT: new Date(0).toISOString() } },
+    { vars: { ...live.vars, PROBE_EXPIRES_AT: new Date(Date.now() + 86400000 * 8).toISOString() } },
+    { vars: { ...live.vars, GITHUB_CLIENT_SECRET: 'must-not-be-in-config' } }]) {
+    assert.throws(() => validateProbeConfig({ ...live, ...changes }));
+  }
+  for (const id of protectedDatabaseIds()) {
+    assert.throws(() => validateProbeConfig({ ...live, d1_databases: config(id).d1_databases }), /protected D1/);
+  }
+});
+
 test('every remote setup action rejects protected IDs before invoking Wrangler', () => {
   const dir = mkdtempSync(join(tmpdir(), 'auth-setup-test-'));
   const configPath = join(dir, 'probe.json');

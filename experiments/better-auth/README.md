@@ -107,6 +107,70 @@ Stop the tail, delete the disposable Worker and D1 database, and remove the loca
 secret/config files after measurement. Preserve only sanitized results. Do not
 remove or change any LinkSim Access application during this experiment.
 
+## Guided GitHub/passkey validation
+
+GitLab is deferred for this batch after signup verification required a card.
+The second-provider requirement remains open; GitHub-only validation is not an
+approved final migration architecture.
+
+The separate `live-worker.mjs` entrypoint has **no synthetic account/session
+creation**. It reuses the schema and library configuration, but enables only
+GitHub, rejects every GitHub subject except `PROBE_GITHUB_ID`, and denies account
+linking/unlinking routes. Passkey enrollment needs an existing fresh session;
+removal also uses Better Auth's fresh-session middleware. Session revocation,
+CSRF, OAuth state and WebAuthn remain library responsibilities.
+
+Use a newly created empty disposable database. Do not reuse a database populated
+by the synthetic fixture: existing fixture sessions could otherwise authenticate.
+For the same reviewed config shape, change `main` to `live-worker.mjs`, set
+`PROBE_ENABLED` to `github-passkey-validation`, and add `PROBE_GITHUB_ID` (one
+numeric GitHub subject as a string) and `PROBE_EXPIRES_AT` (UTC ISO timestamp,
+strictly in the future and at most seven days away). The runtime denies every
+request after expiry. The GitHub callback is `/api/auth/callback/github` on that
+exact Workers hostname. Production and staging callbacks/passkeys do not apply.
+
+Provide independently generated `BETTER_AUTH_SECRET`, the test OAuth application's
+`GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET` through the ignored mode-0600
+`.probe-secrets.json`. Never put credentials into Wrangler variables, source, PRs,
+or chat. `node remote-setup.mjs deploy` builds the bundled browser client and uses
+the protected-ID preflight; `node remote-setup.mjs secrets` installs the secrets.
+The synthetic entrypoint rejects requests if real-provider secrets are present.
+This live surface permits public initiation/challenge requests but only one
+tester can obtain an account/session. Library DB-backed rate limiting applies
+to auth routes; the temporary server-session measurement routes have no extra
+rate-limit writes, matching their intended comparison. Expiry and the narrow
+tester restriction are test controls, not production signup abuse protection.
+
+Open the hostname and, one step at a time, sign in with GitHub, add a test passkey,
+sign out, sign in with that passkey, and remove it. Keep GitHub as recovery. Run
+the session measurements while signed in; they make three sequential requests
+to each of the HTTP session, reused-instance server-session and fresh-instance
+server-session paths, followed by three concurrent reused-instance requests.
+Output contains only status, elapsed time, initialization flag and D1 counters.
+The server responses from measurement routes reveal only signed-in status and
+the verified-email flag. They preserve library session-refresh response headers.
+
+Reused instances are scoped to the Workers environment object, with request-local
+D1 metrics held in Node `AsyncLocalStorage` to avoid mixing concurrent requests.
+`initialized` marks a library instance creation, not proof of a cold isolate.
+Use sanitized Wrangler tail CPU events alongside the browser measurements. Do
+not infer CPU time from elapsed time, or claim cold-isolate coverage from the
+fresh-instance endpoint alone. No full real-provider/passkey or new CPU result
+is claimed until the maintainer completes the browser run.
+
+The browser is disposable operator tooling, not new LinkSim UI. Its WebAuthn
+client comes from the pinned Better Auth passkey plugin; it reuses LinkSim's
+`getUiErrorMessage()`. Its published always-pass Turnstile token/key deliberately
+does not prove humanity. Delete test passkeys, the Worker, D1 database and test
+OAuth application after completing validation; expiry does not delete records.
+
+Dependency audit on 2026-09-10 found the new high-severity
+[sharp/libheif advisory](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) through
+Wrangler/Miniflare. Image processing is not used by this probe and those tools are
+not deployed in the auth Worker. The auth dependencies had no audit findings.
+Keep this toolchain advisory visible and do not use image-transformation tooling
+with untrusted images; do not blindly apply the suggested Wrangler downgrade.
+
 ## Measured result: 2026-09-08
 
 Versions: Better Auth/passkey 1.7.3, Wrangler 4.121.0. Nested `npm audit`: no known

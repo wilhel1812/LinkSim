@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinkSim authentication validation</title>
+<main>
+  <h1>LinkSim authentication validation</h1>
+  <p>Temporary test for the approved GitHub account. This does not migrate your LinkSim account.</p>
+  <p>CAPTCHA uses a published test key. This test does not demonstrate bot protection.</p>
+  <p>Keep GitHub as your recovery method. These passkeys work only on this temporary hostname.</p>
+  <p id="status" role="status">Checking session…</p>
+  <button id="github" type="button">Sign in with GitHub</button>
+  <button id="passkey" type="button">Sign in with a passkey</button>
+  <button id="add" type="button" disabled>Add a test passkey</button>
+  <button id="logout" type="button" disabled>Sign out</button>
+  <h2>Registered passkeys</h2>
+  <ul id="passkeys"></ul>
+  <p>Adding or removing a passkey requires a login from the last five minutes.</p>
+  <h2>Session measurements</h2>
+  <p>Run after signing in. These numbers show database operations and elapsed time, not CPU time.</p>
+  <button id="measure" type="button" disabled>Measure session requests</button>
+  <pre id="results"></pre>
+</main>
+<script type="module" src="/client.js"></script>
+</html>
