@@ -4,6 +4,17 @@ import { describe, it, expect } from 'vitest';
 import { selectExportTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
 describe('staging export boundary', () => {
+  it('classifies the deployed schema including transient calculation jobs without exporting jobs', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(schema);
+      db.exec(readFileSync('db/migrations/2026-03-25_calculation_jobs.sql', 'utf8'));
+      const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name);
+      expect(names).toContain('calculation_jobs');
+      expect(selectExportTables(names)).not.toContain('calculation_jobs');
+      expect(selectExportTables(names)).toContain('users');
+    } finally { db.close(); }
+  });
   it('excludes explicitly classified auth tables and rejects unknown tables', () => {
     expect(selectExportTables(['users', 'auth_user', 'auth_session', 'auth_passkey', 'auth_identity_map'])).toEqual(['users']);
     expect(() => selectExportTables(['users', 'future_credentials'])).toThrow(/Unclassified/);

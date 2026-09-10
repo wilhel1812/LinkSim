@@ -13,6 +13,7 @@ export const applicationTables = [
 ];
 export const excludedTables = [
   '_cf_KV', 'd1_migrations', 'sqlite_sequence',
+  'calculation_jobs', // Transient inputs/results stay in their original environment.
   'auth_user', 'auth_account', 'auth_session', 'auth_verification', 'auth_passkey',
   'auth_rate_limit', 'auth_identity_map', 'auth_migration_attempt',
 ];
