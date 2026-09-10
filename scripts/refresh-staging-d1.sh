@@ -1,82 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+umask 077
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXPORT_DIR="${ROOT_DIR}/.tmp/staging-refresh"
-PROD_DB_NAME="${PROD_DB_NAME:-linksim}"
-STAGING_DB_NAME="${STAGING_DB_NAME:-linksim_staging}"
-ANONYMIZE_STAGING="${ANONYMIZE_STAGING:-1}"
-
-mkdir -p "${EXPORT_DIR}"
-STAMP="$(date +"%Y%m%d-%H%M%S")"
-DUMP_FILE="${EXPORT_DIR}/d1-prod-${STAMP}.sql"
-
 cd "${ROOT_DIR}"
-
-echo "[staging-refresh:d1] Exporting prod DB '${PROD_DB_NAME}' to ${DUMP_FILE}"
-npx wrangler d1 export "${PROD_DB_NAME}" --remote --output "${DUMP_FILE}"
-
-echo "[staging-refresh:d1] Importing dump into staging DB '${STAGING_DB_NAME}'"
-npx wrangler d1 execute "${STAGING_DB_NAME}" --remote --file "${DUMP_FILE}" --yes
-
-if [[ "${ANONYMIZE_STAGING}" == "1" ]]; then
-  ANON_SQL="${EXPORT_DIR}/staging-anonymize-${STAMP}.sql"
-  cat > "${ANON_SQL}" <<'SQL'
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS user_identity_audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_type TEXT NOT NULL,
-  target_user_id TEXT NOT NULL,
-  source_user_id TEXT,
-  actor_user_id TEXT,
-  idp_email TEXT,
-  details_json TEXT,
-  created_at TEXT NOT NULL
-);
-
-UPDATE users
-SET
-  username = COALESCE(NULLIF(TRIM(username), ''), 'user') || '-staging',
-  email = CASE
-    WHEN email IS NULL OR TRIM(email) = '' THEN email
-    ELSE 'staging+' || substr(id, 1, 8) || '@example.invalid'
-  END,
-  bio = '',
-  access_request_note = '',
-  idp_email = CASE
-    WHEN idp_email IS NULL OR TRIM(idp_email) = '' THEN idp_email
-    ELSE 'staging+' || substr(id, 1, 8) || '@example.invalid'
-  END,
-  avatar_url = NULL,
-  avatar_object_key = NULL,
-  avatar_thumb_key = NULL,
-  avatar_hash = NULL,
-  avatar_bytes = NULL,
-  avatar_content_type = NULL,
-  updated_at = datetime('now');
-
-UPDATE user_identity_audit
-SET
-  idp_email = CASE
-    WHEN idp_email IS NULL OR TRIM(idp_email) = '' THEN idp_email
-    ELSE 'staging+audit@example.invalid'
-  END,
-  details_json = NULL;
-SQL
-  echo "[staging-refresh:d1] Applying staging anonymization (ANONYMIZE_STAGING=1)"
-  npx wrangler d1 execute "${STAGING_DB_NAME}" --remote --file "${ANON_SQL}" --yes
-  if grep -Eq 'CREATE TABLE.*verified_identity_claims' "${DUMP_FILE}" \
-    && grep -Eq 'CREATE TABLE.*identity_subject_states' "${DUMP_FILE}"; then
-    echo "[staging-refresh:d1] Anonymizing migrated identity lifecycle rows"
-    npx wrangler d1 execute "${STAGING_DB_NAME}" --remote \
-      --file "${ROOT_DIR}/db/staging-anonymize-identity.sql" --yes
-  else
-    echo "[staging-refresh:d1] Identity lifecycle tables absent; skipping lifecycle anonymization"
-  fi
-else
-  echo "[staging-refresh:d1] Anonymization skipped (ANONYMIZE_STAGING=${ANONYMIZE_STAGING})"
-fi
-
-echo "[staging-refresh:d1] Complete"
-echo "[staging-refresh:d1] Snapshot: ${DUMP_FILE}"
+# Fixed targets prevent environment overrides from turning a refresh into a production import.
+[[ "${PROD_DB_NAME:-linksim}" == "linksim" && "${STAGING_DB_NAME:-linksim_staging}" == "linksim_staging" ]] || { echo 'Unexpected refresh targets' >&2; exit 1; }
+[[ "${ANONYMIZE_STAGING:-1}" == "1" ]] || { echo 'Unsanitized staging imports are disabled' >&2; exit 1; }
+REFRESH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/linksim-staging-export.XXXXXX")"
+trap 'rm -rf -- "${REFRESH_DIR}"' EXIT
+INVENTORY_SQL="SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+npx wrangler d1 execute linksim --config wrangler.toml --remote --command "${INVENTORY_SQL}" --json > "${REFRESH_DIR}/source.json"
+npx wrangler d1 execute linksim_staging --config wrangler.staging.toml --remote --command "${INVENTORY_SQL}" --json > "${REFRESH_DIR}/target.json"
+node scripts/staging-export.mjs tables "${REFRESH_DIR}/source.json" > "${REFRESH_DIR}/tables.txt"
+node scripts/staging-export.mjs tables "${REFRESH_DIR}/target.json" target > /dev/null
+TABLE_ARGS=()
+while IFS= read -r table; do TABLE_ARGS+=(--table "${table}"); done < "${REFRESH_DIR}/tables.txt"
+# Auth tables are never included in this export, even in the private temporary directory.
+npx wrangler d1 export linksim --config wrangler.toml --remote "${TABLE_ARGS[@]}" --output "${REFRESH_DIR}/application.sql"
+node scripts/staging-export.mjs sanitize "${REFRESH_DIR}/application.sql" "${REFRESH_DIR}/sanitized.sql"
+npx wrangler d1 execute linksim_staging --config wrangler.staging.toml --remote --file "${REFRESH_DIR}/sanitized.sql" --yes
+echo '[staging-refresh:d1] Sanitized application refresh complete; temporary files removed on exit.'

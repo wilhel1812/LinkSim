@@ -25,7 +25,7 @@ export type NotificationFeed = {
   items: NotificationItem[];
 };
 
-export const fetchNotifications = async (): Promise<NotificationFeed> => {
+const requestNotifications = async (): Promise<NotificationFeed> => {
   const response = await fetch("/api/notifications", {
     method: "GET",
     headers: { "content-type": "application/json" },
@@ -39,4 +39,18 @@ export const fetchNotifications = async (): Promise<NotificationFeed> => {
     unreadCount: Number.isFinite(json.unreadCount) ? Number(json.unreadCount) : 0,
     items: Array.isArray(json.items) ? json.items : [],
   };
+};
+
+// Share only in-flight requests, keyed by authenticated application identity.
+// There is deliberately no response cache across sessions or role changes.
+const pending = new Map<string, Promise<NotificationFeed>>();
+export const fetchNotifications = (userId?: string): Promise<NotificationFeed> => {
+  if (!userId) return requestNotifications();
+  const existing = pending.get(userId);
+  if (existing) return existing;
+  const request = requestNotifications().finally(() => {
+    if (pending.get(userId) === request) pending.delete(userId);
+  });
+  pending.set(userId, request);
+  return request;
 };

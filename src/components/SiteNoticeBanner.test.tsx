@@ -116,3 +116,20 @@ describe("SiteNoticeBanner", () => {
     expect(screen.queryByText("Old notice")).not.toBeInTheDocument();
   });
 });
+
+ it("only refreshes on load and explicit notice updates, not focus or time", async () => {
+  vi.useFakeTimers();
+  try {
+    fetchPublicSiteNoticeMock.mockResolvedValue(null);
+    const view = render(<SiteNoticeBanner />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event("focus")); await vi.advanceTimersByTimeAsync(600_000); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event(SITE_NOTICE_UPDATED_EVENT)); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2);
+    view.unmount();
+    window.dispatchEvent(new Event(SITE_NOTICE_UPDATED_EVENT));
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
+});

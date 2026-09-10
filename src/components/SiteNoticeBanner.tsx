@@ -8,7 +8,6 @@ import {
   type PublicSiteNotice,
 } from "../lib/siteNotice";
 
-const REFRESH_INTERVAL_MS = 60_000;
 
 const isDismissed = (notice: PublicSiteNotice): boolean => {
   if (!notice.dismissible) return false;
@@ -78,14 +77,10 @@ export function SiteNoticeBanner() {
   useEffect(() => {
     const refresh = () => void load();
     const initial = window.setTimeout(refresh, 0);
-    const timer = window.setInterval(refresh, REFRESH_INTERVAL_MS);
     window.addEventListener(SITE_NOTICE_UPDATED_EVENT, refresh);
-    window.addEventListener("focus", refresh);
     return () => {
       window.clearTimeout(initial);
-      window.clearInterval(timer);
       window.removeEventListener(SITE_NOTICE_UPDATED_EVENT, refresh);
-      window.removeEventListener("focus", refresh);
     };
   }, [load]);
 
