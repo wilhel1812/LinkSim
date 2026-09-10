@@ -106,9 +106,28 @@ test('Durable Object actions retain guarded targets and cannot execute schema re
         assert.equal(args.includes('d1'),false);
         assert.equal(snapshot.workers_dev,action.endsWith('gateway'));
         assert.equal(args.includes('--dry-run'),action.startsWith('bundle-'));
-        return {status:0};
+        return {status:0,stdout:'[]'};
       }});
     }
     assert.throws(()=>runSetup('schema-runtime',{configPath:path}));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('gateway replacement removes retained secrets using only the validated public probe target', () => {
+  const directory=mkdtempSync(join(tmpdir(),'gateway-secrets-test-'));
+  const value=config(); value.main='live-worker.mjs'; value.vars={...value.vars,
+    PROBE_ENABLED:'github-passkey-validation',PROBE_GITHUB_ID:'88513',
+    PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString()};
+  const path=join(directory,'config.json');writeFileSync(path,JSON.stringify(value));
+  const calls=[];
+  try {
+    runSetup('deploy-gateway',{configPath:path,run(_command,args) {
+      calls.push(args.slice(1,args.indexOf('--config')));
+      assert.equal(JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8')).name,value.name);
+      return {status:0,stdout:args.includes('list')&&calls.length===1?JSON.stringify([{name:'BETTER_AUTH_SECRET',type:'secret_text'},{name:'GITHUB_CLIENT_SECRET',type:'secret_text'}]):'[]'};
+    }});
+    assert.deepEqual(calls,[['secret','list','--format','json'],['deploy'],
+      ['secret','delete','BETTER_AUTH_SECRET'],['secret','delete','GITHUB_CLIENT_SECRET'],
+      ['secret','list','--format','json']]);
   } finally {rmSync(directory,{recursive:true,force:true});}
 });
