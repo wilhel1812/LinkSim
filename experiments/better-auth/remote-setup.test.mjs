@@ -70,7 +70,7 @@ test('every remote setup action rejects protected IDs before invoking Wrangler',
   try {
     for (const id of protectedDatabaseIds()) {
       writeFileSync(configPath, JSON.stringify(config(id)));
-      for (const action of ['schema', 'deploy', 'secrets']) {
+      for (const action of ['schema', 'deploy', 'secrets', 'indexes-runtime']) {
         let invoked = false;
         assert.throws(() => runSetup(action, { configPath, run: () => { invoked = true; } }), /protected D1/);
         assert.equal(invoked, false);
@@ -99,11 +99,12 @@ test('Durable Object actions retain guarded targets and cannot execute schema re
     PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString()};
   const path=join(directory,'config.json');writeFileSync(path,JSON.stringify(value));
   try {
-    for(const action of ['deploy-runtime','secrets-runtime','bundle-runtime','deploy-gateway','bundle-gateway']) {
+    for(const action of ['indexes-runtime','deploy-runtime','secrets-runtime','bundle-runtime','deploy-gateway','bundle-gateway']) {
       runSetup(action,{configPath:path,run(_command,args) {
         const snapshot=JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8'));
         assert.equal(snapshot.name,action.endsWith('runtime')?`${value.name}-runtime`:value.name);
-        assert.equal(args.includes('d1'),false);
+        assert.equal(args.includes('d1'),action==='indexes-runtime');
+        if(action==='indexes-runtime') assert.equal(args[args.indexOf('--file')+1].endsWith('/indexes.sql'),true);
         assert.equal(snapshot.workers_dev,action.endsWith('gateway'));
         assert.equal(args.includes('--dry-run'),action.startsWith('bundle-'));
         return {status:0,stdout:'[]'};

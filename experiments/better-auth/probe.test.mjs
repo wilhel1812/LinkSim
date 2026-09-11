@@ -88,3 +88,15 @@ test('OAuth initiation requires Turnstile and cross-origin mutation is rejected'
     assert.match(callback.headers.get('location') ?? '', /state|error/);
   } finally { db.close(); }
 });
+
+test('provider lookup index avoids scans without imposing new identity constraints', () => {
+  const db=new DatabaseSync(':memory:');
+  try {
+    db.exec(readFileSync('schema.sql','utf8'));
+    const indexes=readFileSync('indexes.sql','utf8');
+    db.exec(indexes);db.exec(indexes);
+    const plan=db.prepare('EXPLAIN QUERY PLAN SELECT * FROM probe_account WHERE providerId = ? AND accountId = ? LIMIT 2').all('github','88513');
+    assert.ok(plan.some(row=>row.detail.includes('probe_account_provider_subject_idx')));
+    assert.equal(db.prepare("PRAGMA index_list('probe_account')").all().find(row=>row.name==='probe_account_provider_subject_idx').unique,0);
+  } finally {db.close();}
+});

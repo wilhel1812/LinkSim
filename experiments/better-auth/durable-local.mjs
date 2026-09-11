@@ -17,23 +17,34 @@ const mf=new Miniflare(convertV4MiniflareOptions({workers:[
     durableObjects:{AUTH:{className:'AuthProbe',scriptName:'runtime',useSQLite:true}}},
   {...common,name:'runtime',scriptPath:'.wrangler/durable-runtime/durable-runtime.js',d1Databases:['DB'],
     durableObjects:{AUTH:{className:'AuthProbe',useSQLite:true}},
-    outboundService:request=>new URL(request.url).hostname==='challenges.cloudflare.com'
-      ? Response.json({success:true}) : new Response(null,{status:403})},
+    outboundService:request=> {
+      const url=new URL(request.url);
+      if(url.hostname==='challenges.cloudflare.com') return Response.json({success:true});
+      if(url.hostname==='github.com' && url.pathname==='/login/oauth/access_token')
+        return Response.json({access_token:'local-only-token',token_type:'bearer',scope:'read:user,user:email'});
+      if(url.hostname==='api.github.com' && url.pathname==='/user')
+        return Response.json({id:88513,login:'local-tester',name:'Local tester',email:'local-999@example.invalid'});
+      if(url.hostname==='api.github.com' && url.pathname==='/user/emails')
+        return Response.json([{email:'local-999@example.invalid',primary:true,verified:true}]);
+      return new Response(null,{status:403});
+    }},
 ]}));
 const local=new DatabaseSync(':memory:');
 try {
   const options=liveOptions({...vars,DB:local});
   await (await getMigrations(options)).runMigrations();
   const auth=betterAuth({...options,plugins:[...options.plugins,testUtils()]});
-  const {test}=await auth.$context;
+  const {test,internalAdapter}=await auth.$context;
   const credentials=[];
   for(let i=0;i<1000;i++) {
     const user=await test.saveUser(test.createUser({email:`local-${i}@example.invalid`,emailVerified:i%2===0}));
+    await internalAdapter.createAccount({userId:user.id,providerId:'github',accountId:i===999?'88513':String(1000000+i)});
     if(i<50) credentials.push({user,headers:(await test.login({userId:user.id})).headers});
   }
   const db=await mf.getD1Database('DB','runtime');
   for(const sql of readFileSync('schema.sql','utf8').split(';').filter(s=>s.trim())) await db.prepare(sql).run();
-  for(const table of ['probe_user','probe_session']) {
+  await db.prepare(readFileSync('indexes.sql','utf8')).run();
+  for(const table of ['probe_user','probe_account','probe_session']) {
     const rows=local.prepare(`SELECT * FROM ${table}`).all();
     for(let i=0;i<rows.length;i+=50) await db.batch(rows.slice(i,i+50).map(row=> {
       const keys=Object.keys(row);
@@ -50,13 +61,42 @@ try {
   const cold=await check(0);
   const burst=await Promise.all(credentials.map((_,i)=>check(i)));
   assert.ok(burst.every(m=>m.queries===1&&m.rowsWritten===0&&!m.initialized));
+  // Age only synthetic local sessions to exercise the library's daily renewal.
+  const oldExpiry = Date.now() + 5 * 86400000;
+  await db.prepare('UPDATE probe_session SET expiresAt = ? WHERE userId = ?').bind(oldExpiry,credentials[1].user.id).run();
+  const renewed = await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[1].headers});
+  assert.equal(renewed.status,200);
+  assert.ok(renewed.headers.get('set-cookie'),'library renewal cookie survives the private binding and gateway');
+  await renewed.arrayBuffer();
+  const refresh = JSON.parse(renewed.headers.get('x-probe-d1'));
+  assert.ok(refresh.rowsWritten > 0,'due renewal must persist');
+  const after = await db.prepare('SELECT expiresAt FROM probe_session WHERE userId = ?').bind(credentials[1].user.id).first();
+  assert.ok(new Date(after.expiresAt).getTime() > oldExpiry);
+  assert.equal((await check(1)).rowsWritten,0,'the next check does not renew again');
+  // Real local object eviction, not just recreating Better Auth inside a warm object.
+  await mf.unsafeEvictDurableObject('runtime','AuthProbe',{name:'auth'});
+  const afterEviction = await Promise.all(credentials.map((_,i)=>check(i)));
+  assert.ok(afterEviction.some(m=>m.initialized),'eviction really discarded the auth instance');
+  await db.prepare('UPDATE probe_session SET expiresAt = ? WHERE userId = ?').bind(Date.now()-1000,credentials[2].user.id).run();
+  assert.equal((await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[2].headers})).status,401);
   const initiations=await Promise.all(Array.from({length:20},(_,i)=>mf.dispatchFetch(origin+'/api/auth/sign-in/social',{
     method:'POST',headers:{origin,'content-type':'application/json','x-captcha-response':'local-only',
       'cf-connecting-ip':`192.0.2.${i+1}`},body:JSON.stringify({provider:'github',callbackURL:origin}),
   })));
   assert.ok(initiations.every(r=>r.status===200),'all synthetic initiations succeed without provider authorization');
-  await Promise.all(initiations.map(r=>r.arrayBuffer()));
+  const initiation=initiations[19];
+  const state=new URL((await initiation.json()).url).searchParams.get('state');
+  const cookie=initiation.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+  const callback=await mf.dispatchFetch(origin+'/api/auth/callback/github?code=local-only&state='+encodeURIComponent(state),
+    {redirect:'manual',headers:{cookie,'cf-connecting-ip':'192.0.2.20'}});
+  assert.equal(callback.status,302);
+  assert.equal(callback.headers.get('location'),origin);
+  const oauthCallback=JSON.parse(callback.headers.get('x-probe-d1'));
+  assert.ok(oauthCallback.rowsRead < 100,'returning login must not scan 1,000 provider accounts');
+  assert.ok(callback.headers.get('set-cookie'));
+  await callback.arrayBuffer();
+  await Promise.all(initiations.slice(0,19).map(r=>r.arrayBuffer()));
   await db.prepare('DELETE FROM probe_session WHERE userId = ?').bind(credentials[0].user.id).run();
   assert.equal((await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[0].headers})).status,401);
-  console.log(JSON.stringify({localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],revocation:'passed'}));
+  console.log(JSON.stringify({localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
 } finally {local.close();await mf.dispose();}

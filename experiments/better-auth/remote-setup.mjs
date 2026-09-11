@@ -10,7 +10,7 @@ import { buildBrowser } from './build-browser.mjs';
 const directory = fileURLToPath(new URL('.', import.meta.url));
 
 export function runSetup(action, { configPath, run = spawnSync } = {}) {
-  assert.ok(['schema', 'deploy', 'secrets', 'deploy-runtime', 'deploy-gateway', 'secrets-runtime', 'bundle-runtime', 'bundle-gateway'].includes(action), 'expected schema, deploy or secrets');
+  assert.ok(['indexes-runtime', 'schema', 'deploy', 'secrets', 'deploy-runtime', 'deploy-gateway', 'secrets-runtime', 'bundle-runtime', 'bundle-gateway'].includes(action), 'expected schema, deploy or secrets');
   const base = readProbeConfig(configPath);
   const kind = action.split('-')[1];
   const config = kind ? durableConfigs(base)[kind] : base;
@@ -23,6 +23,7 @@ export function runSetup(action, { configPath, run = spawnSync } = {}) {
     const snapshot = join(temporary, 'wrangler.json');
     writeFileSync(snapshot, JSON.stringify({ ...config, main: join(directory, config.main) }), { mode: 0o600 });
     const commands = {
+      'indexes-runtime': ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'indexes.sql')],
       schema: ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'schema.sql')],
       deploy: ['deploy'],
       secrets: ['secret', 'bulk', join(directory, '.probe-secrets.json')],
@@ -54,6 +55,6 @@ export function runSetup(action, { configPath, run = spawnSync } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  assert.equal(process.argv.length, 3, 'usage: node remote-setup.mjs <schema|deploy|secrets|deploy-runtime|deploy-gateway|secrets-runtime|bundle-runtime|bundle-gateway>');
+  assert.equal(process.argv.length, 3, 'usage: node remote-setup.mjs <indexes-runtime|schema|deploy|secrets|deploy-runtime|deploy-gateway|secrets-runtime|bundle-runtime|bundle-gateway>');
   runSetup(process.argv[2]);
 }

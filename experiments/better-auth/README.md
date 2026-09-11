@@ -329,3 +329,18 @@ staging and abuse overhead before application integration. The published
 [DO allowances](https://developers.cloudflare.com/durable-objects/platform/pricing/)
 are 100,000 requests/day and 13,000 GB-s/day; the approved normal-use gate is below
 50% of both, as well as the relevant Pages/Workers and D1 allowances.
+
+### Refresh, eviction and provider-account capacity follow-up
+
+The local harness now seeds 1,000 provider accounts as well as users, renews an
+aged session, verifies the returned cookie and database expiry, evicts the actual
+local object before a second 50-request burst, and checks expired sessions.
+A supplemental provider-subject lookup index prevents full account-table scans.
+Apply `node remote-setup.mjs indexes-runtime` before runtime deployment; this
+idempotent action only adds the reviewed index and does not reset auth data.
+
+The internal RPC completes its session body before returning plain response
+fields, preserving separate library cookies. See
+[evidence/2026-09-11-capacity.md](evidence/2026-09-11-capacity.md) for measured
+costs, the conditional quota projection and remaining gates. The current-activity
+request reduction and D1 write headroom still require validation.
