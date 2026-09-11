@@ -6,6 +6,8 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+assert.ok(process.argv.slice(2).every(arg => arg === '--history'), 'only --history is supported');
+const historyPerResource = process.argv.includes('--history') ? 10 : 0;
 const bundle = await build({
   absWorkingDir: root, bundle: true, write: false, platform: 'node', format: 'esm',
   stdin: { resolveDir: root, contents: `
@@ -133,6 +135,13 @@ try {
       INSERT INTO ${table} (id, owner_user_id, name, payload_json, updated_at)
       SELECT 'background-${table}-'||n, 'synthetic-'||(1+CAST(n/? AS INTEGER)),
         'Synthetic background', '{}', ? FROM ids`).bind(999 * count - 1, count, date).run();
+    if (historyPerResource) {
+      await raw.prepare(`WITH RECURSIVE entries(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM entries WHERE n < ?)
+        INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at, details_json, snapshot_json)
+        SELECT ?, resource.id, 'updated', resource.owner_user_id, ?, '{}',
+          json_object('ownerUserId', resource.owner_user_id, 'visibility', 'private', 'sharedWith', json('[]'))
+        FROM ${table} resource CROSS JOIN entries`).bind(historyPerResource, table === 'sites' ? 'site' : 'simulation', date).run();
+    }
   }
   await app.client.pushCloudLibrary(fixture(10, 2));
   await measure('warm legacy identity ensure only (already included in handlers)',
@@ -168,8 +177,9 @@ try {
   console.log(JSON.stringify({
     source: 'local Miniflare D1 metadata; real handlers and client helpers',
     users: 1000, backgroundPrivateSites: 9990, backgroundPrivateSimulations: 1998,
+    backgroundHistoryEntries: historyPerResource * (9990 + 1998),
     identity: 'existing explicit development auth; no OAuth or session costs included',
-    limitations: 'Not remote billing, CPU, production distribution, or a concurrency test. Background has no sharing/tombstone history. Cold setup excluded from steady-state model.',
+    limitations: 'Not remote billing, CPU, production distribution, or a concurrency test. Background has no sharing/tombstone history; --history adds old private edits. Cold setup excluded from steady-state model.',
     results,
   }, null, 2));
 } finally {

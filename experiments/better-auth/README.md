@@ -181,8 +181,11 @@ For subsequent application-side capacity evidence, run
 `node experiments/better-auth/application-d1-cost.mjs` from the repository root.
 This local-only harness uses real application handlers/client helpers and
 synthetic Miniflare D1 data. See the
-[September 11 application measurements](evidence/2026-09-11-application-d1-cost.md):
-the current library queries fail the synthetic 1,000-account database gate.
+[September 11 baseline measurements](evidence/2026-09-11-application-d1-cost.md)
+and [query optimization results](evidence/2026-09-11-query-optimization.md).
+Use `--history` to include old private edit history. Sparse loads and empty
+deltas improve substantially; history-heavy full loads remain costly. The target
+is 1,000 registered users at representative activity, not 1,000 daily active users.
 This is separate from the auth-only measurements below and authorizes no cutover.
 
 Versions: Better Auth/passkey 1.7.3, Wrangler 4.121.0. Nested `npm audit`: no known

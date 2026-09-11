@@ -106,6 +106,7 @@ export class SqliteD1 {
         simulation_updated_at TEXT, created_at TEXT, updated_at TEXT, PRIMARY KEY (simulation_id, canonical_path_key)
       );
       CREATE INDEX idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC);
+      CREATE INDEX idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id);
       CREATE INDEX idx_sites_owner ON sites(owner_user_id);
       CREATE INDEX idx_simulations_owner ON simulations(owner_user_id);
       CREATE INDEX idx_sites_visibility ON sites(visibility);
@@ -137,4 +138,3 @@ export class SqliteD1 {
     return statements.map(() => ({ success: true }));
   }
 }
-

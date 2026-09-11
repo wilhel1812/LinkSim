@@ -314,8 +314,8 @@ class FakeDb {
 
   all(sql: string, bound: unknown[] = []): AnyRow[] {
     if (sql.includes("SELECT live.id") && sql.includes("current_role")) {
-      const userId = String(bound[0] ?? "");
-      const kind = String(bound[2] ?? "") as "site" | "simulation";
+      const userId = String(bound[1] ?? "");
+      const kind = String(bound[0] ?? "") as "site" | "simulation";
       const rows = kind === "site" ? this.sites : this.simulations;
       const roles = kind === "site" ? this.siteRoles : this.simulationRoles;
       return [...rows.values()]
@@ -454,9 +454,9 @@ class FakeDb {
         })
         .map((change) => ({ id: change.resource_id }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM simulations s")) {
+    if (sql.includes("SELECT s.payload_json") && /\b(?:FROM|JOIN) simulations s/.test(sql)) {
       const userId = String(bound[2] ?? "");
-      const isAdmin = Number(bound[1] ?? 0) === 1;
+      const isAdmin = !sql.includes("visible_resources");
       return [...this.simulations.values()]
         .filter((row) => (isAdmin || row.status === "active") && (isAdmin || row.owner_user_id === userId || row.visibility !== "private"))
         .map((row) => ({
@@ -481,9 +481,9 @@ class FakeDb {
           last_actor_avatar_thumb_key: row.last_actor_avatar_thumb_key ?? null,
         }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) {
+    if (sql.includes("SELECT s.payload_json") && /\b(?:FROM|JOIN) sites s/.test(sql)) {
       const userId = String(bound[2] ?? "");
-      const isAdmin = Number(bound[1] ?? 0) === 1;
+      const isAdmin = !sql.includes("visible_resources");
       return [...this.sites.values()]
         .filter((row) => isAdmin || row.owner_user_id === userId || row.visibility !== "private")
         .map((row) => ({

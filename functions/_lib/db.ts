@@ -2563,9 +2563,30 @@ export const fetchLibraryForUser = async (
     ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
   ];
   const pageSql = (timestampColumn: string, idColumn: string) => `${opts?.since ? `\n          AND ${timestampColumn} >= ?` : ""}${opts?.cutoff ? `\n          AND ${timestampColumn} <= ?` : ""}${paged ? `\n          AND ${idColumn} > ?\n       ORDER BY ${idColumn}\n       LIMIT ?` : ""}`;
+  // Build a deduplicated candidate set through owner/visibility/grant indexes.
+  // Keep administrators separate: a parameterized OR otherwise walks all IDs.
+  const visibleIds = (kind: "site" | "simulation") => {
+    if (canReadAllResources) return "";
+    const table = kind === "site" ? "sites" : "simulations";
+    const roles = kind === "site" ? "site_roles" : "simulation_roles";
+    return `WITH visible_resources AS MATERIALIZED (
+      SELECT id FROM ${table} WHERE owner_user_id = ?
+      UNION SELECT id FROM ${table} WHERE visibility IN ('public_read', 'public_write')
+      UNION SELECT granted.id FROM ${roles} grant_role
+        JOIN ${table} granted ON granted.id = grant_role.${kind}_id
+        WHERE grant_role.user_id = ? AND granted.visibility != 'private'
+    )`;
+  };
+  const visibleBinds = () => canReadAllResources ? [] : [userId, userId];
+  // Fix the small candidate set as the outer loop; otherwise the active-status
+  // index can make SQLite walk every active Simulation before testing the IDs.
+  const visibleFrom = (table: "sites" | "simulations") => canReadAllResources
+    ? `FROM ${table} s`
+    : `FROM visible_resources visible CROSS JOIN ${table} s ON s.id = visible.id`;
   const siteRows = paged && opts?.phase !== "sites" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
+      `${visibleIds("site")}
+       SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
@@ -2588,15 +2609,12 @@ export const fetchLibraryForUser = async (
               s.created_at,
               s.updated_at,
               s.last_edited_at
-       FROM sites s
+       ${visibleFrom("sites")}
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE (? = 1
-          OR s.owner_user_id = ?
-          OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${pageSql("s.updated_at", "s.id")}`,
+       WHERE 1 = 1${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, ...pageBind())
+    .bind(...visibleBinds(), userId, ...pageBind())
     .all<LibraryRow>();
 
   const deletedSiteAudienceClause = canReadAllResources
@@ -2626,7 +2644,7 @@ export const fetchLibraryForUser = async (
   const deletedSiteRows = paged && opts?.phase !== "deleted_sites" ? { results: [] as Array<{ id: string }> } : await env.DB
         .prepare(
           `SELECT tombstone.resource_id AS id
-           FROM resource_changes tombstone
+           FROM resource_changes tombstone${opts?.since || opts?.cutoff ? " INDEXED BY idx_resource_changes_window" : ""}
            WHERE tombstone.resource_kind = 'site'
              AND tombstone.note = 'Deleted Site'
              AND tombstone.id = (
@@ -2679,58 +2697,64 @@ export const fetchLibraryForUser = async (
     const statusClause = kind === "simulation" ? " AND live.status = 'active'" : "";
     const changeWindow = `${opts?.since ? " AND changed.changed_at >= ?" : ""}${opts?.cutoff ? " AND changed.changed_at <= ?" : ""}`;
     const pagination = paged ? " AND live.id > ? ORDER BY live.id LIMIT ?" : "";
+    const windowBind = () => [
+      ...(opts?.since ? [opts.since] : []),
+      ...(opts?.cutoff ? [opts.cutoff] : []),
+    ];
+    // GROUP BY resource_id can favor the old per-resource index and scan all
+    // historical changes. Bounded sync windows require the deployed time index.
     return env.DB
       .prepare(
-        `SELECT live.id
-         FROM ${table} live
+        `WITH candidate_changes AS MATERIALIZED (
+           SELECT changed.resource_id, MAX(changed.id) AS latest_id
+           FROM resource_changes changed${opts?.since || opts?.cutoff ? " INDEXED BY idx_resource_changes_window" : ""}
+           WHERE changed.resource_kind = ?${changeWindow}${paged ? " AND changed.resource_id > ?" : ""}
+           GROUP BY changed.resource_id
+         )
+         SELECT live.id
+         FROM candidate_changes candidate
+         CROSS JOIN ${table} live ON live.id = candidate.resource_id
          LEFT JOIN ${rolesTable} current_role ON current_role.${roleId} = live.id AND current_role.user_id = ?
          WHERE live.owner_user_id != ?
            AND live.visibility = 'private'
            AND current_role.user_id IS NULL${statusClause}
-           AND EXISTS (
-             WITH eligible_changes AS MATERIALIZED (
-               SELECT changed.id, changed.details_json
-               FROM resource_changes changed
-               WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
-             ), latest_change AS (
-               SELECT MAX(id) AS id FROM eligible_changes
+           AND (
+             EXISTS (
+               SELECT 1 FROM resource_changes history
+               WHERE history.resource_kind = '${kind}'
+                 AND history.resource_id = live.id
+                 AND history.id < candidate.latest_id
+                 AND (
+                   json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                   OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                   OR EXISTS (
+                     SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+                     WHERE json_extract(grant_entry.value, '$.userId') = ?
+                   )
+                 )
              )
-             SELECT 1 FROM latest_change
-             WHERE latest_change.id IS NOT NULL
-               AND (
-                 EXISTS (
-                   SELECT 1 FROM resource_changes history
-                   WHERE history.resource_kind = '${kind}'
-                     AND history.resource_id = live.id
-                     AND history.id < latest_change.id
-                     AND (
-                       json_extract(history.snapshot_json, '$.ownerUserId') = ?
-                       OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
-                       OR EXISTS (
-                         SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
-                         WHERE json_extract(grant_entry.value, '$.userId') = ?
-                       )
-                     )
+             OR EXISTS (
+               SELECT 1 FROM resource_changes changed
+               WHERE changed.resource_kind = '${kind}' AND changed.resource_id = live.id${changeWindow}
+                 AND (
+                   json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
+                   OR EXISTS (
+                     SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
+                     WHERE json_extract(previous_grant.value, '$.userId') = ?
+                   )
                  )
-                 OR EXISTS (
-                   SELECT 1 FROM eligible_changes changed
-                   WHERE json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
-                     OR EXISTS (
-                       SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
-                       WHERE json_extract(previous_grant.value, '$.userId') = ?
-                     )
-                 )
-               )
+             )
            )${pagination}`,
       )
       .bind(
-        userId,
-        userId,
         kind,
-        ...(opts?.since ? [opts.since] : []),
-        ...(opts?.cutoff ? [opts.cutoff] : []),
+        ...windowBind(),
+        ...(paged ? [opts?.afterId ?? ""] : []),
         userId,
         userId,
+        userId,
+        userId,
+        ...windowBind(),
         userId,
         ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
       )
@@ -2741,7 +2765,8 @@ export const fetchLibraryForUser = async (
 
   const simulationRows = paged && opts?.phase !== "simulations" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
+      `${visibleIds("simulation")}
+       SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
@@ -2764,16 +2789,12 @@ export const fetchLibraryForUser = async (
               s.created_at,
               s.updated_at,
               s.last_edited_at
-       FROM simulations s
+       ${visibleFrom("simulations")}
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ((? = 1
-          OR s.owner_user_id = ?
-          OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))
-         AND (? = 1 OR s.status = 'active'))${pageSql("s.updated_at", "s.id")}`,
+       WHERE 1 = 1${canReadAllResources ? "" : " AND s.status = 'active'"}${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, canReadAllResources ? 1 : 0, ...pageBind())
+    .bind(...visibleBinds(), userId, ...pageBind())
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>

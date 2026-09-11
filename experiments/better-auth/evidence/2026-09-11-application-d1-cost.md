@@ -1,7 +1,12 @@
 # Application D1 workload measurements
 
-Status: **capacity gate fails for this synthetic workload**. Keep the 1,000
-registered-user target, but do not proceed to application identity migration on
+This is the pre-optimization baseline. See the subsequent
+[query optimization and remaining limits](2026-09-11-query-optimization.md).
+
+Status: **the synthetic stress workload exceeds the database budget**. This is
+not evidence that the 1,000-registered-user target fails. The maintainer clarified
+that 1,000 daily active users was not their requirement. Keep the registered-user
+target at representative activity, but do not proceed to application identity migration on
 the strength of the earlier linear forecast. No production changes or Manual
 Sync behavior changes are part of this batch.
 

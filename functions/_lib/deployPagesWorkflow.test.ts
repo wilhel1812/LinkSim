@@ -19,6 +19,18 @@ const previewJob =
   workflow.split("  deploy-staging-preview:")[1]?.split("  deploy-staging:")[0] ?? "";
 
 describe("Deploy LinkSim Pages workflow", () => {
+  it("applies and probes the library history-window index before shared deployments", () => {
+    const migration = "db/migrations/2026-09-11_library_change_window.sql";
+    expect(previewJob).toContain(migration);
+    for (const [job, deploy] of [[stagingJob, "- name: Deploy staging with guardrails"], [productionJob, "- name: Deploy prod/main with guardrails"]]) {
+      const apply = job.indexOf(`--file ${migration}`);
+      const probe = job.indexOf("INDEXED BY idx_resource_changes_window");
+      expect(apply).toBeGreaterThan(-1);
+      expect(probe).toBeGreaterThan(apply);
+      expect(probe).toBeLessThan(job.indexOf(deploy));
+    }
+    expect(deployScript).toContain("INDEXED BY idx_resource_changes_window");
+  });
   it("deploys previews only for same-repository pull requests targeting staging", () => {
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain("      - staging");
