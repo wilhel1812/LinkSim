@@ -398,3 +398,20 @@ real-Turnstile happy-path confirmation, local negative cases, and the cold-burst
 initialization fix. Healthy in-flight initialization is shared; failed or aborted
 initialization cannot poison subsequent requests. The local eviction test requires
 exactly one initialization and keeps request identity/metrics isolated.
+
+### Virtual passkey negative cases
+
+Run `node durable-local.mjs --passkeys` after the local bundle commands to extend
+that same synthetic workerd/D1 fixture with a Chromium virtual authenticator.
+It uses the root project's existing Playwright dependency. Install its Chromium
+with `npx playwright install chromium` from the repository root, or set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an already installed Chromium executable.
+No browser profile, generated key, cookie, or assertion is written to an artifact.
+All browser requests are intercepted with an empty local test document. Only
+synthetic credentials enter the in-memory fixture; nothing is deployed.
+
+The optional pass checks successful registration/login, registration/assertion
+replay, wrong challenge/origin/RP, invalid signatures, and a removed credential.
+Chromium performs the cryptographic operations. The virtual-key testing API is
+used only to isolate the RP-hash case; no custom authenticator or signing logic
+is implemented. See [passkey and usage evidence](evidence/2026-09-11-passkeys-usage.md).

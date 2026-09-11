@@ -179,5 +179,7 @@ try {
   assert.equal(retry.status,429);
   assert.ok(Number(retry.headers.get('x-retry-after'))>0);
   await retry.arrayBuffer();
-  console.log(JSON.stringify({security:{oauthReplay:'passed',stateMismatch:'passed',unsafeReturn:'passed',csrf:'passed',malformedPasskey:'passed',freshCredentials:'passed',persistentConcurrentLimit:'passed'},localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,cleanup,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
+  const passkeys=process.argv.includes('--passkeys')
+    ? await (await import('./passkey-local.mjs')).verifyLocalPasskeys({mf,db,origin,credential:credentials[6],otherCredential:credentials[7]}) : 'not-run';
+  console.log(JSON.stringify({passkeys,security:{oauthReplay:'passed',stateMismatch:'passed',unsafeReturn:'passed',csrf:'passed',malformedPasskey:'passed',freshCredentials:'passed',persistentConcurrentLimit:'passed'},localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,cleanup,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
 } finally {local.close();await mf.dispose();}
