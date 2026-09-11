@@ -70,7 +70,7 @@ test('every remote setup action rejects protected IDs before invoking Wrangler',
   try {
     for (const id of protectedDatabaseIds()) {
       writeFileSync(configPath, JSON.stringify(config(id)));
-      for (const action of ['schema', 'deploy', 'secrets', 'indexes-runtime']) {
+      for (const action of ['schema', 'deploy', 'secrets', 'indexes-runtime', 'turnstile-secrets-runtime']) {
         let invoked = false;
         assert.throws(() => runSetup(action, { configPath, run: () => { invoked = true; } }), /protected D1/);
         assert.equal(invoked, false);
@@ -131,4 +131,32 @@ test('gateway replacement removes retained secrets using only the validated publ
       ['secret','delete','BETTER_AUTH_SECRET'],['secret','delete','GITHUB_CLIENT_SECRET'],
       ['secret','list','--format','json']]);
   } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('real Turnstile installer isolates its secret to the validated private runtime', () => {
+  const dir=mkdtempSync(join(tmpdir(),'turnstile-setup-test-'));
+  const value=config();value.main='live-worker.mjs';
+  value.vars={...value.vars,PROBE_ENABLED:'github-passkey-validation',PROBE_GITHUB_ID:'88513',
+    PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString(),PROBE_TURNSTILE_MODE:'real',
+    TURNSTILE_SITE_KEY:'0xLOCALPUBLICKEYFORTESTONLY'};
+  const configPath=join(dir,'config.json');const turnstilePath=join(dir,'keys.json');
+  const keys={TURNSTILE_SITE_KEY:value.vars.TURNSTILE_SITE_KEY,TURNSTILE_SECRET_KEY:'0xLOCALSECRETKEYFORTESTONLY'};
+  writeFileSync(configPath,JSON.stringify(value));writeFileSync(turnstilePath,JSON.stringify(keys),{mode:0o600});
+  try {
+    let called=false;
+    runSetup('turnstile-secrets-runtime',{configPath,turnstilePath,run(_command,args){
+      called=true;
+      const snapshot=JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8'));
+      assert.equal(snapshot.name,`${value.name}-runtime`);
+      assert.equal(snapshot.workers_dev,false);
+      assert.equal(JSON.stringify(snapshot).includes(keys.TURNSTILE_SECRET_KEY),false);
+      assert.deepEqual(JSON.parse(readFileSync(args[args.indexOf('bulk')+1],'utf8')),{TURNSTILE_SECRET_KEY:keys.TURNSTILE_SECRET_KEY});
+      return {status:0};
+    }});
+    assert.equal(called,true);
+    writeFileSync(turnstilePath,JSON.stringify({...keys,TURNSTILE_SITE_KEY:'0xDIFFERENTPUBLICKEYFORTEST'}));
+    assert.throws(()=>runSetup('turnstile-secrets-runtime',{configPath,turnstilePath,run(){throw new Error('must not invoke');}}),/site key mismatch/);
+    assert.throws(()=>validateProbeConfig({...value,vars:{...value.vars,TURNSTILE_SECRET_KEY:keys.TURNSTILE_SECRET_KEY}}),/non-secret/);
+    assert.throws(()=>validateProbeConfig({...value,vars:{...value.vars,PROBE_TURNSTILE_MODE:'typo'}}));
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });

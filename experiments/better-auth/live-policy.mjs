@@ -11,7 +11,7 @@ export const routes = new Map([
 
 export const securityHeaders = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
-  'content-security-policy': "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
+  'content-security-policy': "default-src 'none'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
 export function enabled(request, env) {
   return env.PROBE_ENABLED === 'github-passkey-validation' && /^\d+$/.test(env.PROBE_GITHUB_ID ?? '') &&
     Date.parse(env.PROBE_EXPIRES_AT) > Date.now() && new URL(request.url).origin === env.PROBE_ORIGIN;

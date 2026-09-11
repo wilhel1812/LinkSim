@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { unstable_readConfig as readConfig } from 'wrangler';
+import { isRealTurnstileKey } from './turnstile-policy.mjs';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const allowedKeys = new Set(['name', 'main', 'compatibility_date', 'compatibility_flags',
@@ -36,6 +37,11 @@ export function validateProbeConfig(config) {
     assert.match(config.vars.PROBE_GITHUB_ID, /^\d+$/, 'one stable tester ID required');
     const expires = Date.parse(config.vars.PROBE_EXPIRES_AT);
     assert.ok(expires > Date.now() && expires <= Date.now() + 7 * 86400000, 'live probe must expire within seven days');
+    if (config.vars.PROBE_TURNSTILE_MODE !== undefined) {
+      assert.equal(config.vars.PROBE_TURNSTILE_MODE, 'real');
+      assert.ok(isRealTurnstileKey(config.vars.TURNSTILE_SITE_KEY), 'real public Turnstile site key required');
+      variableKeys.push('PROBE_TURNSTILE_MODE', 'TURNSTILE_SITE_KEY');
+    }
   }
   assert.deepEqual(Object.keys(config.vars).sort(), variableKeys.sort(), 'only approved non-secret variables allowed');
   const origin = config.vars.PROBE_ORIGIN;

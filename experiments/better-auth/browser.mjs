@@ -1,6 +1,7 @@
 import { createAuthClient } from 'better-auth/client';
 import { passkeyClient } from '@better-auth/passkey/client';
 import { getUiErrorMessage } from '../../src/lib/uiError.ts';
+import { getTurnstileToken } from './turnstile-client.mjs';
 
 const auth = createAuthClient({ baseURL: location.origin, plugins: [passkeyClient()],
   fetchOptions: { timeout: 20000, retry: 0 } });
@@ -44,8 +45,9 @@ async function perform(action, refreshAfter = true) {
   finally { busy = false; }
 }
 document.getElementById('github').addEventListener('click', () => perform(async () => {
+  const token = await getTurnstileToken(document.getElementById('captcha'));
   checked(await auth.signIn.social({ provider: 'github', callbackURL: '/', errorCallbackURL: '/' },
-    { headers: { 'x-captcha-response': 'XXXX.DUMMY.TOKEN.XXXX' } }));
+    { headers: { 'x-captcha-response': token } }));
 }, false));
 document.getElementById('passkey').addEventListener('click', () => perform(async () => checked(await auth.signIn.passkey())));
 document.getElementById('add').addEventListener('click', () => perform(async () => checked(await auth.passkey.addPasskey({ name: 'LinkSim validation' }))));

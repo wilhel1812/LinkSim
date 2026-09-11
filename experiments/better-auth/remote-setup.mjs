@@ -1,20 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readProbeConfig } from './probe-config.mjs';
 import { durableConfigs } from './durable-config.mjs';
 import { buildBrowser } from './build-browser.mjs';
+import { isRealTurnstileKey } from './turnstile-policy.mjs';
 
 const directory = fileURLToPath(new URL('.', import.meta.url));
 
-export function runSetup(action, { configPath, run = spawnSync } = {}) {
-  assert.ok(['indexes-runtime', 'schema', 'deploy', 'secrets', 'deploy-runtime', 'deploy-gateway', 'secrets-runtime', 'bundle-runtime', 'bundle-gateway'].includes(action), 'expected schema, deploy or secrets');
+export function runSetup(action, { configPath, turnstilePath = join(directory, '.wrangler/turnstile-validation-secrets.json'), run = spawnSync } = {}) {
+  assert.ok(['turnstile-secrets-runtime', 'indexes-runtime', 'schema', 'deploy', 'secrets', 'deploy-runtime', 'deploy-gateway', 'secrets-runtime', 'bundle-runtime', 'bundle-gateway'].includes(action), 'expected schema, deploy or secrets');
   const base = readProbeConfig(configPath);
-  const kind = action.split('-')[1];
+  const kind = action.endsWith('-runtime') ? 'runtime' : action.endsWith('-gateway') ? 'gateway' : undefined;
   const config = kind ? durableConfigs(base)[kind] : base;
-  if (['live-worker.mjs', 'durable-gateway-worker.mjs'].includes(config.main)) buildBrowser();
+  if (['live-worker.mjs', 'durable-gateway-worker.mjs'].includes(config.main)) buildBrowser({ siteKey: config.vars.TURNSTILE_SITE_KEY });
   // Pass the validated snapshot to Wrangler so setup cannot select another config.
   const scratch = join(directory, '.wrangler');
   mkdirSync(scratch, { recursive: true });
@@ -28,6 +29,17 @@ export function runSetup(action, { configPath, run = spawnSync } = {}) {
       deploy: ['deploy'],
       secrets: ['secret', 'bulk', join(directory, '.probe-secrets.json')],
     };
+    if (action === 'turnstile-secrets-runtime') {
+      assert.equal(base.vars.PROBE_TURNSTILE_MODE, 'real', 'real Turnstile mode required');
+      assert.equal(statSync(turnstilePath).mode & 0o077, 0, 'Turnstile keys must be owner-only');
+      const keys = JSON.parse(readFileSync(turnstilePath, 'utf8'));
+      assert.deepEqual(Object.keys(keys).sort(), ['TURNSTILE_SECRET_KEY', 'TURNSTILE_SITE_KEY']);
+      assert.equal(keys.TURNSTILE_SITE_KEY, base.vars.TURNSTILE_SITE_KEY, 'Turnstile site key mismatch');
+      assert.ok(isRealTurnstileKey(keys.TURNSTILE_SECRET_KEY), 'real Turnstile secret required');
+      const secrets = join(temporary, 'turnstile-secret.json');
+      writeFileSync(secrets, JSON.stringify({ TURNSTILE_SECRET_KEY: keys.TURNSTILE_SECRET_KEY }), { mode: 0o600 });
+      commands[action] = ['secret', 'bulk', secrets];
+    }
     const invoke = (args, capture = false) => {
       const result = run(process.execPath, [join(directory, 'node_modules/wrangler/bin/wrangler.js'),
         ...args, '--config', snapshot, '--env', ''], { cwd: directory,
@@ -55,6 +67,6 @@ export function runSetup(action, { configPath, run = spawnSync } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  assert.equal(process.argv.length, 3, 'usage: node remote-setup.mjs <indexes-runtime|schema|deploy|secrets|deploy-runtime|deploy-gateway|secrets-runtime|bundle-runtime|bundle-gateway>');
+  assert.equal(process.argv.length, 3, 'usage: node remote-setup.mjs <turnstile-secrets-runtime|indexes-runtime|schema|deploy|secrets|deploy-runtime|deploy-gateway|secrets-runtime|bundle-runtime|bundle-gateway>');
   runSetup(process.argv[2]);
 }

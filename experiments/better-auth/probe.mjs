@@ -1,10 +1,15 @@
 import { betterAuth } from 'better-auth';
 import { captcha } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
+import { isRealTurnstileKey, turnstileAction } from './turnstile-policy.mjs';
 
 // Disposable experiment only. Never import this configuration into LinkSim.
 export function probeOptions(env) {
   const origin = new URL(env.PROBE_ORIGIN).origin;
+  const realTurnstile = env.PROBE_TURNSTILE_MODE === 'real';
+  if (realTurnstile && (!isRealTurnstileKey(env.TURNSTILE_SITE_KEY) || !isRealTurnstileKey(env.TURNSTILE_SECRET_KEY))) {
+    throw new Error('Real Turnstile configuration is incomplete');
+  }
   return {
     appName: 'LinkSim auth compatibility probe',
     baseURL: origin,
@@ -41,7 +46,8 @@ export function probeOptions(env) {
         schema: { passkey: { modelName: 'probe_passkey' } } }),
       captcha({ provider: 'cloudflare-turnstile',
         // Cloudflare's published always-pass TEST secret; never a production key.
-        secretKey: '1x0000000000000000000000000000000AA',
+        secretKey: realTurnstile ? env.TURNSTILE_SECRET_KEY : '1x0000000000000000000000000000000AA',
+        ...(realTurnstile ? { expectedAction: turnstileAction, allowedHostnames: [new URL(origin).hostname] } : {}),
         endpoints: ['/sign-in/social'],
       }),
     ],

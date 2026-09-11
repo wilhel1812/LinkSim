@@ -7,10 +7,12 @@ import { betterAuth } from 'better-auth';
 import { getMigrations } from 'better-auth/db/migration';
 import { testUtils } from 'better-auth/plugins';
 import { liveOptions } from './live.mjs';
+import { turnstileAction } from './turnstile-policy.mjs';
 const origin='https://linksim-auth-probe-local.example.workers.dev';
 const vars={PROBE_ENABLED:'github-passkey-validation',PROBE_ORIGIN:origin,PROBE_GITHUB_ID:'88513',
   PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString(),GITHUB_CLIENT_ID:'local-only',
-  GITHUB_CLIENT_SECRET:'local-only',BETTER_AUTH_SECRET:'local-only-secret-at-least-32-characters'};
+  GITHUB_CLIENT_SECRET:'local-only',BETTER_AUTH_SECRET:'local-only-secret-at-least-32-characters',
+  PROBE_TURNSTILE_MODE:'real',TURNSTILE_SITE_KEY:'0xLOCALPUBLICKEYFORTESTONLY',TURNSTILE_SECRET_KEY:'0xLOCALSECRETKEYFORTESTONLY'};
 const common={modules:true,compatibilityDate:'2026-03-12',compatibilityFlags:['nodejs_compat'],bindings:vars};
 const mf=new Miniflare(convertV4MiniflareOptions({workers:[
   {...common,name:'gateway',scriptPath:'.wrangler/durable-gateway/durable-gateway-worker.js',
@@ -19,7 +21,7 @@ const mf=new Miniflare(convertV4MiniflareOptions({workers:[
     durableObjects:{AUTH:{className:'AuthProbe',useSQLite:true}},
     outboundService:request=> {
       const url=new URL(request.url);
-      if(url.hostname==='challenges.cloudflare.com') return Response.json({success:true});
+      if(url.hostname==='challenges.cloudflare.com') return Response.json({success:true,hostname:new URL(origin).hostname,action:turnstileAction});
       if(url.hostname==='github.com' && url.pathname==='/login/oauth/access_token')
         return Response.json({access_token:'local-only-token',token_type:'bearer',scope:'read:user,user:email'});
       if(url.hostname==='api.github.com' && url.pathname==='/user')

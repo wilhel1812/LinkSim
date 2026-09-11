@@ -350,3 +350,45 @@ The local harness also verifies library window-reset cleanup with 1,000 live rat
 entries, checks bounded reads, and confirms those live limits survive cleanup.
 Apply the supplemental indexes with the guarded `indexes-runtime` command;
 the generated schema remains unchanged.
+
+## Real Turnstile validation
+
+The isolated live probe supports `PROBE_TURNSTILE_MODE: "real"` with a public
+`TURNSTILE_SITE_KEY` in the strictly validated probe config. Test mode remains
+available only by omitting both variables in local/disposable fixture configs;
+real mode never falls back when its secret is missing. The application does not
+import this experiment. The real widget is restricted to the exact probe host,
+uses Managed mode, and has pre-clearance disabled.
+
+Save the widget's site and secret keys in the ignored owner-only
+`.wrangler/turnstile-validation-secrets.json`, with exactly `TURNSTILE_SITE_KEY`
+and `TURNSTILE_SECRET_KEY`. Do not paste either credential file into logs or PRs.
+Only the site key enters the gateway's public HTML/configuration. The guarded
+installer validates the matching site key and installs only `TURNSTILE_SECRET_KEY`
+on the private runtime; it never sends this secret to the gateway. It removes
+its temporary secret file after installation.
+
+After tests and independent review, the approved disposable rollout order is:
+
+```sh
+node remote-setup.mjs turnstile-secrets-runtime
+node remote-setup.mjs deploy-runtime
+node remote-setup.mjs deploy-gateway
+```
+
+The brief runtime-first transition rejects the old browser's dummy token; reload
+the page after the gateway deployment. Keep the existing OAuth/session secrets.
+The new client requests a fresh token on each GitHub attempt in the existing
+probe notice area. It handles script load failures, challenge errors, expiry and
+timeout without sending a dummy token in real-mode HTML. CSP permits only the
+Cloudflare challenge script/frame/connect origin in addition to same-origin
+resources. Better Auth's CAPTCHA plugin performs server-side Siteverify and
+checks exact hostname and action `github-login`; no custom token verification
+or CAPTCHA bypass is introduced. OAuth callbacks still require library state.
+
+Tests mock Siteverify to exercise rejection paths; they do not prove that a real
+visitor challenge succeeded. Finish with maintainer GitHub sign-in on the real
+widget and sanitized gateway/runtime telemetry. Direct missing/dummy tokens must
+be rejected, and callbacks without valid state must not establish a session.
+Sources: [Better Auth CAPTCHA](https://better-auth.com/docs/plugins/captcha),
+[Cloudflare validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
