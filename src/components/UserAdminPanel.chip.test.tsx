@@ -2,10 +2,11 @@
 // Tests for the UserAdminPanel chip's onOpenSettings integration.
 // Only covers the chip-row UI; the full modal and admin-inline mode are
 // better suited to Playwright given their network and canvas dependencies.
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fetchUsers, fetchAdminAuditEvents, fetchAuthDiagnostics, fetchSchemaDiagnostics } from "../lib/cloudUser";
+import { fetchNotifications } from "../lib/cloudNotifications";
 import type { CloudUser } from "../lib/cloudUser";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -161,4 +162,20 @@ it("loads administrator datasets only when admin settings open", async () => {
   expect(fetchAdminAuditEvents).toHaveBeenCalledTimes(1);
   expect(fetchAuthDiagnostics).toHaveBeenCalledTimes(1);
   expect(fetchSchemaDiagnostics).toHaveBeenCalledTimes(1);
+});
+
+
+it.each([false, true])("counts one-hour idle chip traffic with administrator=%s", async (isAdmin) => {
+  vi.useFakeTimers();
+  mockStoreState.currentUser = { ...signedInUser, isAdmin };
+  const view = render(<UserAdminPanel />);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_600_000); });
+    expect(fetchNotifications).toHaveBeenCalledTimes(isAdmin ? 121 : 0);
+    expect(fetchMeMock).not.toHaveBeenCalled();
+    expect(fetchUsers).not.toHaveBeenCalled();
+    expect(fetchAdminAuditEvents).not.toHaveBeenCalled();
+    expect(fetchAuthDiagnostics).not.toHaveBeenCalled();
+    expect(fetchSchemaDiagnostics).not.toHaveBeenCalled();
+  } finally { view.unmount(); vi.useRealTimers(); }
 });

@@ -177,6 +177,16 @@ describe("appStore delta sync", () => {
     expect(payload.siteLibrary).toHaveLength(1);
     expect(payload.siteLibrary[0]?.id).toBe(addedSiteId);
     expect(payload.siteLibrary[0]?.name).toBe("Gamma");
+
+    // Idle time and repeated no-change push requests must not generate traffic.
+    expect(fetchMock).toHaveBeenCalledTimes(2); // Initial library GET and one delta PUT.
+    const requestsAfterEdit = fetchMock.mock.calls.length;
+    for (let i = 0; i < 10; i++) {
+      useAppStore.getState().performCloudSyncPush();
+      await vi.advanceTimersByTimeAsync(360_000);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(requestsAfterEdit);
+    expect(fetchBodies).toHaveLength(1);
   });
 
   it("applies a Site tombstone before a manual retry builds its push payload", async () => {

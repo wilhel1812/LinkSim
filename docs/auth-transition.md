@@ -38,7 +38,10 @@ Bulk tests use synthetic credentials; do not automate mass GitHub authorizations
 Measure gateway CPU (including cold starts), Durable Object latency/duration,
 D1 reads/writes, rate-limit writes, concurrent identity isolation, session refresh,
 and account-wide projected quotas including staging and abuse controls. Normal
-projected usage must stay below half of each relevant daily free allowance.
+projected usage targets half of each relevant daily free allowance. The maintainer
+accepted the specific 53,700 D1 writes/day sensitivity scenario on September 11
+while retaining the 1,000-user target. This is a narrow write-budget exception,
+not acceptance of higher unmodeled costs or completion of the other gates.
 Require runtime headroom and no resource-limit failures; successful CPU overruns
 alone are not proof. If the gate fails, stop before application migration and
 reassess, rather than substituting custom session-security logic.

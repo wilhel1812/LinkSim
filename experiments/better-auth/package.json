@@ -1,0 +1,20 @@
+{
+  "name": "linksim-better-auth-compatibility",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test probe.test.mjs remote-setup.test.mjs live.test.mjs durable.test.mjs turnstile.test.mjs staging-request-capture.test.mjs summarize-tail.test.mjs",
+    "build:browser": "node build-browser.mjs",
+    "schema": "node generate-schema.mjs",
+    "bundle": "wrangler pages functions build functions --outdir .wrangler/pages-probe --compatibility-date 2026-03-12 --compatibility-flags nodejs_compat"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "1.7.3",
+    "better-auth": "1.7.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "wrangler": "4.121.0"
+  }
+}
