@@ -1,8 +1,14 @@
 import { routes, securityHeaders, enabled, isBenchmark } from './live-policy.mjs';
 
 // The gateway imports no auth framework, database adapter or provider credentials.
-export function createGateway({ page, script }) {
+export function createGateway({ page, script, record = entry => console.info(JSON.stringify(entry)) }) {
+  let firstInvocation = true;
   return { async fetch(request, env) {
+    if (firstInvocation) {
+      firstInvocation = false;
+      const path = new URL(request.url).pathname;
+      record({event:'probe-gateway-first-invocation',path:routes.has(path) || ['/', '/client.js', '/probe/session/reused', '/probe/session/fresh'].includes(path) ? path : '[other]'});
+    }
     if (!enabled(request, env)) return new Response(null, {status:404});
     const url = new URL(request.url);
     if (request.method === 'GET' && ['/', '/client.js'].includes(url.pathname)) {

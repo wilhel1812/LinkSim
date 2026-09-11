@@ -14,6 +14,9 @@ for await (const chunk of process.stdin) {
     const url = event.event?.request?.url;
     if (!url) continue;
     const record = {
+      firstInvocation: (event.logs ?? []).some(log => (log.message ?? []).some(message => {
+        try { return JSON.parse(message)?.event === 'probe-gateway-first-invocation'; } catch { return false; }
+      })),
       timestamp: event.eventTimestamp,
       path: new URL(url).pathname,
       status: event.event?.response?.status,

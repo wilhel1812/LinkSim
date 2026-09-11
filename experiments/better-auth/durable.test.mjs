@@ -54,3 +54,14 @@ test('binding resource failures return a generic unavailable response without re
     assert.equal(calls,1);
   }
 });
+
+test('gateway marks exactly its first invocation before concurrent I/O',async()=>{
+  const records=[];
+  const gateway=createGateway({page:'page',script:'script',record:entry=>records.push(entry)});
+  const env={...vars,AUTH:{getByName(){return {fetch:async()=>Response.json(null)};}}};
+  await Promise.all(Array.from({length:50},()=>gateway.fetch(new Request(origin+'/api/auth/get-session?private=secret'),env)));
+  assert.deepEqual(records,[{event:'probe-gateway-first-invocation',path:'/api/auth/get-session'}]);
+  const second=[];
+  await createGateway({page:'page',script:'script',record:entry=>second.push(entry)}).fetch(new Request(origin+'/unknown/private'),env);
+  assert.deepEqual(second,[{event:'probe-gateway-first-invocation',path:'[other]'}]);
+});

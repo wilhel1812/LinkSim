@@ -424,3 +424,36 @@ notice, ordinary/admin sidebar and edit-sync counts, the production-component
 comparison, and synthetic quota/resource failure coverage. These measurements
 separate fixed privileged traffic from ordinary-user growth; they do not pass the
 account-wide capacity or cold-gateway gates.
+
+### Maintainer staging request capture
+
+Open stable staging and sign in normally. Paste `staging-request-capture.js` into
+that page's developer console, then use the application normally: open a saved
+Simulation, edit a Site, allow automatic sync, and use manual sync once. Include
+some idle time. Do not reload while capturing; a reload ends the capture.
+
+Run `JSON.stringify(linkSimRequestCapture.stop(), null, 2)` and share that summary,
+plus whether this was an ordinary or administrator session and what you did.
+It retains only allowlisted route categories, status and counts. No network calls,
+headers, cookies, query strings, response bodies or persistent storage are used.
+Unknown API routes are grouped together; dynamic resource IDs are discarded.
+Resource Timing can omit failed/evicted requests and does not expose methods or
+D1 usage. Capture starts with available buffered entries, which may include
+login/bootstrap before installation; record that when interpreting the sample.
+It is a sample of your workflow, not a daily-active-user forecast or HAR export.
+
+### First gateway invocation
+
+The disposable gateway records `probe-gateway-first-invocation` once per gateway
+instance, synchronously before any request I/O. The existing sanitized tail
+collector now attaches `firstInvocation` to the matching platform CPU event.
+A new Better Auth instance in the Durable Object is not this marker. Fetching the
+HTML page can consume the first invocation, so inspect the recorded path.
+
+For a controlled capture, attach the sanitized tail before deploying the reviewed
+gateway, then send one `/api/auth/get-session` request directly without first
+loading its page. Record the deployment's startup time and matching script version
+alongside the first-invocation CPU event. A missing marker is inconclusive; an
+anonymous session request proves only that path. Repeat with authenticated user
+traffic when a fresh instance is observed. The marker reports first handler use,
+not proof that Cloudflare charged module initialization to that request's CPU.
