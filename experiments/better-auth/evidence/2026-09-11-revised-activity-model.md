@@ -1,6 +1,11 @@
 # Revised activity model using the existing maintainer sample
 
 Status: conditional request projection; overall capacity gate remains pending.
+Follow-up [real-handler D1 measurements](2026-09-11-application-d1-cost.md) fail
+the database gate for the synthetic 1,000-account workload. They also measure
+82 total requests for a specific 400-record recovery, including actual server
+phase transitions. Retain the historical 62-request maintainer sample below;
+do not use the earlier mock as real-server cost evidence or a universal bound.
 Keep the 1,000 registered-user target and the approved 1,000-DAU sensitivity.
 Manual Sync remains a forced full-recovery action with its current behavior.
 
