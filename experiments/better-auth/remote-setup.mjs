@@ -61,10 +61,10 @@ export function runSetup(action, { configPath, secretsPath = join(directory, '.p
     // Wrangler retains secrets during deploy. Inventory only names before the
     // switch, then remove them from this strictly validated disposable gateway.
     const retained = action === 'deploy-gateway' ? listSecrets() : [];
-    invoke(commands[action] ?? (action.startsWith('secrets-') ? commands.secrets :
-      action.startsWith('bundle-') ? ['deploy', '--dry-run', '--outdir', join(scratch, `durable-${kind}`)] : commands.deploy));
     for (const entry of retained) invoke(['secret', 'delete', entry.name]);
     if (action === 'deploy-gateway') assert.equal(listSecrets().length, 0, 'gateway still has secret bindings');
+    invoke(commands[action] ?? (action.startsWith('secrets-') ? commands.secrets :
+      action.startsWith('bundle-') ? ['deploy', '--dry-run', '--outdir', join(scratch, `durable-${kind}`)] : commands.deploy));
 
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }

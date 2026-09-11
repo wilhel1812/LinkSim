@@ -130,9 +130,20 @@ test('gateway replacement removes retained secrets using only the validated publ
       assert.equal(JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8')).name,value.name);
       return {status:0,stdout:args.includes('list')&&calls.length===1?JSON.stringify([{name:'BETTER_AUTH_SECRET',type:'secret_text'},{name:'GITHUB_CLIENT_SECRET',type:'secret_text'}]):'[]'};
     }});
-    assert.deepEqual(calls,[['secret','list','--format','json'],['deploy'],
+    assert.deepEqual(calls,[['secret','list','--format','json'],
       ['secret','delete','BETTER_AUTH_SECRET'],['secret','delete','GITHUB_CLIENT_SECRET'],
-      ['secret','list','--format','json']]);
+      ['secret','list','--format','json'],['deploy']]);
+    for(const failure of ['delete','inventory']) {
+      const attempted=[];let lists=0;
+      assert.throws(()=>runSetup('deploy-gateway',{configPath:path,run(_command,args){
+        attempted.push(args);
+        if(args.includes('list')) {
+          lists++;return {status:0,stdout:JSON.stringify(lists===1||failure==='inventory'?[{name:'BETTER_AUTH_SECRET'}]:[])};
+        }
+        return {status:args.includes('delete')&&failure==='delete'?1:0};
+      }}),/Wrangler setup failed|gateway still has secret bindings/);
+      assert.equal(attempted.some(args=>args.includes('deploy')),false);
+    }
   } finally {rmSync(directory,{recursive:true,force:true});}
 });
 

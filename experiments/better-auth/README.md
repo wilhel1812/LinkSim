@@ -310,7 +310,7 @@ its contents. There is deliberately no schema action for this pair. Restoring th
 original demo runtime uses `node remote-setup.mjs deploy` followed by
 `node remote-setup.mjs secrets`; preserve the existing D1 and ignored secret file.
 The gateway deployment inventories and deletes retained secret bindings, then
-verifies none remain. Failed cleanup is a failed deployment gate. This rollback affects only the disposable experiment.
+verifies none remain before publishing the gateway. Failed cleanup prevents deployment. This rollback affects only the disposable experiment.
 
 Local evidence on 2026-09-10: all 50 warm session calls used one query, two rows
 read and zero writes. Initial object auth setup used two queries and 23 rows read.
