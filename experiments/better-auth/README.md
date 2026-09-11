@@ -457,3 +457,7 @@ alongside the first-invocation CPU event. A missing marker is inconclusive; an
 anonymous session request proves only that path. Repeat with authenticated user
 traffic when a fresh instance is observed. The marker reports first handler use,
 not proof that Cloudflare charged module initialization to that request's CPU.
+
+Latest capacity interpretation: [revised activity model](evidence/2026-09-11-revised-activity-model.md).
+It incorporates the completed maintainer sample, separates privileged polling and
+rare forced recovery, and preserves Manual Sync unchanged.

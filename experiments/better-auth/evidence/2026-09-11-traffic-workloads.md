@@ -49,13 +49,12 @@ reads cannot be subtracted as HTTP requests. The earlier 116,480/day and
 81,600–93,000 writes/day linear sensitivities remain unvalidated; these tests do
 not replace them with a new accepted capacity claim.
 
-Next measurement needs route-level request counts over the same complete time
-window, with privileged/ordinary workloads separated without exporting identities,
-cookies or tokens. If unavailable on the current analytics plan, collect a
-maintainer-run staging network summary containing only path, method, status and
-count for a representative page-load/edit/manual-sync/deep-link session. Do not
-export HAR files containing authentication data. Keep staging tester behavior
-separate from a later production baseline; production release needs approval.
+The maintainer has since supplied a staged request capture and isolated edit,
+Simulation-switch and manual-Sync counts. See
+[the revised activity model](2026-09-11-revised-activity-model.md), which preserves
+Manual Sync as rare forced recovery and supersedes the request for another
+equivalent user capture. Those observations do not measure D1 rows or establish
+a daily active-user average.
 
 ## Quota and resource failures
 
