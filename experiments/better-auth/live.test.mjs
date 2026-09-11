@@ -218,3 +218,28 @@ test('library OAuth callbacks enforce tester identity and reject state replay', 
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM probe_session').get().n, 1);
   } finally { db.close(); }
 });
+
+// Fault injection, not an attempt to exhaust the shared Cloudflare account.
+test('quota failures deny sessions without caching identity and recover after reset', async () => {
+  for (const kind of ['read', 'write']) {
+    let unavailable = false;
+    const failure = () => { if (unavailable) throw new Error(`Your account has exceeded D1's free tier daily row ${kind} limit.`); };
+    const worker = createLiveWorker({page:'test',script:'test'}, () => ({
+      $context: Promise.resolve({checkSchema: failure}),
+      api: {getSession: async () => { failure(); return {response:{user:{emailVerified:true}},headers:new Headers()}; }},
+    }));
+    const env = {...configuration(),DB:{}};
+    const request = () => new Request(origin+'/probe/session/reused');
+    assert.equal((await worker.fetch(request(),env)).status,200);
+    unavailable = true;
+    const rejected = await Promise.all(Array.from({length:50},()=>worker.fetch(request(),env)));
+    for (const response of rejected) {
+      assert.equal(response.status,500);
+      assert.equal(response.headers.has('set-cookie'),false);
+      assert.deepEqual(await response.json(),{error:'Validation request failed'});
+    }
+    assert.equal((await worker.fetch(new Request(origin+'/probe/session/fresh'),env)).status,500);
+    unavailable = false;
+    assert.equal((await worker.fetch(request(),env)).status,200);
+  }
+});

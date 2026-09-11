@@ -144,7 +144,7 @@ Open the hostname and, one step at a time, sign in with GitHub, add a test passk
 sign out, sign in with that passkey, and remove it. Keep GitHub as recovery. Run
 the session measurements while signed in; they make three sequential requests
 to each of the HTTP session, reused-instance server-session and fresh-instance
-server-session paths, followed by three concurrent reused-instance requests.
+server-session paths, followed by 50 concurrent reused-instance requests.
 Output contains only status, elapsed time, initialization flag and D1 counters.
 The server responses from measurement routes reveal only signed-in status and
 the verified-email flag. They preserve library session-refresh response headers.
@@ -416,3 +416,11 @@ replay, wrong challenge/origin/RP, invalid signatures, and a removed credential.
 Chromium performs the cryptographic operations. The virtual-key testing API is
 used only to isolate the RP-hash case; no custom authenticator or signing logic
 is implemented. See [passkey and usage evidence](evidence/2026-09-11-passkeys-usage.md).
+
+### Controlled application traffic and failure checks
+
+See [the workload evidence](evidence/2026-09-11-traffic-workloads.md) for repeatable
+notice, ordinary/admin sidebar and edit-sync counts, the production-component
+comparison, and synthetic quota/resource failure coverage. These measurements
+separate fixed privileged traffic from ordinary-user growth; they do not pass the
+account-wide capacity or cold-gateway gates.

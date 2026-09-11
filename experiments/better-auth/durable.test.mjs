@@ -41,3 +41,16 @@ test('50 simultaneous requests use one object and isolated allowlisted headers',
   assert.deepEqual(new Set(names),new Set(['auth']));
   assert.ok(seen.every(r=>!r.headers.has('x-forwarded-for')&&!r.headers.has('x-auth-user')));
 });
+
+test('binding resource failures return a generic unavailable response without retrying', async () => {
+  for (const path of ['/probe/session/reused','/api/auth/get-session']) {
+    let calls=0;
+    const fail=async()=>{calls++;throw new Error('Worker exceeded resource limits: private detail');};
+    const env={...vars,AUTH:{getByName(){return {checkSession:fail,fetch:fail};}}};
+    const response=await createGateway({page:'page',script:'script'}).fetch(new Request(origin+path),env);
+    assert.equal(response.status,503);
+    assert.deepEqual(await response.json(),{error:'Validation runtime unavailable'});
+    assert.equal(response.headers.has('set-cookie'),false);
+    assert.equal(calls,1);
+  }
+});

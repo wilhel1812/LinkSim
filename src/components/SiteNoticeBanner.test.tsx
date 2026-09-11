@@ -147,3 +147,20 @@ it("clears an expired notice locally without fetching again", async () => {
     expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
   } finally {view.unmount();vi.useRealTimers();}
 });
+
+
+it("makes one notice request during a one-hour session with ten focus returns", async () => {
+  vi.useFakeTimers();
+  fetchPublicSiteNoticeMock.mockResolvedValue(null);
+  const view = render(<SiteNoticeBanner />);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(360_000);
+        window.dispatchEvent(new Event("focus"));
+      });
+    }
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+  } finally { view.unmount(); vi.useRealTimers(); }
+});
