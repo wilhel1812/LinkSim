@@ -30,6 +30,7 @@ export function liveOptions(env) {
 export function createLiveWorker({ page, script }, makeAuth = betterAuth) {
   const requests = new AsyncLocalStorage();
   const instances = new WeakMap();
+  const initializations = new WeakMap();
   function instrument(db) {
     function statement(stmt) {
       return new Proxy(stmt, { get(target, property) {
@@ -80,14 +81,26 @@ export function createLiveWorker({ page, script }, makeAuth = betterAuth) {
           const fresh = url.pathname === '/probe/session/fresh';
           let auth = fresh ? undefined : instances.get(env);
           if (!auth) {
-            auth = makeAuth(liveOptions({ ...env, DB: instrument(env.DB) }));
-            metrics.initialized = true;
-            // Better Auth starts schema validation in the background. Workers
-            // can discard that I/O when its originating request ends. Complete
-            // it within this request before either replying or sharing auth.
-            const context = await auth.$context;
-            await context.checkSchema?.();
-            if (!fresh && !request.signal.aborted) instances.set(env, auth);
+            let initialization = fresh ? undefined : initializations.get(env);
+            // A canceled owner's I/O must not become another request's dependency.
+            if (!initialization || initialization.signal.aborted) {
+              metrics.initialized = true;
+              initialization = { signal: request.signal, promise: (async () => {
+                const instance = makeAuth(liveOptions({ ...env, DB: instrument(env.DB) }));
+                const context = await instance.$context;
+                await context.checkSchema?.();
+                if (!fresh && !request.signal.aborted) instances.set(env, instance);
+                return instance;
+              })() };
+              if (!fresh) initializations.set(env, initialization);
+            }
+            // Every waiter retains its request until schema I/O completes. Only
+            // the creator records initialization queries; session I/O stays in
+            // each caller's AsyncLocalStorage context.
+            try { auth = await initialization.promise; }
+            finally {
+              if (!fresh && initializations.get(env) === initialization) initializations.delete(env);
+            }
           }
           if (benchmark) {
             const session = await auth.api.getSession({ headers: request.headers, returnHeaders: true });

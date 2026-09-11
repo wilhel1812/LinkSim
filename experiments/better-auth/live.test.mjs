@@ -66,6 +66,56 @@ test('pending schema checks are not cached across requests or abandoned after a 
   assert.equal(creations, 2, 'the completed healthy instance remains reusable');
 });
 
+test('concurrent requests share healthy initialization and retain individual request context', async () => {
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  let creations = 0;
+  let handled = 0;
+  const worker = createLiveWorker({page:'test',script:'test'}, options => {
+    creations++;
+    return {$context:Promise.resolve({checkSchema:async()=>{await pending;await options.database.prepare('schema').all();}}),handler:async request => {
+      handled++;
+      await options.database.prepare('session').all();
+      return Response.json({cookie:request.headers.get('cookie')});
+    }};
+  });
+  const env = {...configuration(),DB:{prepare:sql=>({async all(){
+    await new Promise(resolve=>setImmediate(resolve));
+    return {meta:{rows_read:sql==='schema'?20:2,rows_written:0}};
+  }})}};
+  const calls = Array.from({length:50},(_,i)=>worker.fetch(new Request(origin+'/api/auth/get-session',{
+    headers:{cookie:`synthetic-${i}`}}),env));
+  try {
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(creations,1,'cold concurrent requests must share one schema initialization');
+    assert.equal(handled,0,'no request runs before schema validation completes');
+  } finally { finish(); }
+  const responses = await Promise.all(calls);
+  for (let i=0;i<responses.length;i++) assert.deepEqual(await responses[i].json(),{cookie:`synthetic-${i}`});
+  const metrics=responses.map(r=>JSON.parse(r.headers.get('x-probe-d1')));
+  assert.equal(metrics.filter(m=>m.initialized).length,1);
+  for (const metric of metrics) {
+    assert.equal(metric.queries,metric.initialized?2:1);
+    assert.equal(metric.rowsRead,metric.initialized?22:2);
+    assert.equal(metric.rowsWritten,0);
+  }
+});
+
+test('failed schema initialization fails closed and permits a healthy retry', async () => {
+  let creations = 0;
+  const worker = createLiveWorker({page:'test',script:'test'}, () => {
+    const fail = ++creations === 1;
+    return {$context:Promise.resolve({checkSchema:()=>{if(fail)throw Error('synthetic D1 unavailable');}}),
+      handler:async()=>Response.json(null)};
+  });
+  const env={...configuration(),DB:{}};
+  const failed=await worker.fetch(new Request(origin+'/api/auth/get-session'),env);
+  assert.equal(failed.status,500);
+  assert.deepEqual(await failed.json(),{error:'Validation request failed'});
+  assert.equal((await worker.fetch(new Request(origin+'/api/auth/get-session'),env)).status,200);
+  assert.equal(creations,2);
+});
+
 async function fixture() {
   const db = new DatabaseSync(':memory:');
   const env = { ...configuration(), DB: db };

@@ -78,7 +78,7 @@ try {
   // Real local object eviction, not just recreating Better Auth inside a warm object.
   await mf.unsafeEvictDurableObject('runtime','AuthProbe',{name:'auth'});
   const afterEviction = await Promise.all(credentials.map((_,i)=>check(i)));
-  assert.ok(afterEviction.some(m=>m.initialized),'eviction really discarded the auth instance');
+  assert.equal(afterEviction.filter(m=>m.initialized).length,1,'cold burst shares one completed schema initialization');
   await db.prepare('UPDATE probe_session SET expiresAt = ? WHERE userId = ?').bind(Date.now()-1000,credentials[2].user.id).run();
   assert.equal((await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[2].headers})).status,401);
   const initiations=await Promise.all(Array.from({length:20},(_,i)=>mf.dispatchFetch(origin+'/api/auth/sign-in/social',{
@@ -95,8 +95,53 @@ try {
   assert.equal(callback.headers.get('location'),origin);
   const oauthCallback=JSON.parse(callback.headers.get('x-probe-d1'));
   assert.ok(oauthCallback.rowsRead < 100,'returning login must not scan 1,000 provider accounts');
-  assert.ok(callback.headers.get('set-cookie'));
+  const sessionCookies = callback.headers.getSetCookie().filter(value=>value.includes('session_token='));
+  assert.equal(sessionCookies.length,1);
+  for (const attribute of [/; Secure/i,/; HttpOnly/i,/; SameSite=Lax/i]) assert.match(sessionCookies[0],attribute);
+  assert.doesNotMatch(sessionCookies[0],/; Domain=/i,'session cookie must be host-only');
   await callback.arrayBuffer();
+  const sessionCount = async () => (await db.prepare('SELECT COUNT(*) AS n FROM probe_session').first()).n;
+  const beforeRejected = await sessionCount();
+  // Replay and mismatched/missing state must never mint another session.
+  const unconsumedState = new URL((await initiations[18].clone().json()).url).searchParams.get('state');
+  const wrongAttemptCookie = initiations[17].headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+  for (const [rejectedState, rejectedCookie] of [[state,cookie],['wrong-local-state',cookie],
+    [unconsumedState,''],[unconsumedState,wrongAttemptCookie]]) {
+    const rejected = await mf.dispatchFetch(origin+'/api/auth/callback/github?code=local-only&state='+encodeURIComponent(rejectedState),
+      {redirect:'manual',headers:{cookie:rejectedCookie,'cf-connecting-ip':'192.0.2.21'}});
+    assert.equal(rejected.status,302);
+    assert.notEqual(rejected.headers.get('location'),origin);
+    assert.ok(!rejected.headers.getSetCookie().some(value=>/session_token=[^;]/.test(value)),'rejected callback must not issue a session');
+    await rejected.arrayBuffer();
+    assert.equal(await sessionCount(),beforeRejected);
+  }
+  const post = (path,body,headers={}) => mf.dispatchFetch(origin+path,{method:'POST',
+    headers:{origin,'content-type':'application/json','cf-connecting-ip':'192.0.2.22',...headers},body:JSON.stringify(body)});
+  for (const callbackURL of ['https://evil.example/','//evil.example/','javascript:alert(1)']) {
+    const rejected = await post('/api/auth/sign-in/social',{provider:'github',callbackURL},{'x-captcha-response':'local-only'});
+    assert.equal(rejected.status,403,'unsafe callback URL must fail closed');
+    await rejected.arrayBuffer();
+  }
+  // JSON mutations require the exact origin, even with a valid session cookie.
+  for (const badOrigin of ['', 'https://other-probe.example.workers.dev']) {
+    const rejected = await post('/api/auth/sign-out',{}, {cookie:credentials[4].headers.get('cookie'),origin:badOrigin});
+    assert.equal(rejected.status,403);
+    await rejected.arrayBuffer();
+    await check(4);
+  }
+  for (const path of ['/api/auth/passkey/verify-authentication','/api/auth/passkey/verify-registration']) {
+    const rejected = await post(path,{response:{id:'not-a-credential',rawId:'',type:'public-key',response:{}}});
+    assert.ok([400,401].includes(rejected.status),'malformed ceremony must be rejected');
+    await rejected.arrayBuffer();
+    assert.equal(await sessionCount(),beforeRejected);
+  }
+  await db.prepare('UPDATE probe_session SET createdAt = ? WHERE userId = ?').bind(Date.now()-600000,credentials[5].user.id).run();
+  const staleRegistration = await mf.dispatchFetch(origin+'/api/auth/passkey/generate-register-options',{headers:credentials[5].headers});
+  assert.equal(staleRegistration.status,403,'enrollment requires a fresh session');
+  await staleRegistration.arrayBuffer();
+  const staleRemoval = await post('/api/auth/passkey/delete-passkey',{id:'not-a-credential'},{cookie:credentials[5].headers.get('cookie')});
+  assert.equal(staleRemoval.status,403,'removal requires a fresh session');
+  await staleRemoval.arrayBuffer();
   await Promise.all(initiations.slice(0,19).map(r=>r.arrayBuffer()));
   await db.prepare('DELETE FROM probe_session WHERE userId = ?').bind(credentials[0].user.id).run();
   assert.equal((await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[0].headers})).status,401);
@@ -122,5 +167,17 @@ try {
   assert.ok(cleanup.rowsRead < 30,'library cleanup must not scan 1,000 live limiter rows');
   assert.ok(cleanup.rowsWritten >= 2,'account for the supplemental index write');
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM probe_rate_limit').first()).n,1001,'live limits are retained');
-  console.log(JSON.stringify({localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,cleanup,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
+  // A limit near exhaustion must survive object eviction, and concurrent calls
+  // cannot both consume the final slot. No client identity headers reset it.
+  await db.prepare('UPDATE probe_rate_limit SET count = 99, lastRequest = ? WHERE key = ?').bind(Date.now(),sessionKey).run();
+  await mf.unsafeEvictDurableObject('runtime','AuthProbe',{name:'auth'});
+  const limited = await Promise.all([0,1].map(i=>mf.dispatchFetch(origin+'/api/auth/get-session',{
+    headers:{cookie:credentials[3].headers.get('cookie'),'x-forwarded-for':`192.0.2.${30+i}`,'x-auth-user':`fake-${i}`}})));
+  assert.deepEqual(limited.map(r=>r.status).sort(),[200,429],'persistent limit has exactly one remaining slot');
+  await Promise.all(limited.map(r=>r.arrayBuffer()));
+  const retry = await mf.dispatchFetch(origin+'/api/auth/get-session',{headers:credentials[3].headers});
+  assert.equal(retry.status,429);
+  assert.ok(Number(retry.headers.get('x-retry-after'))>0);
+  await retry.arrayBuffer();
+  console.log(JSON.stringify({security:{oauthReplay:'passed',stateMismatch:'passed',unsafeReturn:'passed',csrf:'passed',malformedPasskey:'passed',freshCredentials:'passed',persistentConcurrentLimit:'passed'},localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,cleanup,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
 } finally {local.close();await mf.dispose();}

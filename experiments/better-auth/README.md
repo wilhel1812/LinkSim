@@ -392,3 +392,9 @@ widget and sanitized gateway/runtime telemetry. Direct missing/dummy tokens must
 be rejected, and callbacks without valid state must not establish a session.
 Sources: [Better Auth CAPTCHA](https://better-auth.com/docs/plugins/captcha),
 [Cloudflare validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
+
+See [security and initialization evidence](evidence/2026-09-11-security.md) for
+real-Turnstile happy-path confirmation, local negative cases, and the cold-burst
+initialization fix. Healthy in-flight initialization is shared; failed or aborted
+initialization cannot poison subsequent requests. The local eviction test requires
+exactly one initialization and keeps request identity/metrics isolated.
