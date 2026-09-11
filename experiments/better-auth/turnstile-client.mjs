@@ -11,7 +11,10 @@ function loadTurnstile() {
       script.async = true;
       script.onload = () => {
         if (!window.turnstile) { clearTimeout(timer); return reject(new Error('Anti-bot check unavailable.')); }
-        window.turnstile.ready(() => { clearTimeout(timer); resolve(window.turnstile); });
+        // The load event already means the SDK has executed. Its ready() helper
+        // explicitly rejects scripts loaded with async/defer.
+        clearTimeout(timer);
+        resolve(window.turnstile);
       };
       script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('Anti-bot check could not load. Try again.')); };
       document.head.append(script);

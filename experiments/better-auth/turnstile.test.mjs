@@ -58,3 +58,27 @@ test('browser requests a new token per attempt and removes widgets on errors/tim
   assert.deepEqual(removed,[1,2,3,4,5]);
   await assert.rejects(getTurnstileToken(container,{load:async()=>{throw new Error('offline');}}),/offline/);
 });
+
+test('async SDK loading uses the script load event without calling ready()', async () => {
+  const oldWindow=globalThis.window;
+  const oldDocument=globalThis.document;
+  let script;
+  let removed=false;
+  const api={ready(){throw new Error('Cloudflare rejects ready() for async scripts');},
+    render(_container,options){queueMicrotask(()=>options.callback('fresh-test-token'));return 'test-widget';},
+    remove(){removed=true;}};
+  globalThis.window={};
+  globalThis.document={createElement(){script={remove(){}};return script;},head:{append(){}}};
+  try {
+    const pending=getTurnstileToken({dataset:{sitekey:env.TURNSTILE_SITE_KEY},replaceChildren(){}});
+    pending.catch(()=>{});
+    assert.equal(script.async,true);
+    globalThis.window.turnstile=api;
+    assert.doesNotThrow(()=>script.onload());
+    assert.equal(await pending,'fresh-test-token');
+    assert.equal(removed,true);
+  } finally {
+    globalThis.window=oldWindow;
+    globalThis.document=oldDocument;
+  }
+});
