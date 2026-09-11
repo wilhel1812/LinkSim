@@ -3,7 +3,7 @@
 This is an isolated experiment, **not LinkSim's authentication implementation**.
 The application still uses Access. Nothing in this directory is imported by its
 Functions or client build. The experiment package is private, version 0.1.0;
-LinkSim remains on 0.28.1 until its migration release line is explicitly selected.
+LinkSim uses the approved 0.29.0 development line; application authentication remains on Access.
 
 ## Reproduce locally
 
@@ -110,8 +110,7 @@ remove or change any LinkSim Access application during this experiment.
 ## Guided GitHub/passkey validation
 
 GitLab is deferred for this batch after signup verification required a card.
-The second-provider requirement remains open; GitHub-only validation is not an
-approved final migration architecture.
+GitHub-only launch is approved for 0.29.0; GitLab is deferred.
 
 The separate `live-worker.mjs` entrypoint has **no synthetic account/session
 creation**. It reuses the schema and library configuration, but enables only
@@ -335,7 +334,9 @@ are 100,000 requests/day and 13,000 GB-s/day; the approved normal-use gate is be
 The local harness now seeds 1,000 provider accounts as well as users, renews an
 aged session, verifies the returned cookie and database expiry, evicts the actual
 local object before a second 50-request burst, and checks expired sessions.
-A supplemental provider-subject lookup index prevents full account-table scans.
+Supplemental provider-subject and rate-limit expiry indexes prevent full table scans.
+The latter adds a write when the library updates a limiter timestamp; it does not
+change the library rate-limit policy or introduce a cleanup timer.
 Apply `node remote-setup.mjs indexes-runtime` before runtime deployment; this
 idempotent action only adds the reviewed index and does not reset auth data.
 
@@ -344,3 +345,8 @@ fields, preserving separate library cookies. See
 [evidence/2026-09-11-capacity.md](evidence/2026-09-11-capacity.md) for measured
 costs, the conditional quota projection and remaining gates. The current-activity
 request reduction and D1 write headroom still require validation.
+
+The local harness also verifies library window-reset cleanup with 1,000 live rate-limit
+entries, checks bounded reads, and confirms those live limits survive cleanup.
+Apply the supplemental indexes with the guarded `indexes-runtime` command;
+the generated schema remains unchanged.

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.29.0] - Unreleased
+
+### Changed
+- Refresh operational notices on page load and explicit local updates, and avoid repeated profile and unnecessary administrator data requests. (#1107)
+- Exclude authentication tables from staging refresh exports and sanitize user fields before import; reject unclassified tables and unsafe refresh overrides. (#1107)
+
 ## [0.28.1] - 2026-09-08
 
 ### Fixed

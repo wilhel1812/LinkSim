@@ -5,6 +5,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fetchUsers, fetchAdminAuditEvents, fetchAuthDiagnostics, fetchSchemaDiagnostics } from "../lib/cloudUser";
 import type { CloudUser } from "../lib/cloudUser";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -18,8 +19,8 @@ vi.mock("../lib/cloudUser", () => ({
   fetchMe: fetchMeMock,
   fetchUsers: vi.fn().mockResolvedValue([]),
   fetchAdminAuditEvents: vi.fn().mockResolvedValue([]),
-  fetchAuthDiagnostics: vi.fn().mockResolvedValue({}),
-  fetchSchemaDiagnostics: vi.fn().mockResolvedValue({}),
+  fetchAuthDiagnostics: vi.fn().mockResolvedValue({ auth: { signals: {} } }),
+  fetchSchemaDiagnostics: vi.fn().mockResolvedValue({ schema: { version: "test", missing: [] } }),
   fetchDeletedUsers: vi.fn().mockResolvedValue([]),
   updateMyProfile: vi.fn().mockResolvedValue(null),
   updateUserRole: vi.fn().mockResolvedValue(null),
@@ -135,4 +136,29 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
 
     expect(fetchMeMock).not.toHaveBeenCalled();
   });
+});
+
+it("reuses the authenticated profile and does not preload admin data in the chip", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isAdmin: true };
+  fetchMeMock.mockResolvedValue(mockStoreState.currentUser);
+  render(<UserAdminPanel />);
+  await waitFor(() => expect(screen.getByRole("link", { name: /open stats/i })).toBeInTheDocument());
+  expect(fetchMeMock).not.toHaveBeenCalled();
+  expect(fetchUsers).not.toHaveBeenCalled();
+  expect(fetchAdminAuditEvents).not.toHaveBeenCalled();
+  expect(fetchAuthDiagnostics).not.toHaveBeenCalled();
+  expect(fetchSchemaDiagnostics).not.toHaveBeenCalled();
+});
+
+vi.mock("./SiteNoticeAdminForm", () => ({ SiteNoticeAdminForm: () => null }));
+it("loads administrator datasets only when admin settings open", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isAdmin: true };
+  const view = render(<UserAdminPanel />);
+  expect(fetchUsers).not.toHaveBeenCalled();
+  view.rerender(<UserAdminPanel renderMode="admin-inline" />);
+  await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1));
+  expect(fetchMeMock).not.toHaveBeenCalled();
+  expect(fetchAdminAuditEvents).toHaveBeenCalledTimes(1);
+  expect(fetchAuthDiagnostics).toHaveBeenCalledTimes(1);
+  expect(fetchSchemaDiagnostics).toHaveBeenCalledTimes(1);
 });

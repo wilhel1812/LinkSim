@@ -43,7 +43,7 @@ try {
   }
   const db=await mf.getD1Database('DB','runtime');
   for(const sql of readFileSync('schema.sql','utf8').split(';').filter(s=>s.trim())) await db.prepare(sql).run();
-  await db.prepare(readFileSync('indexes.sql','utf8')).run();
+  for(const sql of readFileSync('indexes.sql','utf8').split(';').filter(s=>s.trim())) await db.prepare(sql).run();
   for(const table of ['probe_user','probe_account','probe_session']) {
     const rows=local.prepare(`SELECT * FROM ${table}`).all();
     for(let i=0;i<rows.length;i+=50) await db.batch(rows.slice(i,i+50).map(row=> {
@@ -98,5 +98,27 @@ try {
   await Promise.all(initiations.slice(0,19).map(r=>r.arrayBuffer()));
   await db.prepare('DELETE FROM probe_session WHERE userId = ?').bind(credentials[0].user.id).run();
   assert.equal((await mf.dispatchFetch(origin+'/probe/session/reused',{headers:credentials[0].headers})).status,401);
-  console.log(JSON.stringify({localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
+  // Exercise the library's window-reset cleanup against 1,000 live limiter rows.
+  // All fixture writes remain local; no synthetic credentials enter the live probe.
+  const sessionResponse=await mf.dispatchFetch(origin+'/api/auth/get-session',{headers:credentials[3].headers});
+  assert.equal(sessionResponse.status,200);
+  await sessionResponse.arrayBuffer();
+  const sessionKeys=await db.prepare("SELECT key FROM probe_rate_limit WHERE key LIKE '%/get-session%'").all();
+  assert.equal(sessionKeys.results.length,1);
+  const sessionKey=sessionKeys.results[0].key;
+  await db.prepare('DELETE FROM probe_rate_limit').run();
+  const now=Date.now();
+  for(let i=0;i<1000;i+=50) await db.batch(Array.from({length:50},(_,j)=>
+    db.prepare('INSERT INTO probe_rate_limit (id,key,count,lastRequest) VALUES (?,?,?,?)')
+      .bind(`local-rate-${i+j}`,`local-rate-${i+j}`,1,now)));
+  await db.prepare('INSERT INTO probe_rate_limit (id,key,count,lastRequest) VALUES (?,?,?,?)')
+    .bind('local-expired-rate',sessionKey,1,now-120000).run();
+  const cleanupResponse=await mf.dispatchFetch(origin+'/api/auth/get-session',{headers:credentials[3].headers});
+  assert.equal(cleanupResponse.status,200);
+  await cleanupResponse.arrayBuffer();
+  const cleanup=JSON.parse(cleanupResponse.headers.get('x-probe-d1'));
+  assert.ok(cleanup.rowsRead < 30,'library cleanup must not scan 1,000 live limiter rows');
+  assert.ok(cleanup.rowsWritten >= 2,'account for the supplemental index write');
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM probe_rate_limit').first()).n,1001,'live limits are retained');
+  console.log(JSON.stringify({localOnly:true,accounts:1000,concurrentSessions:50,loginInitiations:20,cold,warm:burst[0],refresh,oauthCallback,cleanup,coldBurst:{requests:afterEviction.length,initializations:afterEviction.filter(m=>m.initialized).length,rowsRead:afterEviction.reduce((n,m)=>n+m.rowsRead,0)},expiry:'passed',revocation:'passed'}));
 } finally {local.close();await mf.dispose();}

@@ -9,6 +9,19 @@ import worker from './worker.mjs';
 import { readFileSync } from 'node:fs';
 
 const origin = 'https://auth-probe.example';
+
+test('rate-limit cleanup uses an idempotent non-unique expiry index', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(readFileSync('schema.sql', 'utf8'));
+    const indexes = readFileSync('indexes.sql', 'utf8');
+    db.exec(indexes);
+    db.exec(indexes);
+    const plan = db.prepare('EXPLAIN QUERY PLAN DELETE FROM probe_rate_limit WHERE lastRequest < ?').all(Date.now());
+    assert.ok(plan.some(row => row.detail.includes('probe_rate_limit_last_request_idx')));
+    assert.equal(db.prepare("PRAGMA index_list('probe_rate_limit')").all().find(row => row.name === 'probe_rate_limit_last_request_idx').unique, 0);
+  } finally { db.close(); }
+});
 const env = { PROBE_ORIGIN: origin, BETTER_AUTH_SECRET: 'disposable-test-secret-with-at-least-32-characters' };
 
 async function fixture() {

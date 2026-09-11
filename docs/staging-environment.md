@@ -45,15 +45,21 @@ it for routine verification.
 npm run refresh:staging:d1
 ```
 
-By default, this anonymizes user personal fields in staging after import (`ANONYMIZE_STAGING=1`).
-For post-identity-lifecycle dumps it also anonymizes verified claims and subject
-email state while preserving canonical account and alias relationships. Dumps
-from before that migration skip the lifecycle step safely.
-To skip anonymization explicitly:
+The refresh inventories both databases and rejects unclassified tables or mismatched
+application table sets; align schemas before refreshing. It exports
+only the explicitly listed application tables; authentication tables, sessions,
+provider credentials, passkeys, mappings, and migration proofs are excluded. User
+contact/display fields and avatar references are sanitized locally **before**
+import, while legacy claim relationships remain consistent. Operational notices
+and their audits, and user identity audit entries, are not copied. Private
+temporary files are deleted on exit. Unsanitized imports and target overrides
+are rejected.
 
-```bash
-ANONYMIZE_STAGING=0 npm run refresh:staging:d1
-```
+This is a private application-data fixture, not a fully anonymous public dataset:
+resource payloads, history, locations, application IDs, and permissions remain.
+Use synthetic accounts for authentication/migration tests. A staging database
+with auth tables is deliberately blocked until an explicit credential reset
+workflow is added; never overwrite enrolled staging identities implicitly.
 
 ### Refresh staging avatars bucket from production R2
 
@@ -81,7 +87,7 @@ Run the refresh scripts only when explicitly needed, then merge a staging PR and
 - Do not point staging bindings at production resources
 - Keep staging authenticated APIs and branch previews behind Access. The custom
   app shell is intentionally public so guest behavior and sign-up can be tested.
-- Keep `ANONYMIZE_STAGING=1` unless you have a documented operational need otherwise
+- Unsanitized D1 refreshes are disabled; no production authentication data may enter staging.
 
 ## URLs
 
