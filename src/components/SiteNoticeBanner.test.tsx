@@ -116,3 +116,34 @@ describe("SiteNoticeBanner", () => {
     expect(screen.queryByText("Old notice")).not.toBeInTheDocument();
   });
 });
+
+ it("only refreshes on load and explicit notice updates, not focus or time", async () => {
+  vi.useFakeTimers();
+  try {
+    fetchPublicSiteNoticeMock.mockResolvedValue(null);
+    const view = render(<SiteNoticeBanner />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event("focus")); await vi.advanceTimersByTimeAsync(600_000); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event(SITE_NOTICE_UPDATED_EVENT)); });
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2);
+    view.unmount();
+    window.dispatchEvent(new Event(SITE_NOTICE_UPDATED_EVENT));
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
+});
+
+it("clears an expired notice locally without fetching again", async () => {
+  vi.useFakeTimers();
+  const view = render(<SiteNoticeBanner />);
+  try {
+    fetchPublicSiteNoticeMock.mockResolvedValue({tone:"incident",message:"Temporary incident",dismissible:false,
+      revision:15,updatedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+1000).toISOString()});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
+    expect(screen.getByRole("alert")).toHaveTextContent("Temporary incident");
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchPublicSiteNoticeMock).toHaveBeenCalledTimes(1);
+  } finally {view.unmount();vi.useRealTimers();}
+});

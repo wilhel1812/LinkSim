@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BarChart3, CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
@@ -106,9 +106,8 @@ export function UserAdminPanel({
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
-  const setAuthState = useAppStore((state) => state.setAuthState);
   const currentUser = useAppStore((state) => state.currentUser);
-  const [me, setMe] = useState<CloudUser | null>(null);
+  const me = authState === "signed_in" ? currentUser : null;
   const [users, setUsers] = useState<CloudUser[]>([]);
   const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
   const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnostics | null>(null);
@@ -137,6 +136,14 @@ export function UserAdminPanel({
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
   );
+
+  const accountScope = `${authState}:${me?.id ?? ""}:${me?.isAdmin}:${me?.isModerator}`;
+  const accountScopeRef = useRef(accountScope);
+  accountScopeRef.current = accountScope;
+  useEffect(() => {
+    accountScopeRef.current = accountScope;
+    return () => { accountScopeRef.current = "unmounted"; };
+  }, [accountScope]);
 
   const canAdmin = Boolean(me?.isAdmin);
   const canModerate = Boolean(me?.isAdmin || me?.isModerator);
@@ -206,18 +213,20 @@ export function UserAdminPanel({
 
   const loadNotifications = useCallback(async () => {
     if (!canModerate) return;
+    const scope = accountScopeRef.current;
     setNotificationBusy(true);
     setNotificationStatus("");
     try {
-      const next = await fetchNotifications();
+      const next = await fetchNotifications(me?.id);
+      if (scope !== accountScopeRef.current) return;
       setNotificationFeed(next);
     } catch (error) {
       const message = getUiErrorMessage(error);
-      setNotificationStatus(`Notifications unavailable: ${message}`);
+      if (scope === accountScopeRef.current) setNotificationStatus(`Notifications unavailable: ${message}`);
     } finally {
-      setNotificationBusy(false);
+      if (scope === accountScopeRef.current) setNotificationBusy(false);
     }
-  }, [canModerate]);
+  }, [canModerate, me?.id]);
 
   const loadAdminAudit = useCallback(async () => {
     if (!canAdmin) return;
@@ -230,14 +239,14 @@ export function UserAdminPanel({
     }
   }, [canAdmin]);
 
-  const load = async () => {
+  const load = async (refreshProfile = false) => {
+    const scope = accountScopeRef.current;
     setBusy(true);
     setStatus("");
     try {
-      const current = await fetchMe();
-      setMe(current);
-      setCurrentUser(current);
-      setAuthState("signed_in");
+      const current = refreshProfile ? await fetchMe() : currentUser;
+      if (!current || scope !== accountScopeRef.current) return;
+      if (refreshProfile) setCurrentUser(current);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -246,6 +255,7 @@ export function UserAdminPanel({
           fetchSchemaDiagnostics(),
           fetchAdminAuditEvents(80),
         ]);
+        if (scope !== accountScopeRef.current) return;
         setUsers(all);
         setDeletedUsers(deleted);
         setAuthDiagnostics(authDiag);
@@ -253,6 +263,7 @@ export function UserAdminPanel({
         setAuditEvents(events);
       } else if (current.isModerator) {
         const all = await fetchUsers();
+        if (scope !== accountScopeRef.current) return;
         setUsers(all);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
@@ -267,23 +278,23 @@ export function UserAdminPanel({
       }
     } catch (error) {
       const message = getUiErrorMessage(error);
-      setStatus(`User load failed: ${message}`);
-      setMe(null);
-      setCurrentUser(null);
-      setAuthState("signed_out");
+      if (scope === accountScopeRef.current) setStatus(`User load failed: ${message}`);
     } finally {
-      setBusy(false);
+      if (scope === accountScopeRef.current) setBusy(false);
     }
   };
 
   useEffect(() => {
-    if (authState === "signed_out") {
-      setMe(null);
-      return;
-    }
-    if (authState !== "signed_in") return;
-    void load();
-  }, [authState]);
+    setBusy(false);
+    setNotificationBusy(false);
+    setNotificationFeed({ unreadCount: 0, items: [] });
+    setUsers([]);
+    setDeletedUsers([]);
+    setAuthDiagnostics(null);
+    setSchemaDiagnostics(null);
+    setAuditEvents([]);
+    if (authState === "signed_in" && renderMode === "admin-inline" && canModerate) void load();
+  }, [authState, currentUser?.id, canAdmin, canModerate, renderMode]);
 
   useEffect(() => {
     if (!canModerate) {
@@ -295,10 +306,7 @@ export function UserAdminPanel({
     return () => window.clearInterval(timer);
   }, [canModerate, loadNotifications]);
 
-  useEffect(() => {
-    if (!canModerate) return;
-    void loadAdminAudit();
-  }, [canModerate, loadAdminAudit]);
+
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
   const revokedUserCount = useMemo(
@@ -560,7 +568,7 @@ export function UserAdminPanel({
             <div className="section-heading">
               <p className="field-help">System diagnostics</p>
               <div className="chip-group">
-                <ActionButton disabled={busy} onClick={() => void load()} type="button">
+                <ActionButton disabled={busy} onClick={() => void load(true)} type="button">
                   Refresh
                 </ActionButton>
                 <ActionButton disabled={busy} onClick={() => void repairMetadata()} type="button">

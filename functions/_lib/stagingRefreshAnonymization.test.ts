@@ -49,9 +49,10 @@ describe("staging refresh identity anonymization", () => {
     expect(JSON.stringify(subjects)).not.toMatch(/primary@example|alias@example|other@example|blocked@example/);
   });
 
-  it("runs lifecycle anonymization only when both migrated tables exist in the imported dump", () => {
-    expect(refreshScript).toContain("db/staging-anonymize-identity.sql");
-    expect(refreshScript).toMatch(/grep.+verified_identity_claims/);
-    expect(refreshScript).toMatch(/grep.+identity_subject_states/);
+  it("exports only classified tables and sanitizes before staging import", () => {
+    expect(refreshScript).toContain('staging-export.mjs tables');
+    expect(refreshScript).toContain('TABLE_ARGS+=(--table');
+    expect(refreshScript.indexOf('staging-export.mjs sanitize')).toBeLessThan(refreshScript.indexOf('--file "${REFRESH_DIR}/sanitized.sql"'));
+    expect(refreshScript).not.toContain('--file "${REFRESH_DIR}/application.sql"');
   });
 });
