@@ -299,6 +299,7 @@ or secrets. Its mocked Turnstile result is not an abuse-protection acceptance te
 After independent review, the explicitly authorized disposable deployment order is:
 
 ```sh
+node remote-setup.mjs indexes-runtime
 node remote-setup.mjs deploy-runtime
 node remote-setup.mjs secrets-runtime
 node remote-setup.mjs deploy-gateway

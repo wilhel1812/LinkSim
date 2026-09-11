@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { protectedDatabaseIds, validateProbeConfig } from './probe-config.mjs';
@@ -67,19 +67,21 @@ test('live mode requires the fixture-free entrypoint, one tester and bounded exp
 test('every remote setup action rejects protected IDs before invoking Wrangler', () => {
   const dir = mkdtempSync(join(tmpdir(), 'auth-setup-test-'));
   const configPath = join(dir, 'probe.json');
+  const secretsPath = join(dir, 'secrets.json');
+  writeFileSync(secretsPath, '{}', { mode: 0o600 });
   try {
     for (const id of protectedDatabaseIds()) {
       writeFileSync(configPath, JSON.stringify(config(id)));
       for (const action of ['schema', 'deploy', 'secrets', 'indexes-runtime', 'turnstile-secrets-runtime']) {
         let invoked = false;
-        assert.throws(() => runSetup(action, { configPath, run: () => { invoked = true; } }), /protected D1/);
+        assert.throws(() => runSetup(action, { configPath, secretsPath, run: () => { invoked = true; } }), /protected D1/);
         assert.equal(invoked, false);
       }
     }
     writeFileSync(configPath, JSON.stringify(config()));
     for (const action of ['schema', 'deploy', 'secrets']) {
       let invoked = false;
-      runSetup(action, { configPath, run: (_command, args) => {
+      runSetup(action, { configPath, secretsPath, run: (_command, args) => {
         invoked = true;
         const snapshot = JSON.parse(readFileSync(args[args.indexOf('--config') + 1], 'utf8'));
         assert.equal(snapshot.d1_databases[0].database_id, config().d1_databases[0].database_id);
@@ -98,9 +100,10 @@ test('Durable Object actions retain guarded targets and cannot execute schema re
     PROBE_ENABLED:'github-passkey-validation',PROBE_GITHUB_ID:'88513',
     PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString()};
   const path=join(directory,'config.json');writeFileSync(path,JSON.stringify(value));
+  const secretsPath=join(directory,'secrets.json');writeFileSync(secretsPath,'{}',{mode:0o600});
   try {
     for(const action of ['indexes-runtime','deploy-runtime','secrets-runtime','bundle-runtime','deploy-gateway','bundle-gateway']) {
-      runSetup(action,{configPath:path,run(_command,args) {
+      runSetup(action,{configPath:path,secretsPath,run(_command,args) {
         const snapshot=JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8'));
         assert.equal(snapshot.name,action.endsWith('runtime')?`${value.name}-runtime`:value.name);
         assert.equal(args.includes('d1'),action==='indexes-runtime');
@@ -158,5 +161,31 @@ test('real Turnstile installer isolates its secret to the validated private runt
     assert.throws(()=>runSetup('turnstile-secrets-runtime',{configPath,turnstilePath,run(){throw new Error('must not invoke');}}),/site key mismatch/);
     assert.throws(()=>validateProbeConfig({...value,vars:{...value.vars,TURNSTILE_SECRET_KEY:keys.TURNSTILE_SECRET_KEY}}),/non-secret/);
     assert.throws(()=>validateProbeConfig({...value,vars:{...value.vars,PROBE_TURNSTILE_MODE:'typo'}}));
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});
+
+test('auth secret installers reject exposed or missing files before invoking Wrangler', () => {
+  const dir=mkdtempSync(join(tmpdir(),'auth-secret-mode-test-'));
+  const value=config();value.main='live-worker.mjs';
+  value.vars={...value.vars,PROBE_ENABLED:'github-passkey-validation',PROBE_GITHUB_ID:'88513',
+    PROBE_EXPIRES_AT:new Date(Date.now()+3600000).toISOString()};
+  const configPath=join(dir,'config.json');const secretsPath=join(dir,'secrets.json');
+  writeFileSync(configPath,JSON.stringify(value));writeFileSync(secretsPath,'{}',{mode:0o600});
+  try {
+    for(const action of ['secrets','secrets-runtime']) {
+      for(const mode of [0o644,0o640,0o604,0o660]) {
+        chmodSync(secretsPath,mode);
+        let invoked=false;
+        assert.throws(()=>runSetup(action,{configPath,secretsPath,run(){invoked=true;return {status:0};}}),/owner-only/);
+        assert.equal(invoked,false);
+      }
+      chmodSync(secretsPath,0o600);
+      let invoked=false;
+      runSetup(action,{configPath,secretsPath,run(_command,args){
+        invoked=true;assert.equal(args[args.indexOf('bulk')+1],secretsPath);return {status:0};
+      }});
+      assert.equal(invoked,true);
+      assert.throws(()=>runSetup(action,{configPath,secretsPath:join(dir,'missing'),run(){throw new Error('must not invoke');}}),/ENOENT/);
+    }
   } finally {rmSync(dir,{recursive:true,force:true});}
 });

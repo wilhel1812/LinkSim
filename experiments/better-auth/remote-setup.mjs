@@ -10,9 +10,12 @@ import { isRealTurnstileKey } from './turnstile-policy.mjs';
 
 const directory = fileURLToPath(new URL('.', import.meta.url));
 
-export function runSetup(action, { configPath, turnstilePath = join(directory, '.wrangler/turnstile-validation-secrets.json'), run = spawnSync } = {}) {
+export function runSetup(action, { configPath, secretsPath = join(directory, '.probe-secrets.json'), turnstilePath = join(directory, '.wrangler/turnstile-validation-secrets.json'), run = spawnSync } = {}) {
   assert.ok(['turnstile-secrets-runtime', 'indexes-runtime', 'schema', 'deploy', 'secrets', 'deploy-runtime', 'deploy-gateway', 'secrets-runtime', 'bundle-runtime', 'bundle-gateway'].includes(action), 'expected schema, deploy or secrets');
   const base = readProbeConfig(configPath);
+  if (action === 'secrets' || action === 'secrets-runtime') {
+    assert.equal(statSync(secretsPath).mode & 0o077, 0, 'Auth secrets must be owner-only');
+  }
   const kind = action.endsWith('-runtime') ? 'runtime' : action.endsWith('-gateway') ? 'gateway' : undefined;
   const config = kind ? durableConfigs(base)[kind] : base;
   if (['live-worker.mjs', 'durable-gateway-worker.mjs'].includes(config.main)) buildBrowser({ siteKey: config.vars.TURNSTILE_SITE_KEY });
@@ -27,7 +30,7 @@ export function runSetup(action, { configPath, turnstilePath = join(directory, '
       'indexes-runtime': ['d1', 'execute', 'DB', '--remote', '--command', readFileSync(join(directory, 'indexes.sql'), 'utf8')],
       schema: ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'schema.sql')],
       deploy: ['deploy'],
-      secrets: ['secret', 'bulk', join(directory, '.probe-secrets.json')],
+      secrets: ['secret', 'bulk', secretsPath],
     };
     if (action === 'turnstile-secrets-runtime') {
       assert.equal(base.vars.PROBE_TURNSTILE_MODE, 'real', 'real Turnstile mode required');
