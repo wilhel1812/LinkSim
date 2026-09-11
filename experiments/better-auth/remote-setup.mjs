@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readProbeConfig } from './probe-config.mjs';
@@ -23,7 +23,7 @@ export function runSetup(action, { configPath, run = spawnSync } = {}) {
     const snapshot = join(temporary, 'wrangler.json');
     writeFileSync(snapshot, JSON.stringify({ ...config, main: join(directory, config.main) }), { mode: 0o600 });
     const commands = {
-      'indexes-runtime': ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'indexes.sql')],
+      'indexes-runtime': ['d1', 'execute', 'DB', '--remote', '--command', readFileSync(join(directory, 'indexes.sql'), 'utf8')],
       schema: ['d1', 'execute', 'DB', '--remote', '--file', join(directory, 'schema.sql')],
       deploy: ['deploy'],
       secrets: ['secret', 'bulk', join(directory, '.probe-secrets.json')],

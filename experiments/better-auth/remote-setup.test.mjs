@@ -104,7 +104,7 @@ test('Durable Object actions retain guarded targets and cannot execute schema re
         const snapshot=JSON.parse(readFileSync(args[args.indexOf('--config')+1],'utf8'));
         assert.equal(snapshot.name,action.endsWith('runtime')?`${value.name}-runtime`:value.name);
         assert.equal(args.includes('d1'),action==='indexes-runtime');
-        if(action==='indexes-runtime') assert.equal(args[args.indexOf('--file')+1].endsWith('/indexes.sql'),true);
+        if(action==='indexes-runtime') assert.equal(args[args.indexOf('--command')+1],readFileSync(new URL('./indexes.sql',import.meta.url),'utf8'));
         assert.equal(snapshot.workers_dev,action.endsWith('gateway'));
         assert.equal(args.includes('--dry-run'),action.startsWith('bundle-'));
         return {status:0,stdout:'[]'};
