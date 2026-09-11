@@ -228,6 +228,11 @@ async function verifyRemoteSchema(targetName, databaseName) {
       ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
       { capture: true },
     );
+    await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_window WHERE resource_kind = 'site' AND changed_at >= '2000-01-01' LIMIT 0;"],
+      { capture: true },
+    );
     usersResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(users);"],

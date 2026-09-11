@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { executeVerifiedIdentityEnsure, fetchLibraryForUser } from "./db";
 import { SqliteD1 } from "./testSqliteD1";
@@ -94,6 +94,104 @@ const originalRemoval: Query = {
 };
 
 describe("D1 query work budgets", () => {
+  it.each(["site", "simulation"] as const)("preserves paged %s visibility and administrator access without duplicates", async (kind) => {
+    const db = fixture(0, 0);
+    const table = kind === "site" ? "sites" : "simulations";
+    const roles = kind === "site" ? "site_roles" : "simulation_roles";
+    const phase = kind === "site" ? "sites" : "simulations";
+    const collection = kind === "site" ? "siteLibrary" : "simulationPresets";
+    for (const [id, owner, visibility] of [
+      ["a-owned", "reader", "private"], ["b-overlap", "reader", "public_read"],
+      ["c-public", "owner", "public_read"], ["d-shared", "owner", "public_write"],
+      ["e-hidden", "owner", "private"], ["f-stale-grant", "owner", "private"],
+    ]) {
+      db.db.prepare(`INSERT INTO ${table} (id, owner_user_id, name, visibility, payload_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, '2026-01-01')`).run(id, owner, id, visibility, JSON.stringify({ id, name: id }));
+    }
+    for (const id of ["b-overlap", "d-shared", "f-stale-grant"]) {
+      db.db.prepare(`INSERT INTO ${roles} VALUES (?, 'reader', 'editor', '2026-01-01')`).run(id);
+    }
+    const read = (afterId = "") => fetchLibraryForUser({ DB: db } as never, "reader", { phase, limit: 2, afterId });
+    for (const moderator of [0, 1]) {
+      db.db.prepare("UPDATE users SET is_moderator = ? WHERE id = 'reader'").run(moderator);
+      const first = await read();
+      expect(first[collection].map(row => row.id)).toEqual(["a-owned", "b-overlap"]);
+      const second = await read(first.nextCursor!.afterId);
+      expect(second[collection].map(row => row.id)).toEqual(["c-public", "d-shared"]);
+    }
+    if (kind === "simulation") db.db.exec("UPDATE simulations SET status = 'deleted' WHERE id = 'c-public'");
+    const ordinary = await fetchLibraryForUser({ DB: db } as never, "reader");
+    expect(ordinary[collection].map(row => row.id).sort()).toEqual(kind === "site"
+      ? ["a-owned", "b-overlap", "c-public", "d-shared"] : ["a-owned", "b-overlap", "d-shared"]);
+    db.db.exec("UPDATE users SET is_admin = 1 WHERE id = 'reader'");
+    const admin = await fetchLibraryForUser({ DB: db } as never, "reader", { phase });
+    expect(admin[collection].map(row => row.id)).toEqual(["a-owned", "b-overlap", "c-public", "d-shared", "e-hidden", "f-stale-grant"]);
+    db.db.close();
+  });
+
+  it("applies the additive history index idempotently without changing history", () => {
+    const db = fixture(10, 2);
+    db.db.exec("DROP INDEX idx_resource_changes_window");
+    const before = db.db.prepare("SELECT * FROM resource_changes ORDER BY id").all();
+    const sql = readFileSync("db/migrations/2026-09-11_library_change_window.sql", "utf8");
+    db.db.exec(sql);
+    db.db.exec(sql);
+    expect(db.db.prepare("SELECT * FROM resource_changes ORDER BY id").all()).toEqual(before);
+    expect(db.db.prepare("PRAGMA index_info(idx_resource_changes_window)").all().map(row => row.name))
+      .toEqual(["resource_kind", "changed_at", "resource_id"]);
+    db.db.close();
+  });
+
+  it.each(["site", "simulation"] as const)("keeps %s reads independent of unrelated private resource count", async (kind) => {
+    const table = kind === "site" ? "sites" : "simulations";
+    const phase = kind === "site" ? "sites" : "simulations";
+    const removalPhase = kind === "site" ? "removed_sites" : "removed_simulations";
+    const run = async (count: number) => {
+      const db = fixture(0, 0);
+      db.db.prepare(`WITH RECURSIVE ids(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM ids WHERE n < ?)
+        INSERT INTO ${table} (id, owner_user_id, name, visibility, payload_json, updated_at)
+        SELECT 'private-'||n, 'owner', 'Hidden', 'private', '{}', '2026-01-01' FROM ids`).run(count);
+      db.db.exec(`INSERT INTO ${table} (id, owner_user_id, name, visibility, payload_json, updated_at)
+        VALUES ('mine', 'reader', 'Mine', 'private', '{"id":"mine","name":"Mine"}', '2026-01-01')`);
+      const queries: Query[] = [];
+      for (const readPhase of [phase, removalPhase]) {
+        await fetchLibraryForUser({ DB: db } as never, "reader", { phase: readPhase, afterId: "", limit: 20 });
+        queries.push(db.statements.findLast(({ sql }) => sql.includes(readPhase === phase ? "SELECT s.payload_json" : "current_role"))!);
+      }
+      const result = measure(db, queries);
+      db.db.close();
+      return result;
+    };
+    const small = await run(100);
+    const large = await run(10000);
+    expect(large.results).toEqual(small.results);
+    expect(large.steps).toBeLessThanOrEqual(small.steps + 1000);
+  });
+
+  it("does not scan old history for empty removal and deletion deltas", async () => {
+    const run = async (depth: number) => {
+      const db = fixture(depth, 100);
+      // Exercise Site deletion history too, without changing the fixture size.
+      db.db.exec("UPDATE resource_changes SET resource_kind = 'site'");
+      await fetchLibraryForUser({ DB: db } as never, "reader", {
+        phase: "removed_sites", since: "2026-09-10T00:00:00.000Z", cutoff: "2026-09-11T00:00:00.000Z",
+      });
+      const removal = db.statements.findLast(({ sql }) => sql.includes("current_role"))!;
+      await fetchLibraryForUser({ DB: db } as never, "reader", {
+        phase: "deleted_sites", since: "2026-09-10T00:00:00.000Z", cutoff: "2026-09-11T00:00:00.000Z",
+      });
+      const deletion = db.statements.findLast(({ sql }) => sql.includes("FROM resource_changes tombstone"))!;
+      const result = measure(db, [removal, deletion]);
+      db.db.close();
+      return result;
+    };
+    const small = await run(10);
+    const large = await run(1000);
+    expect(large.results).toEqual([[], []]);
+    expect(large.steps).toBeLessThanOrEqual(small.steps + 500);
+    expect(large.steps).toBeLessThan(1000);
+  }, 30000);
+
   it.each(["site", "simulation"] as const)("preserves %s removal audiences, windows and pagination", async (kind) => {
     const db = fixture(0, 0);
     const table = kind === "site" ? "sites" : "simulations";
