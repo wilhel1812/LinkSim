@@ -34,6 +34,7 @@ class TestD1 {
       CREATE TABLE site_roles (site_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (site_id, user_id));
       CREATE TABLE simulation_roles (simulation_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (simulation_id, user_id));
       CREATE TABLE resource_changes (id INTEGER PRIMARY KEY, resource_kind TEXT, resource_id TEXT, action TEXT, actor_user_id TEXT NOT NULL, changed_at TEXT, note TEXT, details_json TEXT, snapshot_json TEXT);
+      CREATE INDEX idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id);
       CREATE TABLE simulation_path_leaderboard_entries (simulation_id TEXT, canonical_path_key TEXT, owner_user_id TEXT NOT NULL, from_site_id TEXT, to_site_id TEXT, link_id TEXT, path_label TEXT, simulation_name TEXT, distance_km REAL, rx_after_env_loss_dbm REAL, rx_margin_db REAL, terrain_obstructed INTEGER, terrain_dataset TEXT, terrain_tile_signature TEXT, simulation_updated_at TEXT, created_at TEXT, updated_at TEXT, PRIMARY KEY (simulation_id, canonical_path_key));
       INSERT INTO users (id, username, is_approved, is_admin, is_moderator) VALUES ('reader', 'Reader', 1, 0, 0), ('other', 'Other', 1, 0, 0);
     `);

@@ -30,9 +30,11 @@ session tokens, cryptography, or recovery codes.
 
 ## Capacity gate
 
-Target 1,000 registered accounts at the historical activity mix, plus an explicit
-scenario of 1,000 daily active accounts, 30 protected requests and one login each
-per day. Test 50 concurrent API requests and 20 simultaneous login initiations.
+Target 1,000 registered accounts with activity comparable to current users.
+The maintainer clarified that 1,000 daily active accounts is not a requirement.
+Retain the prior 1,000-DAU/30-request calculation only as an agent-selected stress
+sensitivity, not a release acceptance target or measured usage. Derive ordinary
+daily activity from evidence. Test 50 concurrent API requests and 20 simultaneous login initiations.
 Bulk tests use synthetic credentials; do not automate mass GitHub authorizations.
 
 Measure gateway CPU (including cold starts), Durable Object latency/duration,

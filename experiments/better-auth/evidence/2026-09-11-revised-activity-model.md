@@ -1,7 +1,17 @@
 # Revised activity model using the existing maintainer sample
 
 Status: conditional request projection; overall capacity gate remains pending.
-Keep the 1,000 registered-user target and the approved 1,000-DAU sensitivity.
+Follow-up [baseline D1 measurements](2026-09-11-application-d1-cost.md) exceed
+the database budget for the synthetic daily-active stress workload; they do not
+establish failure of the registered-user target. Subsequent
+[query optimizations](2026-09-11-query-optimization.md) materially reduce sparse
+loads and empty deltas, with history-heavy full loads still costly. Baseline measurements also show
+82 total requests for a specific 400-record recovery, including actual server
+phase transitions. Retain the historical 62-request maintainer sample below;
+do not use the earlier mock as real-server cost evidence or a universal bound.
+Keep the 1,000 registered-user target at representative activity. The maintainer
+clarified that 1,000 DAU was never their requirement; the calculation below is
+an agent-selected stress sensitivity, not an approved activity target.
 Manual Sync remains a forced full-recovery action with its current behavior.
 
 ## Evidence and the maintainer's clarification

@@ -1,0 +1,285 @@
+{
+  "source": "local Miniflare D1 metadata; real handlers and client helpers",
+  "users": 1000,
+  "backgroundPrivateSites": 9990,
+  "backgroundPrivateSimulations": 1998,
+  "identity": "existing explicit development auth; no OAuth or session costs included",
+  "limitations": "Not remote billing, CPU, production distribution, or a concurrency test. Background has no sharing/tombstone history. Cold setup excluded from steady-state model.",
+  "results": [
+    {
+      "operation": "cold schema plus new identity (setup only)",
+      "requests": 1,
+      "queries": 46,
+      "rowsRead": 95,
+      "rowsWritten": 13,
+      "byRoute": {
+        "GET me": {
+          "requests": 1,
+          "queries": 46,
+          "rowsRead": 95,
+          "rowsWritten": 13
+        }
+      }
+    },
+    {
+      "operation": "warm legacy identity ensure only (already included in handlers)",
+      "requests": 0,
+      "queries": 4,
+      "rowsRead": 10,
+      "rowsWritten": 3,
+      "byRoute": {}
+    },
+    {
+      "operation": "warm profile",
+      "requests": 1,
+      "queries": 5,
+      "rowsRead": 11,
+      "rowsWritten": 3,
+      "byRoute": {
+        "GET me": {
+          "requests": 1,
+          "queries": 5,
+          "rowsRead": 11,
+          "rowsWritten": 3
+        }
+      }
+    },
+    {
+      "operation": "load 10 Sites + 2 Simulations",
+      "requests": 12,
+      "queries": 84,
+      "rowsRead": 96374,
+      "rowsWritten": 36,
+      "byRoute": {
+        "GET library/sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 20234,
+          "rowsWritten": 6
+        },
+        "GET library/deleted_sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 44,
+          "rowsWritten": 6
+        },
+        "GET library/removed_sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 59986,
+          "rowsWritten": 6
+        },
+        "GET library/simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 4066,
+          "rowsWritten": 6
+        },
+        "GET library/deleted_simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 26,
+          "rowsWritten": 6
+        },
+        "GET library/removed_simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 12018,
+          "rowsWritten": 6
+        }
+      }
+    },
+    {
+      "operation": "empty delta",
+      "requests": 12,
+      "queries": 84,
+      "rowsRead": 96122,
+      "rowsWritten": 36,
+      "byRoute": {
+        "GET library/sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 20024,
+          "rowsWritten": 6
+        },
+        "GET library/deleted_sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 44,
+          "rowsWritten": 6
+        },
+        "GET library/removed_sites": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 59986,
+          "rowsWritten": 6
+        },
+        "GET library/simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 4024,
+          "rowsWritten": 6
+        },
+        "GET library/deleted_simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 26,
+          "rowsWritten": 6
+        },
+        "GET library/removed_simulations": {
+          "requests": 2,
+          "queries": 14,
+          "rowsRead": 12018,
+          "rowsWritten": 6
+        }
+      }
+    },
+    {
+      "operation": "edit one Site + one Simulation",
+      "requests": 1,
+      "queries": 18,
+      "rowsRead": 43,
+      "rowsWritten": 13,
+      "byRoute": {
+        "PUT library": {
+          "requests": 1,
+          "queries": 18,
+          "rowsRead": 43,
+          "rowsWritten": 13
+        }
+      }
+    },
+    {
+      "operation": "save one Simulation",
+      "requests": 1,
+      "queries": 12,
+      "rowsRead": 24,
+      "rowsWritten": 8,
+      "byRoute": {
+        "PUT library": {
+          "requests": 1,
+          "queries": 12,
+          "rowsRead": 24,
+          "rowsWritten": 8
+        }
+      }
+    },
+    {
+      "operation": "administrator notification poll",
+      "requests": 1,
+      "queries": 6,
+      "rowsRead": 12,
+      "rowsWritten": 3,
+      "byRoute": {
+        "GET notifications": {
+          "requests": 1,
+          "queries": 6,
+          "rowsRead": 12,
+          "rowsWritten": 3
+        }
+      }
+    },
+    {
+      "operation": "full recovery: 12 records",
+      "requests": 25,
+      "queries": 227,
+      "rowsRead": 192909,
+      "rowsWritten": 135,
+      "byRoute": {
+        "GET library/sites": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 40468,
+          "rowsWritten": 12
+        },
+        "GET library/deleted_sites": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 112,
+          "rowsWritten": 12
+        },
+        "GET library/removed_sites": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 119972,
+          "rowsWritten": 12
+        },
+        "GET library/simulations": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 8132,
+          "rowsWritten": 12
+        },
+        "GET library/deleted_simulations": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 52,
+          "rowsWritten": 12
+        },
+        "GET library/removed_simulations": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 24036,
+          "rowsWritten": 12
+        },
+        "PUT library": {
+          "requests": 1,
+          "queries": 59,
+          "rowsRead": 137,
+          "rowsWritten": 63
+        }
+      }
+    },
+    {
+      "operation": "full recovery: 400 records",
+      "requests": 82,
+      "queries": 2226,
+      "rowsRead": 228375,
+      "rowsWritten": 2246,
+      "byRoute": {
+        "GET library/sites": {
+          "requests": 38,
+          "queries": 266,
+          "rowsRead": 57264,
+          "rowsWritten": 114
+        },
+        "GET library/deleted_sites": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 2232,
+          "rowsWritten": 12
+        },
+        "GET library/removed_sites": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 121332,
+          "rowsWritten": 12
+        },
+        "GET library/simulations": {
+          "requests": 8,
+          "queries": 56,
+          "rowsRead": 10476,
+          "rowsWritten": 24
+        },
+        "GET library/deleted_simulations": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 52,
+          "rowsWritten": 12
+        },
+        "GET library/removed_simulations": {
+          "requests": 4,
+          "queries": 28,
+          "rowsRead": 24228,
+          "rowsWritten": 12
+        },
+        "PUT library": {
+          "requests": 20,
+          "queries": 1792,
+          "rowsRead": 12791,
+          "rowsWritten": 2060
+        }
+      }
+    }
+  ]
+}

@@ -198,7 +198,7 @@ const parseWranglerJsonPayload = (stdout) => {
 };
 
 async function verifyRemoteSchema(targetName, databaseName) {
-  if (targetName !== "staging" && targetName !== "prod-main") return;
+  if (targetName !== "staging" && targetName !== "staging-preview" && targetName !== "prod-main") return;
   // CI workflows apply and verify required migrations before invoking this deploy script.
   // Keep the local preflight for operators with D1 read access.
   if (process.env.GITHUB_ACTIONS === "true") return;
@@ -226,6 +226,11 @@ async function verifyRemoteSchema(targetName, databaseName) {
     identityMetaResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
+      { capture: true },
+    );
+    await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_window WHERE resource_kind = 'site' AND changed_at >= '2000-01-01' LIMIT 0;"],
       { capture: true },
     );
     usersResult = await run(

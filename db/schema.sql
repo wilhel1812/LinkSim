@@ -166,6 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility)
 CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status);
 CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id);
 CREATE INDEX IF NOT EXISTS idx_identity_claims_current_user ON verified_identity_claims(current_user_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_subject_current_canonical
   ON identity_subject_states(canonical_user_id) WHERE status = 'current';
