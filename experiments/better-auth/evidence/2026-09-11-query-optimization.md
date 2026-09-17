@@ -84,7 +84,9 @@ additional storage and quota. It was not run on a remote database here. The
 idempotent `2026-09-11_library_change_window.sql` migration is additive and keeps
 every history record. CI applies and probes it before shared staging/production
 deployment, and schema-changing previews are skipped. The local deploy preflight
-also checks index availability. Production still requires its existing separate
+also checks index availability, including manual staging previews. The existing
+runtime schema bootstrap creates the index idempotently for local databases;
+this does not replace the remote pre-deployment migration and probe. Production still requires its existing separate
 approval. Keep the index during application rollback; do not drop it while an
 optimized deployment may still serve requests.
 

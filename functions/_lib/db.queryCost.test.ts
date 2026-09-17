@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executeVerifiedIdentityEnsure, fetchLibraryForUser } from "./db";
 import { SqliteD1 } from "./testSqliteD1";
 
@@ -294,4 +294,25 @@ describe("D1 query work budgets", () => {
     large.db.close();
     wider.db.close();
   }, 30_000);
+});
+
+
+describe("Library index bootstrap", () => {
+  it.each(["fresh history table", "existing history table"])("supports paginated reads with %s", async (state) => {
+    vi.resetModules();
+    const { fetchLibraryForUser: readLibrary } = await import("./db");
+    const db = new SqliteD1();
+    try {
+      if (state === "fresh history table") db.db.exec("DROP TABLE resource_changes");
+      else db.db.exec("DROP INDEX idx_resource_changes_window");
+      const env = { DB: db } as unknown as Parameters<typeof readLibrary>[0];
+      for (const phase of ["sites", "simulations", "deleted_sites", "deleted_simulations", "removed_sites", "removed_simulations"] as const) {
+        await expect(readLibrary(env, "reader", { phase, cutoff: "2026-09-11T00:00:00.000Z", limit: 10 })).resolves.toBeDefined();
+      }
+      expect(db.db.prepare("PRAGMA index_info(idx_resource_changes_window)").all().map((row) => row.name))
+        .toEqual(["resource_kind", "changed_at", "resource_id"]);
+    } finally {
+      db.db.close();
+    }
+  });
 });

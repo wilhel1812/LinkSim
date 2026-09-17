@@ -252,3 +252,9 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
   });
 });
+
+
+it("requires the remote schema preflight for manual staging previews", () => {
+  const preflight = deployScript.split("async function verifyRemoteSchema")[1].split("let resourceChangesResult")[0];
+  expect(preflight).toContain('targetName !== "staging-preview"');
+});

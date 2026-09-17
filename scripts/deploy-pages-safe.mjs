@@ -198,7 +198,7 @@ const parseWranglerJsonPayload = (stdout) => {
 };
 
 async function verifyRemoteSchema(targetName, databaseName) {
-  if (targetName !== "staging" && targetName !== "prod-main") return;
+  if (targetName !== "staging" && targetName !== "staging-preview" && targetName !== "prod-main") return;
   // CI workflows apply and verify required migrations before invoking this deploy script.
   // Keep the local preflight for operators with D1 read access.
   if (process.env.GITHUB_ACTIONS === "true") return;
