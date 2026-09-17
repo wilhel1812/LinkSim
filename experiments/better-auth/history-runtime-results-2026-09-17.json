@@ -1,0 +1,1413 @@
+{
+  "source": "Synthetic remote component measurement; sanitized Wrangler CPU and client aggregates matched by sequential order, path, status and request time window",
+  "results": [
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647313711,
+      "status": 200,
+      "elapsedMs": 806,
+      "aggregate": {
+        "firstInvocation": true,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 2503632
+      },
+      "runtime": {
+        "firstInvocation": true,
+        "timestamp": 1789647314131,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 260,
+        "wallMs": 338,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647314519,
+      "status": 200,
+      "elapsedMs": 1119,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 2503632
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647315298,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 230,
+        "wallMs": 314,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647315638,
+      "status": 200,
+      "elapsedMs": 629,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 2503632
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647315892,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 270,
+        "wallMs": 354,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 4,
+      "startedAt": 1789647316267,
+      "status": 200,
+      "elapsedMs": 487,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 2503632
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647316436,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 226,
+        "wallMs": 285,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 5,
+      "startedAt": 1789647316754,
+      "status": 200,
+      "elapsedMs": 440,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 2503632
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647316913,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 190,
+        "wallMs": 255,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647317194,
+      "status": 200,
+      "elapsedMs": 305,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647317365,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 64,
+        "wallMs": 113,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647317499,
+      "status": 200,
+      "elapsedMs": 276,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647317666,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 42,
+        "wallMs": 89,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647317775,
+      "status": 200,
+      "elapsedMs": 269,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647317935,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 42,
+        "wallMs": 85,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 4,
+      "startedAt": 1789647318044,
+      "status": 200,
+      "elapsedMs": 335,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647318252,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 52,
+        "wallMs": 95,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 5,
+      "startedAt": 1789647318379,
+      "status": 200,
+      "elapsedMs": 329,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647318601,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 43,
+        "wallMs": 80,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647318730,
+      "status": 200,
+      "elapsedMs": 389,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 180660
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647318917,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 118,
+        "wallMs": 181,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647319120,
+      "status": 200,
+      "elapsedMs": 351,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 180660
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647319302,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 110,
+        "wallMs": 149,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647319472,
+      "status": 200,
+      "elapsedMs": 416,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 180660
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647319648,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 103,
+        "wallMs": 216,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 4,
+      "startedAt": 1789647319888,
+      "status": 200,
+      "elapsedMs": 377,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 180660
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647320071,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 132,
+        "wallMs": 175,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 5,
+      "startedAt": 1789647320265,
+      "status": 200,
+      "elapsedMs": 337,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 180660
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647320432,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 103,
+        "wallMs": 142,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647320603,
+      "status": 200,
+      "elapsedMs": 315,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647320784,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 71,
+        "wallMs": 110,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647320918,
+      "status": 200,
+      "elapsedMs": 263,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647321086,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 46,
+        "wallMs": 75,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647321181,
+      "status": 200,
+      "elapsedMs": 353,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4190560,
+        "storedBytes": 4190560
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647321362,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 53,
+        "wallMs": 151,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 4,
+      "startedAt": 1789647321534,
+      "status": 503,
+      "elapsedMs": 341,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647321713,
+        "path": "/probe/baseline",
+        "status": 503,
+        "cpuMs": 54,
+        "wallMs": 140,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 5,
+      "startedAt": 1789647321875,
+      "status": 503,
+      "elapsedMs": 462,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322255,
+        "path": "/probe/baseline",
+        "status": 503,
+        "cpuMs": 20,
+        "wallMs": 62,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647322369,
+      "status": 503,
+      "elapsedMs": 79,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322401,
+        "path": "/probe/compress",
+        "status": 503,
+        "cpuMs": 10,
+        "wallMs": 25,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647322448,
+      "status": 503,
+      "elapsedMs": 76,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322477,
+        "path": "/probe/compress",
+        "status": 503,
+        "cpuMs": 10,
+        "wallMs": 27,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647322524,
+      "status": 503,
+      "elapsedMs": 75,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322556,
+        "path": "/probe/compress",
+        "status": 503,
+        "cpuMs": 10,
+        "wallMs": 23,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647322599,
+      "status": 503,
+      "elapsedMs": 70,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322630,
+        "path": "/probe/baseline",
+        "status": 503,
+        "cpuMs": 10,
+        "wallMs": 22,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647322669,
+      "status": 200,
+      "elapsedMs": 60,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 524130
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322699,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 6,
+        "wallMs": 10,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647322729,
+      "status": 200,
+      "elapsedMs": 76,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 524130
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322769,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 9,
+        "wallMs": 15,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647322807,
+      "status": 200,
+      "elapsedMs": 94,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 10265
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322850,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 12,
+        "wallMs": 29,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647322901,
+      "status": 503,
+      "elapsedMs": 70,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647322930,
+        "path": "/probe/compress",
+        "status": 503,
+        "cpuMs": 11,
+        "wallMs": 19,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647322972,
+      "status": 503,
+      "elapsedMs": 68,
+      "aggregate": null,
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323002,
+        "path": "/probe/compress",
+        "status": 503,
+        "cpuMs": 10,
+        "wallMs": 18,
+        "outcome": "exceededCpu",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647323040,
+      "status": 200,
+      "elapsedMs": 68,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 524130
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323069,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 9,
+        "wallMs": 15,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647323108,
+      "status": 200,
+      "elapsedMs": 56,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 524130
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323138,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 5,
+        "wallMs": 8,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647323164,
+      "status": 200,
+      "elapsedMs": 62,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524130,
+        "storedBytes": 524130
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323197,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 6,
+        "wallMs": 11,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647323231,
+      "status": 200,
+      "elapsedMs": 51,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 97441
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323253,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 7,
+        "wallMs": 8,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647323282,
+      "status": 200,
+      "elapsedMs": 63,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 97441
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323308,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 17,
+        "wallMs": 18,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647323345,
+      "status": 200,
+      "elapsedMs": 125,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 97441
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647323429,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 9,
+        "wallMs": 11,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647323470,
+      "status": 200,
+      "elapsedMs": 586,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324031,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 3,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647324057,
+      "status": 200,
+      "elapsedMs": 165,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324200,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647324222,
+      "status": 200,
+      "elapsedMs": 142,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324336,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647324365,
+      "status": 200,
+      "elapsedMs": 146,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324485,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 4,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647324512,
+      "status": 200,
+      "elapsedMs": 141,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324626,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 4,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647324654,
+      "status": 200,
+      "elapsedMs": 151,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324777,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 7,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647324805,
+      "status": 200,
+      "elapsedMs": 137,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647324917,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 3,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647324942,
+      "status": 200,
+      "elapsedMs": 140,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325060,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 3,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647325082,
+      "status": 200,
+      "elapsedMs": 139,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130914,
+        "storedBytes": 130914
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325195,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 5,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647325221,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 2423
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325241,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647325261,
+      "status": 200,
+      "elapsedMs": 43,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 2423
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325281,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647325305,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 2423
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325325,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647325345,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325365,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647325385,
+      "status": 200,
+      "elapsedMs": 41,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325405,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647325426,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325445,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789647325466,
+      "status": 200,
+      "elapsedMs": 39,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325485,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789647325505,
+      "status": 200,
+      "elapsedMs": 39,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325524,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789647325545,
+      "status": 200,
+      "elapsedMs": 41,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325566,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789647325586,
+      "status": 200,
+      "elapsedMs": 41,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325604,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789647325627,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325648,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789647325667,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 8034,
+        "storedBytes": 8034
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789647325686,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "4063559c-c14f-4ca9-8bf8-0ba4d6e13471"
+      }
+    }
+  ]
+}
