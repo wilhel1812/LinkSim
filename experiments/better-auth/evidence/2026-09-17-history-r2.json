@@ -1,0 +1,863 @@
+{
+  "source": "Synthetic remote D1/R2 archive component; sanitized Wrangler CPU where available; metadata-only D1 fixture; excludes setup, production indexes, auth and full app overhead",
+  "results": [
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "startedAt": 1789650358576,
+      "status": 200,
+      "elapsedMs": 4947,
+      "aggregate": {
+        "result": {
+          "scanned": 10,
+          "candidates": 10,
+          "converted": 10,
+          "conflicts": 0,
+          "nextId": 10,
+          "bytesBefore": 3142250,
+          "bytesAfter": 2290,
+          "archiveBytes": 3339321
+        },
+        "metrics": {
+          "queries": 11,
+          "rowsRead": 20,
+          "rowsWritten": 10,
+          "r2Puts": 10,
+          "r2Gets": 10
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650358594,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 70,
+        "wallMs": 4902,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/archive?id=11",
+      "startedAt": 1789650363529,
+      "status": 200,
+      "elapsedMs": 5296,
+      "aggregate": {
+        "result": {
+          "scanned": 10,
+          "candidates": 10,
+          "converted": 10,
+          "conflicts": 0,
+          "nextId": 20,
+          "bytesBefore": 3142190,
+          "bytesAfter": 2320,
+          "archiveBytes": 3339270
+        },
+        "metrics": {
+          "queries": 11,
+          "rowsRead": 20,
+          "rowsWritten": 10,
+          "r2Puts": 10,
+          "r2Gets": 10
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650363550,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 64,
+        "wallMs": 5251,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650368827,
+      "status": 200,
+      "elapsedMs": 172,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 314225
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650368845,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 137,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "startedAt": 1789650369000,
+      "status": 200,
+      "elapsedMs": 208,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650369017,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 170,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "startedAt": 1789650374642,
+      "status": 200,
+      "elapsedMs": 5061,
+      "aggregate": {
+        "result": {
+          "scanned": 10,
+          "candidates": 10,
+          "converted": 10,
+          "conflicts": 0,
+          "nextId": 10,
+          "bytesBefore": 3142250,
+          "bytesAfter": 2290,
+          "archiveBytes": 3339321
+        },
+        "metrics": {
+          "queries": 11,
+          "rowsRead": 20,
+          "rowsWritten": 10,
+          "r2Puts": 10,
+          "r2Gets": 10
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650374660,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 67,
+        "wallMs": 5024,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/archive?id=11",
+      "startedAt": 1789650379704,
+      "status": 200,
+      "elapsedMs": 4373,
+      "aggregate": {
+        "result": {
+          "scanned": 10,
+          "candidates": 10,
+          "converted": 10,
+          "conflicts": 0,
+          "nextId": 20,
+          "bytesBefore": 3142190,
+          "bytesAfter": 2320,
+          "archiveBytes": 3339270
+        },
+        "metrics": {
+          "queries": 11,
+          "rowsRead": 20,
+          "rowsWritten": 10,
+          "r2Puts": 10,
+          "r2Gets": 10
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650379721,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 65,
+        "wallMs": 4332,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650384078,
+      "status": 200,
+      "elapsedMs": 129,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 314225
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650384096,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 93,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "startedAt": 1789650384208,
+      "status": 200,
+      "elapsedMs": 185,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650384226,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 5,
+        "wallMs": 139,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "startedAt": 1789650388398,
+      "status": 200,
+      "elapsedMs": 601,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 786125,
+          "bytesAfter": 229,
+          "archiveBytes": 805832
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650388416,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 17,
+        "wallMs": 563,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650389002,
+      "status": 200,
+      "elapsedMs": 143,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 786125
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650389020,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 6,
+        "wallMs": 103,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "startedAt": 1789650389146,
+      "status": 200,
+      "elapsedMs": 227,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650389168,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 5,
+        "wallMs": 187,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "startedAt": 1789650393896,
+      "status": 200,
+      "elapsedMs": 784,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 786125,
+          "bytesAfter": 229,
+          "archiveBytes": 805832
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650393918,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 11,
+        "wallMs": 741,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650394683,
+      "status": 200,
+      "elapsedMs": 151,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 786125
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650394701,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 5,
+        "wallMs": 115,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "startedAt": 1789650394834,
+      "status": 200,
+      "elapsedMs": 208,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650394852,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 5,
+        "wallMs": 173,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "startedAt": 1789650399003,
+      "status": 200,
+      "elapsedMs": 444,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 196301,
+          "bytesAfter": 229,
+          "archiveBytes": 204308
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650399021,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 402,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650399449,
+      "status": 200,
+      "elapsedMs": 197,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 196301
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650399467,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 158,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "startedAt": 1789650399647,
+      "status": 200,
+      "elapsedMs": 191,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650399665,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 153,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "startedAt": 1789650403321,
+      "status": 200,
+      "elapsedMs": 496,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 196301,
+          "bytesAfter": 229,
+          "archiveBytes": 204308
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650403339,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 6,
+        "wallMs": 390,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650403818,
+      "status": 200,
+      "elapsedMs": 158,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 196301
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650403842,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 114,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "startedAt": 1789650403977,
+      "status": 200,
+      "elapsedMs": 245,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650403995,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 192,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "startedAt": 1789650407735,
+      "status": 200,
+      "elapsedMs": 369,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 11981,
+          "bytesAfter": 229,
+          "archiveBytes": 13124
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650407754,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 330,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650408105,
+      "status": 200,
+      "elapsedMs": 141,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 11981
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650408123,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 107,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "startedAt": 1789650408247,
+      "status": 200,
+      "elapsedMs": 160,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650408264,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 123,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "startedAt": 1789650411777,
+      "status": 200,
+      "elapsedMs": 496,
+      "aggregate": {
+        "result": {
+          "scanned": 1,
+          "candidates": 1,
+          "converted": 1,
+          "conflicts": 0,
+          "nextId": 1,
+          "bytesBefore": 11981,
+          "bytesAfter": 229,
+          "archiveBytes": 13124
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 1,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650411795,
+        "path": "/archive",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 371,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "startedAt": 1789650412274,
+      "status": 200,
+      "elapsedMs": 149,
+      "aggregate": {
+        "result": {
+          "found": true,
+          "bytes": 11981
+        },
+        "metrics": {
+          "queries": 1,
+          "rowsRead": 1,
+          "rowsWritten": 0,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650412293,
+        "path": "/hydrate",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 111,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "startedAt": 1789650412424,
+      "status": 200,
+      "elapsedMs": 154,
+      "aggregate": {
+        "result": {
+          "restored": true
+        },
+        "metrics": {
+          "queries": 2,
+          "rowsRead": 2,
+          "rowsWritten": 1,
+          "r2Puts": 0,
+          "r2Gets": 1
+        }
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789650412441,
+        "path": "/restore",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 117,
+        "outcome": "ok",
+        "version": "b2db163e-744f-4d12-9de7-5e9651011f18"
+      }
+    }
+  ]
+}
