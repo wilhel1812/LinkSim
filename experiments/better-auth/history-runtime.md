@@ -19,12 +19,14 @@ Start the existing sanitized tail collector before `run` (run the collector
 from a scratch directory to keep generated evidence untracked):
 
 ```
-node_modules/.bin/wrangler tail --config experiments/better-auth/.wrangler/history-runtime/wrangler.json --format json | node experiments/better-auth/summarize-tail.mjs
+history_probe_root="$PWD"
+(cd experiments/better-auth/.wrangler/history-runtime && \
+  "$history_probe_root/node_modules/.bin/wrangler" tail --config wrangler.json --format json | \
+  node "$history_probe_root/experiments/better-auth/summarize-tail.mjs")
 node experiments/better-auth/history-runtime.mjs run
 ```
 
-The tail collector writes `probe-tail.jsonl` in the current directory; move it
-into ignored scratch storage immediately. Never persist raw tail events: they
+The subshell writes `probe-tail.jsonl` directly into ignored scratch storage. Never persist raw tail events: they
 contain the probe authorization header. Missing CPU fields mean unavailable,
 not zero; use Cloudflare invocation analytics for billed CPU if tail omits it.
 The runner records timestamps, sample labels, aggregate byte counts and statuses
@@ -34,9 +36,9 @@ in `.wrangler/history-runtime/results.json`, never keys or input payloads.
 
 Fixtures reuse the application validator and constants: 256 KiB per Simulation,
 20 records and 2 MiB per request. Client-side deterministic filler is repetitive
-or varied to exercise different compression behavior. The snapshot structure is
-valid, but padded empty simulations are size-boundary fixtures, not a claim to
-represent normal user content or validation complexity.
+or varied to exercise different compression behavior. Snapshots contain 12/100/250 valid nested Sites and a Path, plus filler to
+reach exact size boundaries. These synthetic fixtures exercise validation but
+are not a measured distribution of real user content.
 
 Small: 4 KiB; large: 64 KiB; max-record: 256 KiB; max-batch: 20 records with total
 request size just below 2 MiB. Run three samples per mode/entropy/size, and five

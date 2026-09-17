@@ -17,7 +17,10 @@ export const historyRuntimeFixture = (scenario: HistoryScenario, entropy: Histor
   };
   const simulationPresets = Array.from({ length: count }, (_, index) => {
     const record = { id: `synthetic-${index}`, name: `Synthetic ${index}`, visibility: 'private', sharedWith: [], updatedAt: '2026-09-17T00:00:00.000Z', snapshot: {
-      sites: [], links: [], systems: [], networks: [], syntheticPadding: '',
+      sites: Array.from({ length: scenario === 'small' ? 12 : scenario === 'large' ? 100 : 250 }, (_, id) => ({
+        id: `site-${id}`, name: `Synthetic Site ${id}`, position: { lat: 60 + id / 10000, lon: 10 + id / 10000 },
+        groundElevationM: 120, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+      })), links: [{ id: 'path-0', fromSiteId: 'site-0', toSiteId: 'site-1', frequencyMHz: 868 }], systems: [], networks: [], syntheticPadding: '',
     }};
     record.snapshot.syntheticPadding = padding(target - new TextEncoder().encode(JSON.stringify(record)).length);
     return record;
