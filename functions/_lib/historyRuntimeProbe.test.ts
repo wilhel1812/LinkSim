@@ -34,3 +34,21 @@ it("rejects anonymous, oversized and invalid payloads before compression", async
   expect((await worker.fetch(request('x'.repeat(LIBRARY_REQUEST_MAX_BYTES + 1)), env)).status).toBe(413);
   expect((await worker.fetch(request('{'), env)).status).toBe(422);
 });
+
+it("maximum fixture survives production save normalization", async () => {
+  const { SqliteD1 } = await import("./testSqliteD1");
+  const { upsertLibrarySnapshot } = await import("./db");
+  for (const entropy of ['repetitive', 'varied'] as const) {
+    const db = new SqliteD1();
+    try {
+      db.db.exec("INSERT INTO users (id, username) VALUES ('probe-owner', 'probe-owner')");
+      const payload = JSON.parse(historyRuntimeFixture('max-record', entropy));
+      const result = await upsertLibrarySnapshot(
+        { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0],
+        { id: 'probe-owner', isAdmin: false, isModerator: false }, payload,
+      );
+      expect(result.conflicts).toEqual([]);
+      expect(result.upsertedSimulations).toBe(1);
+    } finally { db.db.close(); }
+  }
+});

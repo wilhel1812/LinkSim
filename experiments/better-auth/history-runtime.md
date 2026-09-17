@@ -37,7 +37,7 @@ in `.wrangler/history-runtime/results.json`, never keys or input payloads.
 Fixtures reuse the application validator and constants: 256 KiB per Simulation,
 20 records and 2 MiB per request. Client-side deterministic filler is repetitive
 or varied to exercise different compression behavior. Snapshots contain 12/100/250 valid nested Sites and a Path, plus filler to
-reach exact size boundaries. These synthetic fixtures exercise validation but
+reach exact size boundaries, including normalized slug fields in the byte budget. These synthetic fixtures exercise validation but
 are not a measured distribution of real user content.
 
 Small: 4 KiB; large: 64 KiB; max-record: 256 KiB; max-batch: 20 records with total
@@ -72,3 +72,7 @@ node experiments/better-auth/history-runtime.mjs delete
 
 Delete only this disposable Worker. Keep aggregate evidence and remove its local
 ephemeral key after teardown. No application setting is changed by these steps.
+
+## Recorded result
+
+The [corrected remote run](history-runtime-corrected-2026-09-17.md) failed the CPU gate. Keep compression disabled.

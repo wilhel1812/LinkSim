@@ -1,5 +1,10 @@
 # Remote history compression result — 2026-09-17
 
+**Superseded fixture measurements:** PR review found that max-record omitted the
+server-added slug fields and would exceed the saved-record limit by 38 bytes.
+Those max-record samples are not legal saved-record evidence. Retained for audit;
+see the corrected rerun before drawing boundary conclusions.
+
 **Gate failed: keep application history compression disabled.** This is a
 synthetic Worker component measurement, not an authentication or full Library
 benchmark. It does not revise the target of 1,000 registered accounts.
