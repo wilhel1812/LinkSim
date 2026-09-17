@@ -1,3 +1,4 @@
+import { decodeHistoryDetails } from "./historyDetails";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteSiteResource,
@@ -760,6 +761,25 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it.each([undefined, "gzip-v1"])("preserves save, history privacy and revert with compression %s", async (compression) => {
+    const db = new FakeDb();
+    const env = { DB: db, HISTORY_DETAILS_COMPRESSION: compression } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    const actor = { id: "owner-1", isAdmin: false, isModerator: false };
+    const before = { id: "sim-compact", name: "Compact", visibility: "private" as const, snapshot: { sites: Array.from({ length: 40 }, (_, id) => ({ id, name: "Synthetic site", position: { lat: 60, lon: 10 } })) } };
+    await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [before] });
+    const after = { ...before, name: "Compact renamed", snapshot: { sites: [] } };
+    await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [after] });
+    const change = db.resourceChanges.at(-1)!;
+    const stored = String(change.details_json);
+    expect(stored.includes("__linksimHistoryV1")).toBe(compression === "gzip-v1");
+    expect(JSON.parse(await decodeHistoryDetails(stored)).diff.snapshot).toEqual({ before: before.snapshot, after: after.snapshot });
+    const history = await fetchResourceChanges(env, "simulation", before.id, actor);
+    expect(JSON.stringify(history)).not.toContain("__linksimHistoryV1");
+    expect(JSON.stringify(history)).not.toContain("position");
+    expect(await revertResourceFromChangeCopy(env, "simulation", before.id, Number(db.resourceChanges[0].id), actor)).toEqual({ ok: true });
+    expect(JSON.parse(String(db.simulations.get(before.id)?.payload_json)).snapshot).toEqual(before.snapshot);
+  });
+
   it("falls back to updated_at for legacy Sites without created_at metadata", async () => {
     const db = new FakeDb();
     db.sites.set("site-legacy-date", {
