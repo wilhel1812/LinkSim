@@ -258,3 +258,15 @@ it("requires the remote schema preflight for manual staging previews", () => {
   const preflight = deployScript.split("async function verifyRemoteSchema")[1].split("let resourceChangesResult")[0];
   expect(preflight).toContain('targetName !== "staging-preview"');
 });
+
+it("gates history candidate indexes before shared and manual preview deployments", () => {
+  const migration = "db/migrations/2026-09-17_library_history_candidates.sql";
+  const probe = "db/probes/library-history-candidates.sql";
+  expect(previewJob).toContain(migration);
+  for (const job of [stagingJob, productionJob]) {
+    expect(job.indexOf(`--file ${migration}`)).toBeGreaterThan(-1);
+    expect(job.indexOf(`--file ${probe}`)).toBeGreaterThan(job.indexOf(`--file ${migration}`));
+    expect(job.indexOf(`--file ${probe}`)).toBeLessThan(job.indexOf("- name: Deploy "));
+  }
+  expect(deployScript).toContain(probe);
+});

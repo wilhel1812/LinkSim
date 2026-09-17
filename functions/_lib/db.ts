@@ -596,8 +596,12 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_sequence ON resource_changes(resource_kind, resource_id, id)"),
         // Keep local bootstrap compatible; remote deployments still migrate and probe before serving.
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_owner_audience ON resource_changes(resource_kind, json_extract(snapshot_json, '$.ownerUserId'), resource_id, id)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_shared_audience ON resource_changes(resource_kind, resource_id, id) WHERE (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]')"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_site_tombstones ON resource_changes(changed_at, resource_id) WHERE resource_kind = 'site' AND note = 'Deleted Site'"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_distance ON simulation_path_leaderboard_entries(distance_km DESC)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_simulation ON simulation_path_leaderboard_entries(simulation_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC)"),
@@ -2646,7 +2650,7 @@ export const fetchLibraryForUser = async (
   const deletedSiteRows = paged && opts?.phase !== "deleted_sites" ? { results: [] as Array<{ id: string }> } : await env.DB
         .prepare(
           `SELECT tombstone.resource_id AS id
-           FROM resource_changes tombstone${opts?.since || opts?.cutoff ? " INDEXED BY idx_resource_changes_window" : ""}
+           FROM resource_changes tombstone INDEXED BY idx_resource_changes_site_tombstones
            WHERE tombstone.resource_kind = 'site'
              AND tombstone.note = 'Deleted Site'
              AND tombstone.id = (
@@ -2698,20 +2702,35 @@ export const fetchLibraryForUser = async (
     const roleId = kind === "site" ? "site_id" : "simulation_id";
     const statusClause = kind === "simulation" ? " AND live.status = 'active'" : "";
     const changeWindow = `${opts?.since ? " AND changed.changed_at >= ?" : ""}${opts?.cutoff ? " AND changed.changed_at <= ?" : ""}`;
-    const pagination = paged ? " AND live.id > ? ORDER BY live.id LIMIT ?" : "";
+    const pagination = paged ? " AND live.id > ? ORDER BY candidate.resource_id LIMIT ?" : "";
     const windowBind = () => [
       ...(opts?.since ? [opts.since] : []),
       ...(opts?.cutoff ? [opts.cutoff] : []),
     ];
+    // Full recovery has no lower time bound. First find a superset of resources
+    // this user might have seen; keep the exact historical predicates below.
+    // Incremental sync retains its selective change-window query.
+    const fullRecovery = !opts?.since;
+    const audienceCandidates = fullRecovery ? `audience_resources AS (
+      SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_owner_audience
+      WHERE resource_kind = '${kind}' AND json_extract(snapshot_json, '$.ownerUserId') = ?
+      UNION
+      SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_shared_audience
+      WHERE resource_kind = '${kind}' AND (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]')
+    ),` : "";
     // GROUP BY resource_id can favor the old per-resource index and scan all
     // historical changes. Bounded sync windows require the deployed time index.
     return env.DB
       .prepare(
-        `WITH candidate_changes AS MATERIALIZED (
+        `WITH ${audienceCandidates} candidate_changes AS ${fullRecovery ? "NOT MATERIALIZED" : "MATERIALIZED"} (
+           ${fullRecovery ? `SELECT audience.resource_id,
+             (SELECT MAX(changed.id) FROM resource_changes changed INDEXED BY idx_resource_changes_sequence
+              WHERE changed.resource_kind = ? AND changed.resource_id = audience.resource_id${changeWindow}) AS latest_id
+             FROM audience_resources audience${paged ? " WHERE audience.resource_id > ?" : ""}` : `
            SELECT changed.resource_id, MAX(changed.id) AS latest_id
-           FROM resource_changes changed${opts?.since || opts?.cutoff ? " INDEXED BY idx_resource_changes_window" : ""}
+           FROM resource_changes changed INDEXED BY idx_resource_changes_window
            WHERE changed.resource_kind = ?${changeWindow}${paged ? " AND changed.resource_id > ?" : ""}
-           GROUP BY changed.resource_id
+           GROUP BY changed.resource_id`}
          )
          SELECT live.id
          FROM candidate_changes candidate
@@ -2749,6 +2768,7 @@ export const fetchLibraryForUser = async (
            )${pagination}`,
       )
       .bind(
+        ...(fullRecovery ? [userId] : []),
         kind,
         ...windowBind(),
         ...(paged ? [opts?.afterId ?? ""] : []),

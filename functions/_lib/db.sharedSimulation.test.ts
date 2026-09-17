@@ -314,8 +314,9 @@ class FakeDb {
 
   all(sql: string, bound: unknown[] = []): AnyRow[] {
     if (sql.includes("SELECT live.id") && sql.includes("current_role")) {
-      const userId = String(bound[1] ?? "");
-      const kind = String(bound[0] ?? "") as "site" | "simulation";
+      const offset = sql.includes("audience_resources AS") ? 1 : 0;
+      const userId = String(bound[offset + 1] ?? "");
+      const kind = String(bound[offset] ?? "") as "site" | "simulation";
       const rows = kind === "site" ? this.sites : this.simulations;
       const roles = kind === "site" ? this.siteRoles : this.simulationRoles;
       return [...rows.values()]

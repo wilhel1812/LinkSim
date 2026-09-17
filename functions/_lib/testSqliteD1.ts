@@ -106,7 +106,11 @@ export class SqliteD1 {
         simulation_updated_at TEXT, created_at TEXT, updated_at TEXT, PRIMARY KEY (simulation_id, canonical_path_key)
       );
       CREATE INDEX idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_resource_changes_sequence ON resource_changes(resource_kind, resource_id, id);
       CREATE INDEX idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id);
+      CREATE INDEX IF NOT EXISTS idx_resource_changes_owner_audience ON resource_changes(resource_kind, json_extract(snapshot_json, '$.ownerUserId'), resource_id, id);
+      CREATE INDEX IF NOT EXISTS idx_resource_changes_shared_audience ON resource_changes(resource_kind, resource_id, id) WHERE (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]');
+      CREATE INDEX IF NOT EXISTS idx_resource_changes_site_tombstones ON resource_changes(changed_at, resource_id) WHERE resource_kind = 'site' AND note = 'Deleted Site';
       CREATE INDEX idx_sites_owner ON sites(owner_user_id);
       CREATE INDEX idx_simulations_owner ON simulations(owner_user_id);
       CREATE INDEX idx_sites_visibility ON sites(visibility);
