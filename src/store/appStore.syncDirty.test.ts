@@ -189,6 +189,32 @@ describe("appStore delta sync", () => {
     expect(fetchBodies).toHaveLength(1);
   });
 
+  it("manual recovery restores an unchanged record missing from the cloud despite no dirty changes", async () => {
+    const bodies: Array<{ simulationPresets: Array<{ id: string }> }> = [];
+    let gets = 0;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "PUT") {
+        bodies.push(JSON.parse(String(init?.body)));
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      gets += 1;
+      return makeResponse(gets === 2 ? { ...cloneJson(baselinePayload), simulationPresets: [] } : cloneJson(baselinePayload));
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    await useAppStore.getState().performCloudSyncPush();
+    expect(bodies).toHaveLength(0);
+    await useAppStore.getState().performManualCloudSync();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.simulationPresets.map((record) => record.id)).toEqual(["sim-1"]);
+  });
+
   it("applies a Site tombstone before a manual retry builds its push payload", async () => {
     const pushedBodies: Array<{ siteLibrary: Array<{ id: string }> }> = [];
     let getCount = 0;

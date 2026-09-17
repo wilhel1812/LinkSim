@@ -171,3 +171,8 @@ CREATE INDEX IF NOT EXISTS idx_identity_claims_current_user ON verified_identity
 CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_subject_current_canonical
   ON identity_subject_states(canonical_user_id) WHERE status = 'current';
 CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_resource_changes_owner_audience ON resource_changes(resource_kind, json_extract(snapshot_json, '$.ownerUserId'), resource_id, id);
+CREATE INDEX IF NOT EXISTS idx_resource_changes_shared_audience ON resource_changes(resource_kind, resource_id, id) WHERE (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]');
+CREATE INDEX IF NOT EXISTS idx_resource_changes_site_tombstones ON resource_changes(changed_at, resource_id) WHERE resource_kind = 'site' AND note = 'Deleted Site';
+CREATE INDEX IF NOT EXISTS idx_resource_changes_sequence ON resource_changes(resource_kind, resource_id, id);

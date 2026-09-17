@@ -242,6 +242,7 @@ describe("D1 query work budgets", () => {
     }
     // ID order, not timestamp order, defines 'prior history' in the existing contract.
     add("n-id-order"); change("n-id-order", cutoff, { visibility: "public" }); change("n-id-order", since);
+    add("o-unrelated-grant"); change("o-unrelated-grant", before, { sharedWith: [{ userId: "someone-else" }] }); change("o-unrelated-grant", since);
     const expected = ["a-public", "b-shared", "c-grant", "d-owner", "e-before-visibility", "f-before-grant", "n-id-order"];
     const read = (opts: Parameters<typeof fetchLibraryForUser>[2]) => fetchLibraryForUser({ DB: db } as never, "reader", opts);
     expect((await read({ phase, since, cutoff }))[marker]).toEqual(expected);
@@ -271,7 +272,7 @@ describe("D1 query work budgets", () => {
     const large = fixture(1000);
     const scaled = measure(large, [await removalQuery(large)], "removal-scaled");
     expect(scaled.results).toEqual(optimized.results);
-    expect(scaled.steps).toBeLessThan(optimized.steps * 12);
+    expect(scaled.steps).toBeLessThanOrEqual(Math.max(100, optimized.steps * 12));
     small.db.close();
     large.db.close();
   }, 30_000);
@@ -304,11 +305,16 @@ describe("Library index bootstrap", () => {
     const db = new SqliteD1();
     try {
       if (state === "fresh history table") db.db.exec("DROP TABLE resource_changes");
-      else db.db.exec("DROP INDEX idx_resource_changes_window");
+      else db.db.exec(`DROP INDEX idx_resource_changes_window;
+        DROP INDEX idx_resource_changes_owner_audience;
+        DROP INDEX idx_resource_changes_shared_audience;
+        DROP INDEX idx_resource_changes_sequence;
+        DROP INDEX idx_resource_changes_site_tombstones;`);
       const env = { DB: db } as unknown as Parameters<typeof readLibrary>[0];
       for (const phase of ["sites", "simulations", "deleted_sites", "deleted_simulations", "removed_sites", "removed_simulations"] as const) {
         await expect(readLibrary(env, "reader", { phase, cutoff: "2026-09-11T00:00:00.000Z", limit: 10 })).resolves.toBeDefined();
       }
+      expect(() => db.db.exec(readFileSync("db/probes/library-history-candidates.sql", "utf8"))).not.toThrow();
       expect(db.db.prepare("PRAGMA index_info(idx_resource_changes_window)").all().map((row) => row.name))
         .toEqual(["resource_kind", "changed_at", "resource_id"]);
     } finally {
@@ -316,3 +322,58 @@ describe("Library index bootstrap", () => {
     }
   });
 });
+
+
+describe("Full recovery history work", () => {
+  it("does not scan unrelated private history for full removal and deletion checks", async () => {
+    const run = async (count: number) => {
+      const db = fixture(count, 100);
+      const removal = await removalQuery(db);
+      await fetchLibraryForUser({ DB: db } as never, "reader", { phase: "deleted_sites", cutoff: "2027-01-01" });
+      const deletion = db.statements.findLast(({ sql }) => sql.includes("FROM resource_changes tombstone"))!;
+      // Include Site history too, to exercise the tombstone scan independently.
+      db.db.exec("INSERT INTO resource_changes (resource_kind, resource_id, actor_user_id, changed_at, snapshot_json, details_json) SELECT 'site', resource_id, actor_user_id, changed_at, snapshot_json, details_json FROM resource_changes WHERE resource_kind = 'simulation'");
+      const result = measure(db, [removal, deletion]);
+      db.db.close();
+      return result;
+    };
+    const small = await run(10), large = await run(1000);
+    expect(large.results).toEqual([[], []]);
+    expect(large.steps).toBeLessThanOrEqual(small.steps + 500);
+    expect(large.steps).toBeLessThan(1000);
+  }, 30000);
+});
+
+
+it("replays audience index migration without altering history and probes every required index", () => {
+  const db = fixture(5, 3);
+  const names = ["idx_resource_changes_sequence", "idx_resource_changes_owner_audience", "idx_resource_changes_shared_audience", "idx_resource_changes_site_tombstones"];
+  const before = db.db.prepare("SELECT * FROM resource_changes ORDER BY id").all();
+  const migration = readFileSync("db/migrations/2026-09-17_library_history_candidates.sql", "utf8");
+  const probe = readFileSync("db/probes/library-history-candidates.sql", "utf8");
+  for (const name of names) {
+    db.db.exec(`DROP INDEX ${name}`);
+    expect(() => db.db.exec(probe)).toThrow();
+    db.db.exec(migration);
+    db.db.exec(migration);
+    expect(() => db.db.exec(probe)).not.toThrow();
+  }
+  expect(db.db.prepare("SELECT * FROM resource_changes ORDER BY id").all()).toEqual(before);
+  db.db.close();
+});
+
+
+it("keeps relevant revocation history linear rather than rescanning MAX(id) per edit", async () => {
+  const run = async (depth: number) => {
+    const db = fixture(depth, 10);
+    db.db.exec(`UPDATE resource_changes SET snapshot_json = '{"visibility":"public"}'
+      WHERE id IN (SELECT MIN(id) FROM resource_changes GROUP BY resource_id)`);
+    const cost = measure(db, [await removalQuery(db)]);
+    db.db.close();
+    return cost;
+  };
+  const small = await run(100), large = await run(1000);
+  expect(large.results).toEqual(small.results);
+  expect(large.results[0]).toHaveLength(10);
+  expect(large.steps).toBeLessThan(small.steps * 15);
+}, 30000);

@@ -6,8 +6,9 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-assert.ok(process.argv.slice(2).every(arg => arg === '--history'), 'only --history is supported');
-const historyPerResource = process.argv.includes('--history') ? 10 : 0;
+assert.ok(process.argv.slice(2).every(arg => ['--history', '--mixed'].includes(arg)), 'only --history and --mixed are supported');
+const mixed = process.argv.includes('--mixed');
+const historyPerResource = process.argv.includes('--history') || mixed ? 10 : 0;
 const bundle = await build({
   absWorkingDir: root, bundle: true, write: false, platform: 'node', format: 'esm',
   stdin: { resolveDir: root, contents: `
@@ -139,9 +140,21 @@ try {
       await raw.prepare(`WITH RECURSIVE entries(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM entries WHERE n < ?)
         INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at, details_json, snapshot_json)
         SELECT ?, resource.id, 'updated', resource.owner_user_id, ?, '{}',
-          json_object('ownerUserId', resource.owner_user_id, 'visibility', 'private', 'sharedWith', json('[]'))
-        FROM ${table} resource CROSS JOIN entries`).bind(historyPerResource, table === 'sites' ? 'site' : 'simulation', date).run();
+          json_object('ownerUserId', resource.owner_user_id, 'visibility',
+            CASE WHEN ? AND entries.n = 1 AND CAST(substr(resource.id, length(?) + 1) AS INTEGER) % 10 = 0 THEN 'public' ELSE 'private' END,
+            'sharedWith', json('[]'))
+        FROM ${table} resource CROSS JOIN entries`).bind(historyPerResource, table === 'sites' ? 'site' : 'simulation', date, mixed ? 1 : 0, `background-${table}-`).run();
     }
+  }
+  if (mixed) {
+    // 10% of background resources were public, then private again. 1% are
+    // subsequently deleted. This exercises real recovery markers and paging.
+    await raw.prepare(`UPDATE resource_changes SET note = 'Deleted Site'
+      WHERE resource_kind = 'site' AND id IN (SELECT MAX(id) FROM resource_changes
+        WHERE resource_kind = 'site' AND CAST(substr(resource_id, length('background-sites-') + 1) AS INTEGER) % 100 = 0
+        GROUP BY resource_id)`).run();
+    await raw.prepare("DELETE FROM sites WHERE CAST(substr(id, length('background-sites-') + 1) AS INTEGER) % 100 = 0").run();
+    await raw.prepare("UPDATE simulations SET status = 'deleted' WHERE CAST(substr(id, length('background-simulations-') + 1) AS INTEGER) % 100 = 0").run();
   }
   await app.client.pushCloudLibrary(fixture(10, 2));
   await measure('warm legacy identity ensure only (already included in handlers)',
@@ -150,6 +163,17 @@ try {
   const small = await measure('load 10 Sites + 2 Simulations', () => app.client.fetchCloudLibrary());
   assert.equal(small.siteLibrary.length, 10);
   assert.equal(small.simulationPresets.length, 2);
+  if (mixed) {
+    for (const [plural, count, deletedKey, removedKey] of [
+      ['sites', 9990, 'deletedSiteIds', 'removedSiteIds'],
+      ['simulations', 1998, 'deletedSimulationIds', 'removedSimulationIds'],
+    ]) {
+      const ids = Array.from({ length: count }, (_, n) => n);
+      assert.deepEqual([...small[deletedKey]].sort(), ids.filter(n => n % 100 === 0).map(n => `background-${plural}-${n}`).sort());
+      assert.deepEqual([...small[removedKey]].sort(), ids.filter(n => n % 10 === 0 && n % 100 !== 0).map(n => `background-${plural}-${n}`).sort());
+    }
+  }
+
   const empty = await measure('empty delta', () => app.client.fetchCloudLibrary({ since: new Date().toISOString() }));
   assert.equal(empty.siteLibrary.length + empty.simulationPresets.length, 0);
   await measure('edit one Site + one Simulation', () => app.client.pushCloudLibrary({
@@ -178,8 +202,9 @@ try {
     source: 'local Miniflare D1 metadata; real handlers and client helpers',
     users: 1000, backgroundPrivateSites: 9990, backgroundPrivateSimulations: 1998,
     backgroundHistoryEntries: historyPerResource * (9990 + 1998),
+    backgroundHistoryMode: mixed ? '10% previously public; 1% subsequently deleted' : 'private only',
     identity: 'existing explicit development auth; no OAuth or session costs included',
-    limitations: 'Not remote billing, CPU, production distribution, or a concurrency test. Background has no sharing/tombstone history; --history adds old private edits. Cold setup excluded from steady-state model.',
+    limitations: 'Not remote billing, CPU, production distribution, or a concurrency test. --history adds private edits; --mixed adds public-to-private and deletion history, not a production distribution. Cold setup excluded from steady-state model.',
     results,
   }, null, 2));
 } finally {

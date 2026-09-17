@@ -183,6 +183,9 @@ This local-only harness uses real application handlers/client helpers and
 synthetic Miniflare D1 data. See the
 [September 11 baseline measurements](evidence/2026-09-11-application-d1-cost.md)
 and [query optimization results](evidence/2026-09-11-query-optimization.md).
+The follow-up [full-recovery optimization](evidence/2026-09-17-history-candidates.md)
+adds `--mixed` to exercise previously public resources, deletion and revocation
+markers. Both `--history` and `--mixed` use 119,880 background history entries.
 Use `--history` to include old private edit history. Sparse loads and empty
 deltas improve substantially; history-heavy full loads remain costly. The target
 is 1,000 registered users at representative activity, not 1,000 daily active users.
