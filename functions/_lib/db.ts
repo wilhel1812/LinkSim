@@ -1,3 +1,4 @@
+import { encodeHistoryDetails } from "./historyDetails";
 import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
 import {
@@ -1863,7 +1864,11 @@ const createResourceChange = async (
       actorUserId,
       new Date().toISOString(),
       note,
-      options?.details ? JSON.stringify(options.details) : null,
+      options?.details
+        ? env.HISTORY_DETAILS_COMPRESSION === "gzip-v1"
+          ? await encodeHistoryDetails(JSON.stringify(options.details))
+          : JSON.stringify(options.details)
+        : null,
       options?.snapshot ? JSON.stringify(options.snapshot) : null,
     )
     .run();
