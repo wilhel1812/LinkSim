@@ -117,3 +117,29 @@ export const restoreHistoryRow=async(env:ArchiveEnv,id:number,target?:ArchiveTar
     .bind(restored.snapshot_json,restored.details_json,id,row.archive_key,row.archive_digest,row.snapshot_json,row.details_json,...identityValues).run();
   return result.meta.changes===1;
 };
+
+// Synthetic staging-refresh proof. Real production transfer requires a
+// separately reviewed sanitizer and consistent import workflow.
+export const copyArchivedHistoryRowForStaging=async(source:ArchiveEnv,stagingBucket:R2Bucket,id:number) => {
+  if(source.scope!=='synthetic-production')throw Error('Only synthetic production archives can be copied');
+  if(source.BUCKET===stagingBucket)throw Error('Archive buckets must be isolated');
+  if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid history id');
+  const stagingScope='synthetic-staging';
+  const row=await source.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
+  if(!row||!hasArchiveReference(source.scope,row))throw Error('Source history is not archived');
+  const hydrated=await hydrate(source,row);
+  const projected=project(hydrated.snapshot_json,hydrated.details_json);
+  if(projected.snapshot_json!==row.snapshot_json||projected.details_json!==row.details_json)
+    throw Error('Source projection differs from verified archive');
+  const raw=JSON.stringify({version:1,scope:stagingScope,id,
+    snapshot_json:hydrated.snapshot_json,details_json:hydrated.details_json});
+  if(encoder.encode(raw).length>MAX_BYTES)throw Error('Staging archive oversized');
+  const stagingKey=`${namespace(stagingScope)}${id}/${crypto.randomUUID()}`;
+  const stagingDigest=await digest(raw);
+  await stagingBucket.put(stagingKey,raw,{httpMetadata:{contentType:'application/json'}});
+  const verified=await readArchive({DB:source.DB,BUCKET:stagingBucket,scope:stagingScope},
+    {...row,archive_key:stagingKey,archive_digest:stagingDigest});
+  if(verified.snapshot_json!==hydrated.snapshot_json||verified.details_json!==hydrated.details_json)
+    throw Error('Staging archive verification failed');
+  return {id,sourceKey:row.archive_key!,sourceDigest:row.archive_digest!,stagingKey,stagingDigest};
+};

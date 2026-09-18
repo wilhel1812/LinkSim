@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { SqliteD1 } from './testSqliteD1';
-import { archiveHistoryPage, hydrateHistoryRow, restoreHistoryRow } from '../../experiments/better-auth/history-archive';
+import { archiveHistoryPage, copyArchivedHistoryRowForStaging, hydrateHistoryRow, restoreHistoryRow } from '../../experiments/better-auth/history-archive';
 import { readAuthorizedArchivedHistory } from '../../experiments/better-auth/history-archive-authorized';
 
 class Bucket {
@@ -219,4 +219,54 @@ INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,c
       'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false})).rejects.toThrow(/incomplete history archive schema/i);
     expect(JSON.parse(String(db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Current');
   }finally{db.db.close();}
+});
+
+it('copies a validated production archive into a separately verified staging object without changing source D1', async () => {
+  const f=setup();
+  try {
+    const production={...f.env,scope:'synthetic-production'};
+    await archiveHistoryPage(production,{apply:true});
+    const source=f.row();
+    const staging=new Bucket();
+    const copied=await copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1);
+    expect(copied).toMatchObject({id:1,sourceKey:source.archive_key,sourceDigest:source.archive_digest});
+    expect(copied.stagingKey).toMatch(/^history-prototype\/synthetic-staging\/1\//);
+    expect(copied.stagingKey).not.toBe(source.archive_key);
+    expect(copied.stagingDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(f.row()).toEqual(source);
+    const staged=JSON.parse(staging.objects.get(copied.stagingKey)!);
+    expect(staged).toMatchObject({version:1,scope:'synthetic-staging',id:1,snapshot_json:f.snapshot,details_json:f.details});
+    const stagingDb=new SqliteD1();
+    try {
+      stagingDb.db.exec('ALTER TABLE resource_changes ADD COLUMN archive_key TEXT; ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT');
+      stagingDb.db.prepare('INSERT INTO users(id,username) VALUES(?,?)').run('owner','owner');
+      stagingDb.db.prepare("INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json,details_json,archive_key,archive_digest) VALUES(1,'simulation','sim','updated','owner','2026-09-17',?,?,?,?)")
+        .run(source.snapshot_json,source.details_json,copied.stagingKey,copied.stagingDigest);
+      expect(await hydrateHistoryRow({DB:stagingDb as unknown as D1Database,BUCKET:staging as unknown as R2Bucket,scope:'synthetic-staging'},1))
+        .toMatchObject({snapshot_json:f.snapshot,details_json:f.details});
+    } finally { stagingDb.db.close(); }
+  } finally { f.db.db.close(); }
+});
+
+it('refuses inline, corrupt, foreign or unverified archive copies and leaves source unchanged', async () => {
+  const f=setup();
+  try {
+    const production={...f.env,scope:'synthetic-production'};
+    const staging=new Bucket();
+    await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow();
+    await archiveHistoryPage(production,{apply:true});
+    const source=f.row();
+    f.bucket.corrupt=true;
+    await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow();
+    f.bucket.corrupt=false;
+    staging.failPut=true;
+    await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow();
+    staging.failPut=false;staging.corrupt=true;
+    await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow();
+    staging.corrupt=false;
+    await expect(copyArchivedHistoryRowForStaging({...production,scope:'synthetic-staging'},staging as unknown as R2Bucket,1)).rejects.toThrow();
+    await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},staging as unknown as R2Bucket,1)).rejects.toThrow(/Only synthetic/);
+    await expect(copyArchivedHistoryRowForStaging(production,f.bucket as unknown as R2Bucket,1)).rejects.toThrow(/isolated/);
+    expect(f.row()).toEqual(source);
+  } finally { f.db.db.close(); }
 });
