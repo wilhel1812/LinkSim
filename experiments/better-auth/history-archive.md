@@ -191,8 +191,12 @@ Before integrating this primitive, the refresh workflow must assemble a
 complete verified mapping for every exported archive reference, rewrite keys
 and digests in the sanitized SQL only after all object copies succeed, reject
 missing or stale mappings, and import from a consistent source snapshot. The
-copy proof does not provide production-scope transfer, remote R2 credentials, bulk transfer scheduling,
-atomic D1 import, or cleanup of orphaned objects. No production bucket exists
+copy proof does not establish physical bucket isolation: R2 bindings do not
+expose a bucket name to this helper, and two binding objects may alias one
+bucket. Real transfer must verify distinct configured bucket names before
+obtaining bindings. It also does not provide production-scope transfer, remote
+R2 credentials, bulk transfer scheduling, atomic D1 import, or cleanup of
+orphaned objects. No production bucket exists
 yet, and neither real production history nor authentication data was copied.
 
 See [measured results](evidence/2026-09-17-history-r2.md).

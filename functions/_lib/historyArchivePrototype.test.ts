@@ -266,7 +266,24 @@ it('refuses inline, corrupt, foreign or unverified archive copies and leaves sou
     staging.corrupt=false;
     await expect(copyArchivedHistoryRowForStaging({...production,scope:'synthetic-staging'},staging as unknown as R2Bucket,1)).rejects.toThrow();
     await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},staging as unknown as R2Bucket,1)).rejects.toThrow(/Only synthetic/);
-    await expect(copyArchivedHistoryRowForStaging(production,f.bucket as unknown as R2Bucket,1)).rejects.toThrow(/isolated/);
     expect(f.row()).toEqual(source);
+  } finally { f.db.db.close(); }
+});
+
+it('keeps synthetic source history intact even if distinct bucket bindings alias one backing store', async () => {
+  const f=setup();
+  try {
+    const production={...f.env,scope:'synthetic-production'};
+    await archiveHistoryPage(production,{apply:true});
+    const source=f.row();
+    const original=f.bucket.objects.get(String(source.archive_key));
+    const aliased=new Bucket();
+    aliased.objects=f.bucket.objects;
+    const copied=await copyArchivedHistoryRowForStaging(production,aliased as unknown as R2Bucket,1);
+    expect(copied.stagingKey).toMatch(/^history-prototype\/synthetic-staging\/1\//);
+    expect(f.bucket.objects.get(String(source.archive_key))).toBe(original);
+    expect(f.row()).toEqual(source);
+    await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},aliased as unknown as R2Bucket,1))
+      .rejects.toThrow(/Only synthetic/);
   } finally { f.db.db.close(); }
 });

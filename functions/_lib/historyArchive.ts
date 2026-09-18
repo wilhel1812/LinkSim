@@ -119,10 +119,9 @@ export const restoreHistoryRow=async(env:ArchiveEnv,id:number,target?:ArchiveTar
 };
 
 // Synthetic staging-refresh proof. Real production transfer requires a
-// separately reviewed sanitizer and consistent import workflow.
+// separately reviewed sanitizer, physical bucket isolation and import workflow.
 export const copyArchivedHistoryRowForStaging=async(source:ArchiveEnv,stagingBucket:R2Bucket,id:number) => {
   if(source.scope!=='synthetic-production')throw Error('Only synthetic production archives can be copied');
-  if(source.BUCKET===stagingBucket)throw Error('Archive buckets must be isolated');
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid history id');
   const stagingScope='synthetic-staging';
   const row=await source.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
