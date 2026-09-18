@@ -135,4 +135,9 @@ limit; their setup cost is excluded from workload figures. Runtime operations us
 bound values. The remote table has no production indexes, so its D1 writes are a
 lower bound, not a production projection.
 
+A later [local application-index comparison](evidence/2026-09-18-history-index-cost.md)
+measured 108 D1 writes across the same 26 private Simulation operations, versus
+54 in the minimal fixture. Shared/public and deleted-Site rows were not measured;
+remote indexed CPU and account-wide quota checks remain open.
+
 See [measured results](evidence/2026-09-17-history-r2.md).

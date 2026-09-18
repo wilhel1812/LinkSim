@@ -4,7 +4,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { indexedArchiveSchema } from './history-archive-indexed-schema.mjs';
 
+const indexed=process.argv.length===3&&process.argv[2]==='--indexed';
+assert.ok(process.argv.length===2||indexed,'Usage: history-archive-durable-local.mjs [--indexed]');
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const scratch=fileURLToPath(new URL('./.wrangler/history-archive-durable-local/',import.meta.url));
 mkdirSync(scratch,{recursive:true});
@@ -25,22 +28,34 @@ const mf=new Miniflare(convertV4MiniflareOptions({workers:[
 ]}));
 try {
  const DB=await mf.getD1Database('DB','runtime');
+ if(indexed)for(const sql of indexedArchiveSchema().split(';').filter(sql=>sql.trim()))await DB.prepare(sql).run();
  const call=(path,key='local-synthetic')=>mf.dispatchFetch('https://synthetic.example'+path,{method:'POST',headers:{authorization:'Bearer '+key}});
  assert.equal((await call('/archive?id=1','wrong')).status,404);
  assert.equal((await call('/other')).status,404);
  const results=[];
  for(const scenario of ['small','large','max-record','max-batch'])for(const entropy of ['repetitive','varied']){
-  await DB.prepare('DROP TABLE IF EXISTS resource_changes').run();
-  await DB.prepare(archiveFixtureSchema).run();
-  for(const row of archiveFixtureRows(scenario,entropy))await DB.prepare('INSERT INTO resource_changes(id,snapshot_json,details_json) VALUES(?,?,?)').bind(row.id,row.snapshot_json,row.details_json).run();
+  if(indexed)await DB.prepare('DELETE FROM resource_changes').run();
+  else{await DB.prepare('DROP TABLE IF EXISTS resource_changes').run();await DB.prepare(archiveFixtureSchema).run();}
+  for(const row of archiveFixtureRows(scenario,entropy)){
+   const sql=indexed
+    ? 'INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json,details_json) VALUES(?,?,?,?,?,?,?,?)'
+    : 'INSERT INTO resource_changes(id,snapshot_json,details_json) VALUES(?,?,?)';
+   const values=indexed
+    ? [row.id,'simulation',`synthetic-${row.id}`,'updated','synthetic-owner','2026-09-18',row.snapshot_json,row.details_json]
+    : [row.id,row.snapshot_json,row.details_json];
+   await DB.prepare(sql).bind(...values).run();
+  }
   const original=await DB.prepare('SELECT snapshot_json,details_json FROM resource_changes WHERE id=1').first();
   for(const path of scenario==='max-batch'?['/archive?id=1','/archive?id=11','/hydrate?id=1','/restore?id=1']:['/archive?id=1','/hydrate?id=1','/restore?id=1']){
    const start=Date.now(),response=await call(path);
    assert.equal(response.status,200,`${scenario}/${entropy}${path}`);
    const body=await response.json();
+   if(path.startsWith('/archive'))assert.equal(body.result.converted,scenario==='max-batch'?10:1,`${scenario}/${entropy}${path} converted rows`);
+   if(path.startsWith('/hydrate'))assert.equal(body.result.found,true,`${scenario}/${entropy} hydrated row`);
+   if(path.startsWith('/restore'))assert.equal(body.result.restored,true,`${scenario}/${entropy} restored row`);
    results.push({scenario,entropy,path,elapsedMs:Date.now()-start,objectElapsedMs:Number(response.headers.get('x-probe-object-elapsed-ms')),metrics:body.metrics,result:body.result});
   }
   assert.deepEqual(await DB.prepare('SELECT snapshot_json,details_json FROM resource_changes WHERE id=1').first(),original);
  }
- console.log(JSON.stringify({source:'synthetic local gateway + Durable Object + D1 + R2; elapsed time is not CPU',requests:results.length,results},null,2));
+ console.log(JSON.stringify({source:'synthetic local gateway + Durable Object + D1 + R2; elapsed time is not CPU',schema:indexed?'application history table and indexes':'minimal fixture',requests:results.length,results},null,2));
 } finally { await mf.dispose(); }
