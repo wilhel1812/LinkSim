@@ -21,6 +21,60 @@ array. Those groups can overlap. The staging database was 30,412,800 bytes.
 These are a dated staging snapshot, not production totals or a forecast of
 1,000 accounts. Staging may be a sanitized or incomplete copy of production.
 
+The exact aggregate SQL was run one statement at a time with Wrangler D1
+`execute linksim_staging --remote --config wrangler.staging.toml --json`:
+
+```sql
+SELECT resource_kind, COUNT(*) AS revisions,
+  SUM(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))) AS stored_bytes,
+  ROUND(AVG(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,'')))) AS mean_bytes,
+  MAX(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))) AS max_bytes,
+  SUM(CASE WHEN LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))<2048 THEN 1 ELSE 0 END) AS small_rows,
+  SUM(CASE WHEN LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))>=65536 THEN 1 ELSE 0 END) AS large_rows
+FROM resource_changes GROUP BY resource_kind;
+
+WITH sizes AS (
+  SELECT resource_kind,
+    LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,'')) AS before_bytes,
+    CASE WHEN json_valid(snapshot_json) THEN LENGTH(snapshot_json)-LENGTH(json_remove(snapshot_json,'$.snapshot')) ELSE 0 END
+    + CASE WHEN json_valid(details_json) THEN LENGTH(details_json)-LENGTH(json_remove(details_json,'$.diff.snapshot')) ELSE 0 END AS estimated_removed_bytes
+  FROM resource_changes
+)
+SELECT resource_kind, COUNT(*) AS revisions,
+  SUM(CASE WHEN estimated_removed_bytes>=2048 THEN 1 ELSE 0 END) AS candidate_rows,
+  ROUND(AVG(estimated_removed_bytes)) AS mean_removed_bytes,
+  SUM(CASE WHEN estimated_removed_bytes>=2048 THEN estimated_removed_bytes ELSE 0 END) AS candidate_removed_bytes
+FROM sizes GROUP BY resource_kind;
+
+WITH candidates AS (
+  SELECT snapshot_json, details_json,
+    (CASE WHEN json_valid(snapshot_json) THEN LENGTH(snapshot_json)-LENGTH(json_remove(snapshot_json,'$.snapshot')) ELSE 0 END
+    + CASE WHEN json_valid(details_json) THEN LENGTH(details_json)-LENGTH(json_remove(details_json,'$.diff.snapshot')) ELSE 0 END) AS removed
+  FROM resource_changes WHERE resource_kind='simulation'
+)
+SELECT COUNT(*) AS candidate_rows,
+  SUM(CASE WHEN json_extract(snapshot_json,'$.visibility') IN ('public','shared') THEN 1 ELSE 0 END) AS current_public_shared,
+  SUM(CASE WHEN json_valid(details_json) AND json_extract(details_json,'$.diff.visibility.before') IN ('public','shared') THEN 1 ELSE 0 END) AS former_public_shared,
+  SUM(CASE WHEN COALESCE(json_extract(snapshot_json,'$.sharedWith'),'[]')!='[]' THEN 1 ELSE 0 END) AS granted
+FROM candidates WHERE removed>=2048;
+
+SELECT COUNT(*) AS revisions,
+  SUM(CASE WHEN snapshot_json IS NOT NULL AND NOT json_valid(snapshot_json) THEN 1 ELSE 0 END) AS invalid_snapshots,
+  SUM(CASE WHEN details_json IS NOT NULL AND NOT json_valid(details_json) THEN 1 ELSE 0 END) AS non_json_details
+FROM resource_changes;
+```
+
+In order, D1 reported 9,201, 9,201, 3,846 and 9,201 rows read, all with
+zero writes and one attempt. The first query also returned 926 Simulation rows
+under 2 KB and 5,356 Site rows under 2 KB, with zero rows of either kind at
+or above 64 KB. The second query returned 2,155 candidate Simulations,
+13,308,623 candidate removed bytes, and no candidate Sites. The third returned
+2,155 candidates, 796 current public/shared, seven former public/shared and
+284 with grants. The fourth returned 9,201 revisions, zero invalid snapshots
+and zero non-JSON non-null details. All four reported a 30,412,800-byte
+database afterward. SQL and aggregates are included for reproducibility;
+repeat queries will see later staging state and consume additional reads.
+
 The existing local gateway → private Durable Object → indexed application D1
 and R2 probe then used a deterministic **large-record stress fixture**: 99
 bulky Simulation revisions, of which 37 were currently public/shared and one
