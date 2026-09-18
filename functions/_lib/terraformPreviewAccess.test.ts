@@ -7,7 +7,9 @@ const staging = read("infra/terraform/environments/staging/terraform.tfvars");
 const production = read("infra/terraform/environments/prod/terraform.tfvars");
 const moduleSource = read("infra/terraform/modules/linksim_cloudflare/main.tf");
 const stagingWrangler = read("wrangler.staging.toml");
+const previewWrangler = read("wrangler.staging-preview.toml");
 const productionWrangler = read("wrangler.toml");
+const deployScript = read("scripts/deploy-pages-safe.mjs");
 const runtimeTypes = read("functions/_lib/types.ts");
 const accessPolicyDocs = read("docs/access-policy-templates.md");
 const authSetupDocs = read("docs/cloudflare-auth-setup.md");
@@ -97,5 +99,29 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(moduleSource).toContain(
       'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value',
     );
+  });
+
+  it("binds private history only to stable staging, never previews or production", () => {
+    const preview = moduleSource.split("    preview = {")[1]?.split("    production = {")[0] ?? "";
+    const stable = moduleSource.split("    production = {")[1]?.split("  lifecycle {")[0] ?? "";
+    expect(stagingWrangler).toContain('binding = "HISTORY_BUCKET"');
+    expect(stagingWrangler).toContain('bucket_name = "linksim-history-staging"');
+    expect(stagingWrangler).toContain('HISTORY_SCOPE = "staging"');
+    expect(previewWrangler).not.toContain("HISTORY_BUCKET");
+    expect(previewWrangler).not.toContain("HISTORY_SCOPE");
+    expect(productionWrangler).not.toContain("HISTORY_BUCKET");
+    expect(productionWrangler).not.toContain("HISTORY_SCOPE");
+    expect(preview).not.toContain("history_r2_bucket_name");
+    expect(preview).not.toContain("pages_production_env_vars");
+    expect(stable).toContain("history_r2_bucket_name");
+    expect(stable).toContain("pages_production_env_vars");
+    expect(deployScript).toContain('wrangler.staging-preview.toml');
+    expect(deployScript).toContain('configPath: wranglerStagingPreview');
+    expect(staging).toContain('history_r2_bucket_name');
+    expect(read("infra/terraform/environments/staging/main.tf")).toMatch(/pages_production_env_vars_plain\s*=\s*\{ HISTORY_SCOPE = "staging" \}/);
+    expect(production).not.toContain('history_r2_bucket_name');
+    expect(previewWrangler).toBe(stagingWrangler
+      .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
+      .replace('\nHISTORY_SCOPE = "staging"', ""));
   });
 });

@@ -35,6 +35,11 @@ locals {
   }
 
   pages_env_vars = merge(local.pages_env_vars_plain, local.pages_env_vars_secret)
+
+  pages_production_env_vars = merge(local.pages_env_vars, {
+    for name, value in var.pages_production_env_vars_plain :
+    name => { type = "plain_text", value = value }
+  })
 }
 
 resource "cloudflare_pages_project" "project" {
@@ -64,12 +69,14 @@ resource "cloudflare_pages_project" "project" {
           id = var.d1_database_id
         }
       }
-      r2_buckets = {
+      r2_buckets = merge({
         (var.r2_binding_name) = {
           name = var.r2_bucket_name
         }
-      }
-      env_vars = local.pages_env_vars
+        }, var.history_r2_bucket_name == null ? {} : {
+        HISTORY_BUCKET = { name = var.history_r2_bucket_name }
+      })
+      env_vars = local.pages_production_env_vars
     }
   }
 

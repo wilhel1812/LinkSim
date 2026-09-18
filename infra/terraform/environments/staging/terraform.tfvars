@@ -25,6 +25,7 @@ d1_database_id   = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
 
 r2_bucket_name         = "linksim-avatars-staging"
 r2_bucket_jurisdiction = "default"
+history_r2_bucket_name = "linksim-history-staging"
 
 dns_records = {
   staging = {

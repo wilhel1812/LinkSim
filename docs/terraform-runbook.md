@@ -105,6 +105,13 @@ For production:
 
 Adoption is complete when plan is zero-diff or only expected/documented drift.
 
+The staging history bucket is created privately through Wrangler and has an
+explicit Terraform `import` block in the staging root. When backend credentials
+are available, inspect the staging plan and confirm it imports only
+`linksim-history-staging` and adds only the reviewed stable-staging binding and
+scope. Do not apply a broader plan or attempt to recreate the bucket. Production
+has no history bucket binding in this phase.
+
 ## 6) Step B: Management (controlled updates)
 
 After import baseline is trusted:
