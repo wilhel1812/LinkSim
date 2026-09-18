@@ -92,6 +92,9 @@ uses the real staging D1 and private R2 bindings through a local Durable
 Object with remote bindings, restricted to one synthetic history row and a short-lived
 secret. It does not enable application archive writes or replace the remaining
 end-to-end revert, refresh and Manual Sync checks.
+The [first staging round trip](evidence/2026-09-18-history-staging-rehearsal.md)
+converted and restored one synthetic row with exact D1 equality. It did not
+measure deployed CPU, and R2 bucket summary counts remained unconfirmed.
 
 ## Reproduce
 
