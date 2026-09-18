@@ -46,20 +46,24 @@ only aggregate results. Production integration must call the existing current
 resource authorization before loading an object and must not expose an R2 key or
 use the avatar endpoint/public bucket/caching/fallback origin.
 
-Actual application revert is intentionally not changed: it still expects a full
-snapshot in D1. Tests verify exact restoration and then the existing revert path.
-Before activation, wire an authorized archive-aware snapshot reader into revert;
-test it with concurrent permission changes and corruption. Disabling new writes
-alone is not rollback once rows are archived: keep that reader or restore rows.
+Application revert now uses the authorized archive-aware reader when both
+`HISTORY_BUCKET` and `HISTORY_SCOPE` are bound. It verifies the archived object,
+the unchanged D1 projection, and current permission before applying the full
+snapshot. If an archived row is encountered without the binding, revert fails
+closed instead of saving the compact projection. Tests cover corruption and a
+grant revoked during R2 read. No application deployment supplies these bindings
+yet, so this is a disabled read-path integration, not archive activation.
+Disabling archive writes alone is not rollback once rows are archived: keep the
+reader or restore rows.
 
-The second synthetic batch adds a dormant authorized-reader proof. It reuses
+The authorized reader shared with application revert reuses
 `resolveResourceChangeAccess` for revert permission, scopes the change ID to the
 requested Site or Simulation before R2 access, verifies the D1 archive reference
 did not change during hydration, and checks permission again after the R2 read.
 Tests deny a stranger and a mismatched change without touching R2, and deny a
-grant revoked during the read. This is not a live route or a complete authenticated
-revert; the caller still needs verified identity/current account state, and the
-application still needs its archive-aware revert integration.
+grant revoked during the read. The existing API route verifies identity and
+current account state before calling this reader; staging still needs a bound
+bucket, additive schema and an end-to-end rehearsal before archiving is enabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a
@@ -72,12 +76,14 @@ traces matched all 26 requests at the gateway and object. See
 [Durable Object measurements](evidence/2026-09-18-history-durable.md).
 
 Staging isolation tests reject foreign scope references before loading an object.
-Production requires physically separate buckets and bindings. The existing staging
-exporter is **not archive-aware**: before integration it must reject or explicitly
-sanitize/materialize archive references. Never copy production references into
-staging or introduce a production fallback. Full live identity migration, staged
-export, direct archived revert and end-to-end Manual Sync rehearsal remain gates.
-The prototype leaves Manual Sync client behavior unchanged.
+Production requires physically separate buckets and bindings. Never copy
+production references into staging or introduce a production fallback. The
+prototype leaves Manual Sync client behavior unchanged; end-to-end staging
+rehearsal remains a gate. The staging exporter rejects production archive
+references because it cannot read their R2 objects. A refresh from inline
+production data safely replaces staging-only archived rows; a regression test
+covers this case. Production archive activation still requires an archive-aware
+export or another reviewed refresh strategy.
 
 ## Reproduce
 

@@ -69,7 +69,7 @@ it('keeps migrated metadata authoritative without changing immutable original de
 it('rejects invalid bounds before touching bindings', async()=>{
   for(const options of [{limit:11},{limit:0},{afterId:-1}]) await expect(archiveHistoryPage({} as never,options)).rejects.toThrow();
 });
-it('preserves real Library recovery and authorized history listing, then supports revert after rollback', async()=>{
+it('preserves real Library recovery and authorized history listing, and reverts archived payloads', async()=>{
   const {fetchLibraryForUser,fetchResourceChanges,revertResourceFromChangeCopy}=await import('./db');
   const f=setup();try{
     f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Synthetic','private','active',?,'2026-09-17')").run(f.snapshot);
@@ -84,10 +84,13 @@ it('preserves real Library recovery and authorized history listing, then support
     expect(await fetchLibraryForUser(env,'reader')).toEqual(before);
     expect(await fetchResourceChanges(env,'simulation','sim',actor)).toEqual(history);
     expect(await fetchResourceChanges(env,'simulation','sim',{...actor,id:'stranger'})).toMatchObject({ok:false,reason:'forbidden'});
-    // Application revert is intentionally not wired to archive reads in this
-    // prototype. A verified rollback restores its existing exact input contract.
+    await expect(revertResourceFromChangeCopy(env,'simulation','sim',1,actor)).rejects.toThrow(/archive binding/i);
+    const archiveEnabledEnv={...env,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'};
+    expect(await revertResourceFromChangeCopy(archiveEnabledEnv,'simulation','sim',1,actor)).toMatchObject({ok:true});
+    const reverted=f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get() as {payload_json:string};
+    expect(JSON.parse(reverted.payload_json).snapshot.padding).toBe('x'.repeat(4096));
+    expect(f.row().archive_key).not.toBeNull();
     expect(await restoreHistoryRow(f.env,1)).toBe(true);
-    expect(await revertResourceFromChangeCopy(env,'simulation','sim',1,actor)).toMatchObject({ok:true});
   }finally{f.db.db.close();}
 });
 it('one concurrent archiver wins and an ambiguous committed update keeps its object',async()=>{
@@ -128,4 +131,59 @@ it('hydrates only a change of the authorized resource and rechecks permission af
   f.bucket.afterGet=()=>f.db.db.prepare("UPDATE resource_changes SET snapshot_json=json_set(snapshot_json,'$.ownerUserId','new-owner') WHERE id=1").run();
   await expect(readAuthorizedArchivedHistory(f.env,'simulation','sim',1,owner)).rejects.toThrow('History changed during hydration');
  }finally{f.db.db.close();}
+});
+
+it('fails application revert without changing a resource when R2 is corrupt or access is revoked during read',async()=>{
+  const {revertResourceFromChangeCopy}=await import('./db');
+  const f=setup();try{
+    f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Current','private','active',?,'2026-09-17')").run(JSON.stringify({id:'sim',name:'Current',ownerUserId:'owner'}));
+    await archiveHistoryPage(f.env,{apply:true});
+    const env={DB:f.env.DB,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'} as Parameters<typeof revertResourceFromChangeCopy>[0];
+    const owner={id:'owner',isAdmin:false,isModerator:false};
+    f.bucket.corrupt=true;
+    await expect(revertResourceFromChangeCopy(env,'simulation','sim',1,owner)).rejects.toThrow(/integrity|envelope/i);
+    f.bucket.corrupt=false;
+    f.db.db.prepare("INSERT INTO simulation_roles(simulation_id,user_id,role,created_at) VALUES('sim','reader','editor','2026-09-17')").run();
+    f.bucket.afterGet=()=>f.db.db.prepare("DELETE FROM simulation_roles WHERE simulation_id='sim' AND user_id='reader'").run();
+    expect(await revertResourceFromChangeCopy(env,'simulation','sim',1,{...owner,id:'reader'})).toMatchObject({ok:false,reason:'forbidden'});
+    expect(JSON.parse(String(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Current');
+  }finally{f.db.db.close();}
+});
+
+it('rejects a half-written archive reference before application revert',async()=>{
+  const {revertResourceFromChangeCopy}=await import('./db');
+  const f=setup();try{
+    f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Current','private','active',?,'2026-09-17')").run(JSON.stringify({id:'sim',name:'Current',ownerUserId:'owner'}));
+    await archiveHistoryPage(f.env,{apply:true});
+    f.db.db.prepare('UPDATE resource_changes SET archive_key=NULL WHERE id=1').run();
+    const env={DB:f.env.DB,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'} as Parameters<typeof revertResourceFromChangeCopy>[0];
+    await expect(revertResourceFromChangeCopy(env,'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false}))
+      .rejects.toThrow(/incomplete archive reference/i);
+    await expect(archiveHistoryPage(f.env,{apply:true})).rejects.toThrow(/incomplete archive reference/i);
+    await expect(restoreHistoryRow(f.env,1)).rejects.toThrow(/incomplete archive reference/i);
+    f.db.db.prepare("UPDATE resource_changes SET archive_key='' WHERE id=1").run();
+    await expect(revertResourceFromChangeCopy(env,'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false}))
+      .rejects.toThrow(/invalid archive reference/i);
+    await expect(archiveHistoryPage(f.env,{apply:true})).rejects.toThrow(/invalid archive reference/i);
+    await expect(restoreHistoryRow(f.env,1)).rejects.toThrow(/invalid archive reference/i);
+    f.db.db.prepare("UPDATE resource_changes SET archive_digest='' WHERE id=1").run();
+    await expect(revertResourceFromChangeCopy({DB:f.env.DB} as Parameters<typeof revertResourceFromChangeCopy>[0],
+      'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false})).rejects.toThrow(/archive binding/i);
+    expect(JSON.parse(String(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Current');
+  }finally{f.db.db.close();}
+});
+
+it('rejects an incomplete archive schema before unbound application revert',async()=>{
+  const {revertResourceFromChangeCopy}=await import('./db');
+  const db=new SqliteD1();try{
+    db.db.exec(`ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT;
+INSERT INTO users(id,username) VALUES('owner','owner');
+INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at)
+  VALUES('sim','owner','Current','private','active','{"id":"sim","name":"Current"}','2026-09-17');
+INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json,archive_digest)
+  VALUES(1,'simulation','sim','updated','owner','2026-09-17','{"id":"sim","name":"Old"}','');`);
+    await expect(revertResourceFromChangeCopy({DB:db as unknown as D1Database} as Parameters<typeof revertResourceFromChangeCopy>[0],
+      'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false})).rejects.toThrow(/incomplete history archive schema/i);
+    expect(JSON.parse(String(db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Current');
+  }finally{db.db.close();}
 });

@@ -25,6 +25,8 @@ export type Env = {
   DB: D1Database;
   // Disabled unless explicitly enabled after runtime/storage validation.
   HISTORY_DETAILS_COMPRESSION?: string;
+  HISTORY_BUCKET?: R2Bucket;
+  HISTORY_SCOPE?: string;
   AVATAR_BUCKET?: R2Bucket;
   AVATAR_PUBLIC_BASE_URL?: string;
   AVATAR_FALLBACK_ORIGIN?: string;
