@@ -69,6 +69,27 @@ INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id,
         .toEqual({ snapshot_json: '{"snapshot":{"name":"Site"}}', details_json: '{"changedFields":["name"]}', archive_key: null, archive_digest: null });
     } finally { db.close(); }
   });
+  it('replaces staging-only archived rows with sanitized inline production history on refresh', () => {
+    const source = schema + `
+INSERT INTO users (id, username, created_at) VALUES ('u1', 'production-name', '2026-01-01');
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json, details_json) VALUES ('simulation', 'sim-1', 'updated', 'u1', '2026-01-01',
+  '{"id":"sim-1","snapshot":{"name":"Inline"}}', '{}');`;
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(schema);
+      db.exec('ALTER TABLE resource_changes ADD COLUMN archive_key TEXT; ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT;');
+      db.exec(`INSERT INTO users (id, username, created_at) VALUES ('u1', 'staging-name', '2026-01-01');
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json, details_json, archive_key, archive_digest) VALUES
+  ('simulation', 'sim-1', 'updated', 'u1', '2026-01-01', '{"id":"sim-1"}', '{}',
+   'history-prototype/staging/1/object', 'checksum');`);
+      db.exec(sanitizeExport(source));
+      expect(db.prepare('SELECT snapshot_json, archive_key, archive_digest FROM resource_changes').get())
+        .toEqual({snapshot_json:'{"id":"sim-1","snapshot":{"name":"Inline"}}',archive_key:null,archive_digest:null});
+      expect(db.prepare('SELECT username FROM users WHERE id = ?').get('u1').username).toBe('staging-user-1');
+    } finally { db.close(); }
+  });
   it('rejects an incomplete archive schema before exporting history', () => {
     expect(() => sanitizeExport(schema + '\nALTER TABLE resource_changes ADD COLUMN archive_key TEXT;'))
       .toThrow(/incomplete archive schema/i);

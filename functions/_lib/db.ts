@@ -1,4 +1,5 @@
 import { encodeHistoryDetails } from "./historyDetails";
+import { hydrateHistoryRow, type ArchiveEnv } from "./historyArchive";
 import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
 import {
@@ -3185,6 +3186,38 @@ export const fetchResourceChanges = async (
   };
 };
 
+export const readAuthorizedArchivedHistory = async (
+  archive: ArchiveEnv,
+  kind: "site" | "simulation",
+  resourceId: string,
+  changeId: number,
+  actor: ActorPolicy,
+) => {
+  if (!Number.isSafeInteger(changeId) || changeId < 1 || !resourceId.trim()) {
+    return { ok: false as const, reason: "missing" as const };
+  }
+  const env = { DB: archive.DB } as Env;
+  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+  if (!access.ok) return access;
+
+  const sql = `SELECT snapshot_json, details_json, archive_key, archive_digest
+               FROM resource_changes WHERE id = ? AND resource_kind = ? AND resource_id = ?`;
+  const readRevision = () => archive.DB.prepare(sql).bind(changeId, kind, resourceId)
+    .first<{ snapshot_json: string | null; details_json: string | null; archive_key: string | null; archive_digest: string | null }>();
+  const before = await readRevision();
+  if (!before) return { ok: false as const, reason: "missing" as const };
+  // A mismatched change ID must never cause an R2 read.
+  const row = await hydrateHistoryRow(archive, changeId, { kind, id: resourceId });
+  if (!row) return { ok: false as const, reason: "missing" as const };
+  const after = await readRevision();
+  if (!after || Object.keys(before).some((key) => before[key as keyof typeof before] !== after[key as keyof typeof after])) {
+    throw Error("History changed during hydration");
+  }
+  // The R2 read may overlap a grant or ownership change.
+  const current = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+  return current.ok ? { ok: true as const, row } : current;
+};
+
 export const revertResourceFromChangeCopy = async (
   env: Env,
   kind: "site" | "simulation",
@@ -3193,23 +3226,44 @@ export const revertResourceFromChangeCopy = async (
   actor: ActorPolicy,
 ): Promise<{ ok: boolean; reason?: string }> => {
   await ensureSchema(env);
-  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
-  if (!access.ok) return access;
-
-  const snapshotRow = await env.DB
-    .prepare(
-      `SELECT snapshot_json
-       FROM resource_changes
-       WHERE id = ? AND resource_kind = ? AND resource_id = ?
-       LIMIT 1`,
-    )
-    .bind(changeId, kind, resourceId)
-    .first<{ snapshot_json: string | null }>();
-  if (!snapshotRow?.snapshot_json) return { ok: false, reason: "snapshot_missing" };
+  let snapshotJson: string | null;
+  if (env.HISTORY_SCOPE || env.HISTORY_BUCKET) {
+    if (!env.HISTORY_SCOPE || !env.HISTORY_BUCKET) throw Error("Incomplete history archive binding");
+    const archived = await readAuthorizedArchivedHistory(
+      { DB: env.DB, BUCKET: env.HISTORY_BUCKET, scope: env.HISTORY_SCOPE },
+      kind, resourceId, changeId, actor,
+    );
+    if (!archived.ok) return archived;
+    snapshotJson = archived.row.snapshot_json;
+  } else {
+    const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+    if (!access.ok) return access;
+    // Older databases have no archive columns. Once they exist, a missing R2
+    // binding must fail closed rather than revert a compact projection.
+    const columns = await env.DB.prepare("PRAGMA table_info(resource_changes)").all<{ name: string }>();
+    const archiveColumnNames = new Set(columns.results.map(({ name }) => name));
+    const hasArchiveKey = archiveColumnNames.has("archive_key");
+    const hasArchiveDigest = archiveColumnNames.has("archive_digest");
+    if (hasArchiveKey !== hasArchiveDigest) throw Error("Incomplete history archive schema");
+    const snapshotRow = await env.DB
+      .prepare(
+        `SELECT snapshot_json${hasArchiveKey ? ", archive_key, archive_digest" : ""}
+         FROM resource_changes
+         WHERE id = ? AND resource_kind = ? AND resource_id = ?
+         LIMIT 1`,
+      )
+      .bind(changeId, kind, resourceId)
+      .first<{ snapshot_json: string | null; archive_key?: string | null; archive_digest?: string | null }>();
+    if (snapshotRow && (snapshotRow.archive_key != null || snapshotRow.archive_digest != null)) {
+      throw Error("History archive binding required for revert");
+    }
+    snapshotJson = snapshotRow?.snapshot_json ?? null;
+  }
+  if (!snapshotJson) return { ok: false, reason: "snapshot_missing" };
 
   let snapshot: CloudResourceRecord;
   try {
-    snapshot = JSON.parse(snapshotRow.snapshot_json) as CloudResourceRecord;
+    snapshot = JSON.parse(snapshotJson) as CloudResourceRecord;
   } catch {
     return { ok: false, reason: "snapshot_invalid" };
   }
