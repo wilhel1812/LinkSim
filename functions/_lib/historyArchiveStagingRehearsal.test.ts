@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { SqliteD1 } from './testSqliteD1';
 import { handleStagingArchiveRehearsal } from '../../experiments/better-auth/history-archive-staging-rehearsal';
-import { stagingArchiveRehearsalConfig } from '../../experiments/better-auth/prepare-history-archive-staging.mjs';
+import { stagingArchiveRehearsalConfig, validStagingRehearsalResult } from '../../experiments/better-auth/prepare-history-archive-staging.mjs';
 
 const setup = () => {
   const db = new SqliteD1();
@@ -37,11 +37,14 @@ it('keeps the staging rehearsal dry until the exact row and secret are supplied'
     expect((await handleStagingArchiveRehearsal(new Request('https://test/archive', { method: 'GET', headers: { authorization: `Bearer ${'a'.repeat(64)}` } }), f.env)).status).toBe(404);
     const dry = await (await f.call('/dry-run')).json() as { result: { candidates: number; converted: number } };
     expect(dry.result).toMatchObject({ candidates: 1, converted: 0 });
+    const inline = await (await f.call('/hydrate')).json() as { result: { archived: boolean } };
+    expect(inline.result.archived).toBe(false);
+    expect(validStagingRehearsalResult('hydrate', inline)).toBe(false);
     expect(f.objects.size).toBe(0);
     expect((await f.call('/archive')).status).toBe(200);
     expect(f.objects.size).toBe(1);
-    const hydrated = await (await f.call('/hydrate')).json() as { result: { found: boolean; bytes: number } };
-    expect(hydrated.result).toMatchObject({ found: true, bytes: new TextEncoder().encode(f.snapshot).length });
+    const hydrated = await (await f.call('/hydrate')).json() as { result: { found: boolean; archived: boolean; bytes: number } };
+    expect(hydrated.result).toMatchObject({ found: true, archived: true, bytes: new TextEncoder().encode(f.snapshot).length });
     expect((await f.call('/restore')).status).toBe(200);
     expect(f.db.db.prepare('SELECT snapshot_json, archive_key FROM resource_changes WHERE id=7').get()).toEqual({ snapshot_json: f.snapshot, archive_key: null });
   } finally { f.db.db.close(); }
@@ -72,4 +75,17 @@ it('generates only a short-lived staging D1/R2 remote-development config', () =>
   expect(JSON.stringify(config)).not.toContain('d669aac0-37ea-4c68-9b27-ece888e1966a');
   expect(() => stagingArchiveRehearsalConfig({ rowId: 0, resourceKind: 'simulation', resourceId: 'archive-rehearsal-sim', actorUserId: 'archive-rehearsal-owner', expiresAt: new Date(Date.now() + 60_000).toISOString() })).toThrow();
   expect(() => stagingArchiveRehearsalConfig({ rowId: 7, resourceKind: 'simulation', resourceId: 'archive-rehearsal-sim', actorUserId: 'archive-rehearsal-owner', expiresAt: new Date(Date.now() + 3_600_000).toISOString() })).toThrow();
+});
+
+it('reports a successful command only when its archive result actually succeeded', () => {
+  expect(validStagingRehearsalResult('dry-run', { result: { scanned: 1, candidates: 1, converted: 0, conflicts: 0 } })).toBe(true);
+  expect(validStagingRehearsalResult('archive', { result: { scanned: 1, candidates: 1, converted: 1, conflicts: 0 } })).toBe(true);
+  expect(validStagingRehearsalResult('hydrate', { result: { found: true, archived: true, bytes: 4285 } })).toBe(true);
+  expect(validStagingRehearsalResult('restore', { result: { restored: true } })).toBe(true);
+  for (const [operation, result] of [
+    ['dry-run', { scanned: 1, candidates: 0, converted: 0, conflicts: 0 }],
+    ['archive', { scanned: 1, candidates: 1, converted: 0, conflicts: 1 }],
+    ['hydrate', { found: true, archived: false, bytes: 4285 }],
+    ['restore', { restored: false }],
+  ] as const) expect(validStagingRehearsalResult(operation, { result })).toBe(false);
 });

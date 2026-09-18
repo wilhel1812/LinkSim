@@ -43,6 +43,19 @@ export function stagingArchiveRehearsalConfig({ rowId, resourceKind, resourceId,
   };
 }
 
+export function validStagingRehearsalResult(operation, body) {
+  const result = body && typeof body === 'object' ? body.result : null;
+  if (!result || typeof result !== 'object') return false;
+  if (operation === 'dry-run') return result.scanned === 1 && result.candidates === 1 &&
+    result.converted === 0 && result.conflicts === 0;
+  if (operation === 'archive') return result.scanned === 1 && result.candidates === 1 &&
+    result.converted === 1 && result.conflicts === 0;
+  if (operation === 'hydrate') return result.found === true && result.archived === true &&
+    Number.isSafeInteger(result.bytes) && result.bytes > 0;
+  if (operation === 'restore') return result.restored === true;
+  return false;
+}
+
 const ownCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (ownCli) {
   const [action, ...args] = process.argv.slice(2);
@@ -74,8 +87,10 @@ if (ownCli) {
       redirect: 'manual', signal: AbortSignal.timeout(30_000),
     });
     const body = await response.text();
-    process.stdout.write(JSON.stringify({ operation: args[0], status: response.status, elapsedMs: Date.now() - started, response: body ? JSON.parse(body) : null }) + '\n');
-    if (!response.ok) process.exitCode = 1;
+    const parsed = body ? JSON.parse(body) : null;
+    const verified = response.ok && validStagingRehearsalResult(args[0], parsed);
+    process.stdout.write(JSON.stringify({ operation: args[0], status: response.status, elapsedMs: Date.now() - started, verified, response: parsed }) + '\n');
+    if (!verified) process.exitCode = 1;
   } else if (action === 'cleanup' && args.length === 0) {
     if (existsSync(manifest)) unlinkSync(manifest);
     if (existsSync(secretFile)) unlinkSync(secretFile);

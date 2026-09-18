@@ -46,7 +46,8 @@ export async function handleStagingArchiveRehearsal(request: Request, env: Env):
     });
   } else if (path === '/hydrate') {
     const hydrated = await hydrateHistoryRow(archiveEnv, id, { kind: row.resource_kind as 'site' | 'simulation', id: row.resource_id });
-    result = { found: !!hydrated, bytes: new TextEncoder().encode((hydrated?.snapshot_json ?? '') + (hydrated?.details_json ?? '')).length };
+    result = { found: !!hydrated, archived: !!hydrated?.archive_key && !!hydrated?.archive_digest,
+      bytes: new TextEncoder().encode((hydrated?.snapshot_json ?? '') + (hydrated?.details_json ?? '')).length };
   } else {
     result = { restored: await restoreHistoryRow(archiveEnv, id,
       { id, resourceKind: row.resource_kind as 'site' | 'simulation', resourceId: row.resource_id, actorUserId: row.actor_user_id }) };

@@ -27,6 +27,9 @@ row without writing. `archive` writes one immutable R2 object, verifies it,
 then conditionally replaces the bulky D1 fields. `hydrate` checks integrity
 without returning content. `restore` puts the original fields back in D1; the
 immutable R2 object remains for Time Travel and in-flight readers.
+Each command exits successfully only when its expected state transition is
+confirmed; `verified: false` and a nonzero exit code require D1 reconciliation
+before any further operation or cleanup.
 
 ```sh
 node experiments/better-auth/prepare-history-archive-staging.mjs call dry-run
