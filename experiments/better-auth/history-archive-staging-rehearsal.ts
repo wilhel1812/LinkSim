@@ -13,7 +13,7 @@ type Env = {
   REHEARSAL_ACTOR_USER_ID?: string;
 };
 
-const routes = new Set(['/dry-run', '/archive', '/hydrate', '/restore']);
+const routes = new Set(['/dry-run', '/archive', '/hydrate', '/restore', '/object-count']);
 export function validStagingRehearsalRequest(request: Request, env: Env) {
   const url = new URL(request.url);
   const expiry = Date.parse(env.REHEARSAL_EXPIRES_AT ?? '');
@@ -48,6 +48,9 @@ export async function handleStagingArchiveRehearsal(request: Request, env: Env):
     const hydrated = await hydrateHistoryRow(archiveEnv, id, { kind: row.resource_kind as 'site' | 'simulation', id: row.resource_id });
     result = { found: !!hydrated, archived: !!hydrated?.archive_key && !!hydrated?.archive_digest,
       bytes: new TextEncoder().encode((hydrated?.snapshot_json ?? '') + (hydrated?.details_json ?? '')).length };
+  } else if (path === '/object-count') {
+    const listed = await BUCKET.list({ prefix: `history-prototype/staging/${id}/`, limit: 10 });
+    result = { objects: listed.objects.length, truncated: listed.truncated };
   } else {
     result = { restored: await restoreHistoryRow(archiveEnv, id,
       { id, resourceKind: row.resource_kind as 'site' | 'simulation', resourceId: row.resource_id, actorUserId: row.actor_user_id }) };

@@ -52,6 +52,7 @@ export function validStagingRehearsalResult(operation, body) {
     result.converted === 1 && result.conflicts === 0;
   if (operation === 'hydrate') return result.found === true && result.archived === true &&
     Number.isSafeInteger(result.bytes) && result.bytes > 0;
+  if (operation === 'object-count') return Number.isSafeInteger(result.objects) && result.objects > 0 && result.truncated === false;
   if (operation === 'restore') return result.restored === true;
   return false;
 }
@@ -70,7 +71,7 @@ if (ownCli) {
     writeFileSync(secretFile, `REHEARSAL_KEY="${randomBytes(32).toString('hex')}"\n`, { mode: 0o600, flag: 'wx' });
     process.stdout.write(`Prepared ${fileURLToPath(manifest)}; expires ${config.vars.REHEARSAL_EXPIRES_AT}.\n`);
     process.stdout.write(`Run: npx wrangler dev --config ${fileURLToPath(manifest)} --port 8799\n`);
-  } else if (action === 'call' && args.length === 1 && ['dry-run', 'archive', 'hydrate', 'restore'].includes(args[0])) {
+  } else if (action === 'call' && args.length === 1 && ['dry-run', 'archive', 'hydrate', 'restore', 'object-count'].includes(args[0])) {
     assert.equal(statSync(manifest).mode & 0o077, 0, 'Manifest must be private');
     assert.equal(statSync(secretFile).mode & 0o077, 0, 'Secret must be private');
     const config = JSON.parse(readFileSync(manifest, 'utf8'));
@@ -96,6 +97,6 @@ if (ownCli) {
     if (existsSync(secretFile)) unlinkSync(secretFile);
     process.stdout.write('Private rehearsal files removed.\n');
   } else {
-    throw Error('Usage: prepare-history-archive-staging.mjs prepare ROW_ID KIND RESOURCE_ID ACTOR_USER_ID | call dry-run|archive|hydrate|restore | cleanup');
+    throw Error('Usage: prepare-history-archive-staging.mjs prepare ROW_ID KIND RESOURCE_ID ACTOR_USER_ID | call dry-run|archive|hydrate|restore|object-count | cleanup');
   }
 }
