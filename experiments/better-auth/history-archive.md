@@ -118,6 +118,10 @@ node experiments/better-auth/history-archive-remote.mjs run
 node experiments/better-auth/history-archive-remote.mjs delete
 ```
 
+On a **fresh disposable database**, pass `--indexed` to `run` to load the
+application schema and history indexes before recording private Simulation
+fixture costs. Do not mix minimal and indexed runs in the same database.
+
 The `run` action saves all results and exits nonzero for failed or incomplete
 measurements. Repeating `create` verifies the persisted D1 identity and resumes
 missing bucket creation; it does not recreate D1. `delete` verifies that identity,
@@ -132,12 +136,14 @@ save raw tail events, which contain the Authorization header.
 
 Remote fixture inserts use short SQL chunks to respect D1's statement-length
 limit; their setup cost is excluded from workload figures. Runtime operations use
-bound values. The remote table has no production indexes, so its D1 writes are a
-lower bound, not a production projection.
+bound values. That earlier minimal-table remote run had no application history
+indexes, so its D1 writes were a lower bound, not a production projection.
 
 A later [local application-index comparison](evidence/2026-09-18-history-index-cost.md)
 measured 108 D1 writes across the same 26 private Simulation operations, versus
 54 in the minimal fixture. Shared/public and deleted-Site rows were not measured;
-remote indexed CPU and account-wide quota checks remain open.
+the [disposable remote indexed run](evidence/2026-09-18-history-indexed-remote.md)
+also measured 108 writes and gateway CPU of 0–1 ms. Account-wide quota,
+authenticated application requests and representative history mixes remain open.
 
 See [measured results](evidence/2026-09-17-history-r2.md).

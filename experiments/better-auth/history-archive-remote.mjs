@@ -6,10 +6,12 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {finishArchiveRun,resumeArchiveSetup,teardownArchiveProbe,bucketInfoResult} from './history-archive-lifecycle.mjs';
+import {indexedArchiveSchema,remoteArchiveFixtureSql} from './history-archive-indexed-schema.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url)),directory=fileURLToPath(new URL('.',import.meta.url));
 const scratch=directory+'.wrangler/history-archive',configPath=scratch+'/wrangler.json',gatewayConfigPath=scratch+'/gateway.wrangler.json',keyPath=scratch+'/key';
 const name='linksim-history-r2-probe-1107',origin=`https://${name}.wilhelm-francke.workers.dev`;
-const action=process.argv[2];assert.ok(['prepare','create','deploy','run','delete'].includes(action)&&process.argv.length===3);
+const action=process.argv[2],indexed=action==='run'&&process.argv[3]==='--indexed';
+assert.ok(['prepare','create','deploy','run','delete'].includes(action)&&(process.argv.length===3||indexed&&process.argv.length===4));
 const expected=(expires,id)=>({name:name+'-runtime',account_id:'85c57e0c4da3a747a09212dc5b090f52',main:directory+'history-archive-runtime.ts',compatibility_date:'2026-03-12',compatibility_flags:['nodejs_compat'],workers_dev:false,preview_urls:false,
  observability:{enabled:true,head_sampling_rate:1},vars:{PROBE_ENABLED:'synthetic-history-r2',PROBE_EXPIRES_AT:expires},
  migrations:[{tag:'v1',new_sqlite_classes:['HistoryArchiveProbe']}],
@@ -65,22 +67,27 @@ if(action==='prepare'){
    assert.equal((await fetch(origin+'/archive',{method:'POST',redirect:'manual'})).status,404);
    const bundle=await build({absWorkingDir:root,entryPoints:[directory+'history-archive-fixtures.ts'],bundle:true,write:false,format:'esm',platform:'node'});
    const {archiveFixtureRows,archiveFixtureSchema}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
-   const results=[];const quote=s=>"'"+s.replaceAll("'","''")+"'";
+   if(indexed){
+    writeFileSync(scratch+'/application-schema.sql',indexedArchiveSchema());
+    invoke(['d1','execute',name,'--remote','--file',scratch+'/application-schema.sql','--yes'],undefined,true);
+   }
+   const results=[];
    try{for(const scenario of ['max-batch','max-record','large','small'])for(const entropy of ['varied','repetitive']){
-    const sql=['DROP TABLE IF EXISTS resource_changes;',archiveFixtureSchema+';'];
-    for(const row of archiveFixtureRows(scenario,entropy)){
-     sql.push(`INSERT INTO resource_changes(id,snapshot_json,details_json) VALUES(${row.id},'','');`);
-     for(const field of ['snapshot_json','details_json'])for(let offset=0;offset<row[field].length;offset+=16000)sql.push(`UPDATE resource_changes SET ${field}=${field}||${quote(row[field].slice(offset,offset+16000))} WHERE id=${row.id};`);
-    }
-    writeFileSync(scratch+'/fixture.sql',sql.join('\n'));
+    writeFileSync(scratch+'/fixture.sql',remoteArchiveFixtureSql(archiveFixtureRows(scenario,entropy),{indexed,minimalSchema:archiveFixtureSchema}));
     invoke(['d1','execute',name,'--remote','--file',scratch+'/fixture.sql','--yes'],undefined,true);
     for(const path of scenario==='max-batch'?['/archive?id=1','/archive?id=11','/hydrate?id=1','/restore?id=1']:['/archive?id=1','/hydrate?id=1','/restore?id=1']){
      const startedAt=Date.now();let result;
-     try{const response=await call(path);result={scenario,entropy,path,startedAt,status:response.status,elapsedMs:Date.now()-startedAt,aggregate:response.ok?await response.json():null};}
+     try{const response=await call(path),aggregate=response.ok?await response.json():null;
+      if(aggregate){
+       if(path.startsWith('/archive'))assert.equal(aggregate.result.converted,scenario==='max-batch'?10:1);
+       if(path.startsWith('/hydrate'))assert.equal(aggregate.result.found,true);
+       if(path.startsWith('/restore'))assert.equal(aggregate.result.restored,true);
+      }
+      result={scenario,entropy,path,startedAt,status:response.status,elapsedMs:Date.now()-startedAt,aggregate};}
      catch{result={scenario,entropy,path,startedAt,elapsedMs:Date.now()-startedAt,outcome:'transport-failure'};}
      results.push(result);console.log(JSON.stringify(result));
     }
-   }}finally{finishArchiveRun(results,26,records=>writeFileSync(scratch+'/results.json',JSON.stringify({source:'Synthetic remote archive component; CPU recorded separately; fixture setup excluded',results:records},null,2)));}
+   }}finally{finishArchiveRun(results,26,records=>writeFileSync(scratch+'/results.json',JSON.stringify({source:'Synthetic remote archive component; CPU recorded separately; fixture setup excluded',schema:indexed?'application history table and indexes':'minimal fixture',results:records},null,2)));}
   }
   if(action==='delete'){
    await teardownArchiveProbe({prepareCleanup:()=>{
