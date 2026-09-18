@@ -1,6 +1,6 @@
 import { archiveHistoryPage, hydrateHistoryRow, restoreHistoryRow } from './history-archive';
 type Env={ DB:D1Database; BUCKET:R2Bucket; PROBE_KEY?:string; PROBE_ENABLED?:string; PROBE_EXPIRES_AT?:string };
-export default {async fetch(request:Request,env:Env){
+export async function handleArchiveProbe(request:Request,env:Env) {
   const expiry=Date.parse(env.PROBE_EXPIRES_AT??'');
   if(env.PROBE_ENABLED!=='synthetic-history-r2'||!env.PROBE_KEY||!Number.isFinite(expiry)||expiry<=Date.now()||
       request.headers.get('authorization')!==`Bearer ${env.PROBE_KEY}`)return new Response(null,{status:404});
@@ -37,4 +37,5 @@ export default {async fetch(request:Request,env:Env){
   else if(url.pathname==='/restore')result={restored:await restoreHistoryRow(probe,id)};
   else {const row=await hydrateHistoryRow(probe,id);result={found:!!row,bytes:new TextEncoder().encode((row?.snapshot_json??'')+(row?.details_json??'')).length};}
   return Response.json({result,metrics},{headers:{'cache-control':'no-store'}});
-}};
+}
+export default {fetch:handleArchiveProbe};

@@ -2009,7 +2009,7 @@ export const deleteSiteResource = async (
   return { ok: true, siteId: id };
 };
 
-const resolveResourceChangeAccess = async (
+export const resolveResourceChangeAccess = async (
   env: Env,
   kind: "site" | "simulation",
   resourceId: string,
