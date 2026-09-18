@@ -1,0 +1,12 @@
+{"firstInvocation":false,"timestamp":1789739434558,"path":"/object-count","status":200,"cpuMs":1,"wallMs":1021,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739435006,"path":"/object-count","status":200,"cpuMs":3,"wallMs":568,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739491849,"path":"/dry-run","status":200,"cpuMs":2,"wallMs":37,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739491832,"path":"/dry-run","status":200,"cpuMs":1,"wallMs":56,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739511649,"path":"/archive","status":200,"cpuMs":6,"wallMs":566,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739511291,"path":"/archive","status":200,"cpuMs":1,"wallMs":909,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739525626,"path":"/hydrate","status":200,"cpuMs":2,"wallMs":143,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739525610,"path":"/hydrate","status":200,"cpuMs":0,"wallMs":164,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739537962,"path":"/restore","status":200,"cpuMs":3,"wallMs":219,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739537951,"path":"/restore","status":200,"cpuMs":0,"wallMs":235,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739554001,"path":"/object-count","status":200,"cpuMs":1,"wallMs":217,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}
+{"firstInvocation":false,"timestamp":1789739553983,"path":"/object-count","status":200,"cpuMs":1,"wallMs":241,"outcome":"ok","version":"68b97ea1-c011-4cdf-b3c6-ae0ebe5d3937"}

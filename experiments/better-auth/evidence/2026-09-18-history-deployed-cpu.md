@@ -7,7 +7,10 @@ restricted to synthetic `resource_changes.id=9202`, Simulation
 `archive-rehearsal-user-1107-20260918`. Its gateway and object required the
 same private 256-bit secret and expired after 20 minutes. The Worker was
 deleted after the run. No production resource or real user's history was
-changed. No raw tail or secret is retained in this evidence.
+changed. No raw tail or secret is retained in this evidence. The exact
+sanitized [invocation tail](2026-09-18-history-deployed-tail.jsonl) and
+[operation results](2026-09-18-history-deployed-results.jsonl) are retained
+for review; the latter contains only counts and the synthetic row comparison.
 
 | Operation | Verified HTTP | CLI elapsed | D1 queries / read / written | R2 put / get / list | Two invocation CPU values (ms) |
 |---|---:|---:|---:|---:|---:|
