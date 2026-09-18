@@ -101,9 +101,12 @@ disabled in the application.
 
 The dated 50-account production snapshot had 13,149 history rows, including
 5,426 large Simulation candidates. At ten scanned rows per page, one complete
-scan would require at least 1,315 page calls and up to 5,426 R2 uploads and
-verification reads if every candidate still qualifies. This is an initial
-backfill estimate, not a daily maintenance load or a measured completion time.
+conflict-free scan would require at least 1,315 page calls and one R2 upload
+and verification read per candidate that still qualifies. Retried pages,
+compare-and-swap conflicts, and ambiguous D1 responses can create additional
+uploads, verification reads, and retained orphan objects; 5,426 is not an
+upper bound for R2 operations. This is an initial backfill baseline, not a
+daily maintenance load or a measured completion time.
 The four synthetic full pages took 4.3–5.3 seconds wall time and 62–72 ms
 object CPU each; sparsity, conflicts, production indexes, and R2 latency make
 linear extrapolation unreliable. Progress should be checkpointed between small
