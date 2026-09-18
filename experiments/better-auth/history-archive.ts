@@ -53,10 +53,12 @@ const hydrate = async (env:ArchiveEnv,row:Row):Promise<Row> => {
   return {...row,snapshot_json:merge(row.snapshot_json,projection.snapshot_json,original.snapshot_json,false),
     details_json:merge(row.details_json,projection.details_json,original.details_json,true)};
 };
-export const hydrateHistoryRow=async(env:ArchiveEnv,id:number) => {
+export const hydrateHistoryRow=async(env:ArchiveEnv,id:number,resource?:{kind:'site'|'simulation';id:string}) => {
   namespace(env.scope);
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid history id');
-  const row=await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
+  const row=resource
+    ? await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=? AND resource_kind=? AND resource_id=?`).bind(id,resource.kind,resource.id).first<Row>()
+    : await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
   return row?hydrate(env,row):null;
 };
 export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;limit?:number;apply?:boolean}={}) => {

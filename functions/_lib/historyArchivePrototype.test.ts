@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { SqliteD1 } from './testSqliteD1';
 import { archiveHistoryPage, hydrateHistoryRow, restoreHistoryRow } from '../../experiments/better-auth/history-archive';
+import { readAuthorizedArchivedHistory } from '../../experiments/better-auth/history-archive-authorized';
 
 class Bucket {
   objects = new Map<string, string>();
@@ -108,4 +109,23 @@ it('probe rejects anonymous and expired calls before reading any bindings',async
   expect((await worker.fetch(new Request('https://test'+path,{method:'POST'}),{} as never)).status).toBe(404);
   expect((await worker.fetch(new Request('https://test'+path,{method:'POST',headers:{authorization:'Bearer test'}}),{PROBE_ENABLED:'synthetic-history-r2',PROBE_KEY:'test',PROBE_EXPIRES_AT:'2020-01-01'} as never)).status).toBe(404);
  }
+});
+
+it('hydrates only a change of the authorized resource and rechecks permission after the R2 read',async()=>{
+ const f=setup();try{
+  f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Synthetic','private','active',?,'2026-09-17')").run(f.snapshot);
+  f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('other','owner','Other','private','active',?,'2026-09-17')").run(f.snapshot);
+  await archiveHistoryPage(f.env,{apply:true});
+  const owner={id:'owner',isAdmin:false,isModerator:false};
+  expect(await readAuthorizedArchivedHistory(f.env,'simulation','sim',1,owner)).toMatchObject({ok:true,row:{snapshot_json:f.snapshot}});
+  const gets=f.bucket.gets;
+  expect(await readAuthorizedArchivedHistory(f.env,'simulation','sim',1,{...owner,id:'reader'})).toMatchObject({ok:false,reason:'forbidden'});
+  expect(await readAuthorizedArchivedHistory(f.env,'simulation','other',1,owner)).toMatchObject({ok:false,reason:'missing'});
+  expect(f.bucket.gets).toBe(gets,'denied and mismatched requests must not read R2');
+  f.db.db.prepare("INSERT INTO simulation_roles(simulation_id,user_id,role,created_at) VALUES('sim','reader','editor','2026-09-17')").run();
+  f.bucket.afterGet=()=>f.db.db.prepare("DELETE FROM simulation_roles WHERE simulation_id='sim' AND user_id='reader'").run();
+  expect(await readAuthorizedArchivedHistory(f.env,'simulation','sim',1,{...owner,id:'reader'})).toMatchObject({ok:false,reason:'forbidden'});
+  f.bucket.afterGet=()=>f.db.db.prepare("UPDATE resource_changes SET snapshot_json=json_set(snapshot_json,'$.ownerUserId','new-owner') WHERE id=1").run();
+  await expect(readAuthorizedArchivedHistory(f.env,'simulation','sim',1,owner)).rejects.toThrow('History changed during hydration');
+ }finally{f.db.db.close();}
 });

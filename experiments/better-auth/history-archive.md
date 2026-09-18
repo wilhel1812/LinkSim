@@ -1,8 +1,8 @@
 # Synthetic R2/D1 history archive prototype
 
-Status: **storage/recovery compatibility demonstrated; not approved for application
-activation. Pages maintenance CPU gate failed.** No application imports this code,
-no application schema or binding changes, and no new UI or authentication behavior.
+Status: **storage and separate Durable Object runtime demonstrated; not approved
+for application activation. Pages maintenance CPU gate failed.** No application
+route, schema or binding changes, and no new UI or authentication behavior.
 Keep `HISTORY_DETAILS_COMPRESSION` disabled. The target remains 1,000 registered
 accounts, not 1,000 daily-active users.
 
@@ -52,6 +52,25 @@ Before activation, wire an authorized archive-aware snapshot reader into revert;
 test it with concurrent permission changes and corruption. Disabling new writes
 alone is not rollback once rows are archived: keep that reader or restore rows.
 
+The second synthetic batch adds a dormant authorized-reader proof. It reuses
+`resolveResourceChangeAccess` for revert permission, scopes the change ID to the
+requested Site or Simulation before R2 access, verifies the D1 archive reference
+did not change during hydration, and checks permission again after the R2 read.
+Tests deny a stranger and a mismatched change without touching R2, and deny a
+grant revoked during the read. This is not a live route or a complete authenticated
+revert; the caller still needs verified identity/current account state, and the
+application still needs its archive-aware revert integration.
+
+The archive writer now has a separate disposable SQLite-backed Durable Object
+runtime. A thin public gateway holds only a short-lived probe credential and a
+private object binding; only the object holds synthetic D1 and R2 bindings. The
+gateway forwards no cookies or identity headers. The probe uses a separate object
+from the proposed authentication object, and adds no scheduler. The archived
+content and application-owned permissions remain in D1/R2, not DO storage. Local
+workerd tests completed 26 synthetic operations through the full chain. Remote
+traces matched all 26 requests at the gateway and object. See
+[Durable Object measurements](evidence/2026-09-18-history-durable.md).
+
 Staging isolation tests reject foreign scope references before loading an object.
 Production requires physically separate buckets and bindings. The existing staging
 exporter is **not archive-aware**: before integration it must reject or explicitly
@@ -66,6 +85,7 @@ Local (workerd/D1/R2, outbound network disabled):
 
 ```
 node experiments/better-auth/history-archive-local.mjs
+node experiments/better-auth/history-archive-durable-local.mjs
 npm run test -- --run functions/_lib/historyArchivePrototype.test.ts
 ```
 
@@ -77,12 +97,22 @@ node experiments/better-auth/history-archive-remote.mjs create
 node experiments/better-auth/history-archive-remote.mjs deploy
 ```
 
-Start the existing sanitized tail collector before running measurements:
+Start one sanitized tail collector for each Worker before running measurements.
+The gateway and runtime manifests are in the same scratch directory; use separate
+output directories because the collector writes `probe-tail.jsonl` in its current
+working directory. The tail records must be matched to the 26 result paths and
+statuses, excluding the anonymous 404 and cleanup. The runtime manifest owns D1
+and R2, while the gateway manifest owns only the Durable Object binding:
 
 ```
 archive_root="$PWD"
-(cd experiments/better-auth/.wrangler/history-archive && \
-  "$archive_root/node_modules/.bin/wrangler" tail --config wrangler.json --format json | \
+mkdir -p experiments/better-auth/.wrangler/history-archive/gateway-tail \
+  experiments/better-auth/.wrangler/history-archive/runtime-tail
+(cd experiments/better-auth/.wrangler/history-archive/gateway-tail && \
+  "$archive_root/node_modules/.bin/wrangler" tail --config ../gateway.wrangler.json --format json | \
+  node "$archive_root/experiments/better-auth/summarize-tail.mjs")
+(cd experiments/better-auth/.wrangler/history-archive/runtime-tail && \
+  "$archive_root/node_modules/.bin/wrangler" tail --config ../wrangler.json --format json | \
   node "$archive_root/experiments/better-auth/summarize-tail.mjs")
 node experiments/better-auth/history-archive-remote.mjs run
 node experiments/better-auth/history-archive-remote.mjs delete
@@ -91,8 +121,8 @@ node experiments/better-auth/history-archive-remote.mjs delete
 The `run` action saves all results and exits nonzero for failed or incomplete
 measurements. Repeating `create` verifies the persisted D1 identity and resumes
 missing bucket creation; it does not recreate D1. `delete` verifies that identity,
-recreates a missing disposable bucket if necessary, and redeploys the same
-secret-protected probe with a ten-minute cleanup window before emptying/deleting
+recreates a missing disposable bucket if necessary, and redeploys both
+secret-protected Workers with a ten-minute cleanup window before emptying/deleting
 resources. This works after expiry or interrupted initial deployment. If a
 provider operation still fails, retain the manifest/key and retry cleanup of
 **only** `linksim-history-r2-probe-1107`. Do not point the script
