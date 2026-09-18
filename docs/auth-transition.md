@@ -54,6 +54,15 @@ CPU chart units were inconsistent, so they are not accepted timing evidence.
 Notice query analytics and request metrics are distinct; do not claim exact
 request savings from their ratio. Re-measure after foundations deploy.
 
+The [1,000-registered-account capacity decision](../experiments/better-auth/evidence/2026-09-18-registered-capacity-decision.md)
+reconciles the current request and storage sensitivities. As of September 18,
+the gate is **not passed**: the projected archived 50-account storage mix has
+only about 16.5% room under a conservative 500 MB/database ceiling at 1,000
+accounts, before auth tables or growth. That projection is not measured physical
+reclamation. Finish the operational archive path and representative account-wide
+measurements before beginning identity integration. This does not change the
+approved 1,000-registered-user target or the narrow D1-write exception.
+
 ## Migration and recovery invariants
 
 Provider subjects identify subsequent logins. During a fixed 90-day window from
