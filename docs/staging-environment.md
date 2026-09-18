@@ -60,6 +60,11 @@ resource payloads, history, locations, application IDs, and permissions remain.
 Use synthetic accounts for authentication/migration tests. A staging database
 with auth tables is deliberately blocked until an explicit credential reset
 workflow is added; never overwrite enrolled staging identities implicitly.
+If history archive columns are present, refresh accepts only inline rows with
+empty archive references. An archived row aborts before import: its object lives
+in a production-only R2 bucket and cannot be copied as a usable staging
+reference. Rehearse materialization or a synthetic staging archive separately
+before enabling real archive writes.
 
 ### Refresh staging avatars bucket from production R2
 
