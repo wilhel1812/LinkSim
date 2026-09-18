@@ -153,4 +153,9 @@ with a staging-shaped audience fraction, while a compact deleted Site was
 skipped. Its large record sizes are a stress case, not staging's mean;
 production-sized archive retention and the auth capacity gate remain open.
 
+A separate [remote D1 storage-reclamation check](evidence/2026-09-18-d1-storage-reclamation.md)
+observed physical size reduction after updating indexed synthetic history JSON,
+including a mixed set with full revisions retained. This does not activate
+archiving or establish long-term 1,000-account storage headroom.
+
 See [measured results](evidence/2026-09-17-history-r2.md).
