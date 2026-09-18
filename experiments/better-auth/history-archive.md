@@ -78,14 +78,41 @@ traces matched all 26 requests at the gateway and object. See
 [Durable Object measurements](evidence/2026-09-18-history-durable.md).
 
 Staging isolation tests reject foreign scope references before loading an object.
-Production requires physically separate buckets and bindings. Never copy
-production references into staging or introduce a production fallback. The
-prototype leaves Manual Sync client behavior unchanged; end-to-end staging
-rehearsal remains a gate. The staging exporter rejects production archive
-references because it cannot read their R2 objects. A refresh from inline
-production data safely replaces staging-only archived rows; a regression test
-covers this case. Production archive activation still requires an archive-aware
-export or another reviewed refresh strategy.
+Production requires physically separate buckets and bindings. Never reuse a
+production R2 key or introduce a production fallback. The archive-aware staging
+refresh copies and verifies archived production objects into staging's private
+bucket, then rewrites only their sanitized staging references. It also handles
+inline-only exports without R2 credentials. Its live production-to-staging copy
+has not been rehearsed because no production history bucket is configured yet.
+The prototype leaves Manual Sync client behavior unchanged. A SQLite-backed
+regression now exercises full Library fetch/push and both revert paths with an
+archived and an inline revision. An authenticated mixed-history staging rehearsal
+is still required before archive writes can be enabled.
+
+## Bounded backfill and maintenance
+
+The writer scans at most ten history rows per call and returns `nextId`; a
+caller must persist its own progress and retry a page if any row conflicts.
+There is no scheduler, automatic retention, or orphan deletion. A failed or
+ambiguous write can leave an unreferenced R2 object, which is safer than deleting
+an object that a committed D1 row may use. Operators must keep those objects
+until a separately reviewed backup-aware cleanup exists. Archive writes remain
+disabled in the application.
+
+The dated 50-account production snapshot had 13,149 history rows, including
+5,426 large Simulation candidates. At ten scanned rows per page, one complete
+conflict-free scan would require at least 1,315 page calls and one R2 upload
+and verification read per candidate that still qualifies. Retried pages,
+compare-and-swap conflicts, and ambiguous D1 responses can create additional
+uploads, verification reads, and retained orphan objects; 5,426 is not an
+upper bound for R2 operations. This is an initial backfill baseline, not a
+daily maintenance load or a measured completion time.
+The four synthetic full pages took 4.3–5.3 seconds wall time and 62–72 ms
+object CPU each; sparsity, conflicts, production indexes, and R2 latency make
+linear extrapolation unreliable. Progress should be checkpointed between small
+batches and verified against D1 references and R2 object integrity before
+continuing. Measure actual row counts, quota use, elapsed time and physical D1
+size on a synthetic staging rehearsal, then reassess free-tier headroom.
 
 A [temporary staging-only rehearsal](history-archive-staging-rehearsal.md)
 uses the real staging D1 and private R2 bindings through a local Durable
@@ -177,26 +204,24 @@ archiving or establish long-term 1,000-account storage headroom.
 
 ## Synthetic staging-refresh copy proof
 
-`copyArchivedHistoryRowForStaging` accepts only synthetic scopes and reuses the archive reader, digest check,
-projection check, and destination verification. The local test copies a
-synthetic production-scoped archived revision into a distinct synthetic
-staging bucket, then hydrates it through a staging-scoped D1 reference. Corrupt
-source objects, failed writes, corrupt destination reads, wrong scope, and
-inline rows fail without changing source D1. An interrupted copy may leave an
-unreferenced staging object, which is safer than deleting an object after an
-ambiguous write.
+`copyArchivedHistoryRowForStaging` accepts production or synthetic-production
+scope and reuses the archive reader, digest check, projection check, and
+destination verification. The local test copies a synthetic production-scoped
+revision into a distinct synthetic staging bucket, then hydrates it through a
+staging-scoped D1 reference. Corrupt source objects, failed writes, corrupt
+destination reads, wrong scope, and inline rows fail without changing source
+D1. An interrupted copy may leave an unreferenced staging object, which is
+safer than deleting an object after an ambiguous write.
 
-The routine staging export remains fail-closed for archived production rows.
-Before integrating this primitive, the refresh workflow must assemble a
-complete verified mapping for every exported archive reference, rewrite keys
-and digests in the sanitized SQL only after all object copies succeed, reject
-missing or stale mappings, and import from a consistent source snapshot. The
-copy proof does not establish physical bucket isolation: R2 bindings do not
-expose a bucket name to this helper, and two binding objects may alias one
-bucket. Real transfer must verify distinct configured bucket names before
-obtaining bindings. It also does not provide production-scope transfer, remote
-R2 credentials, bulk transfer scheduling, atomic D1 import, or cleanup of
-orphaned objects. No production bucket exists
-yet, and neither real production history nor authentication data was copied.
+The routine refresh now calls `sanitize-with-archives`. It requires separate
+production-read and staging-write R2 credentials only when the exported D1
+snapshot contains archived references. The transfer copies and verifies every
+referenced object in bounded groups, rewrites keys and digests in the sanitized
+SQL, and imports only after all copies succeed. The configured bucket names are
+distinct; the helper itself cannot prove that two arbitrary R2 bindings do not
+alias. The workflow has local integration tests, but no live production-to-
+staging copy has run because the production history bucket is not configured.
+It does not provide an atomic D1 import or backup-aware cleanup of unreferenced
+objects. Neither real production history nor authentication data was copied.
 
 See [measured results](evidence/2026-09-17-history-r2.md).
