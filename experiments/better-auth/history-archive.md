@@ -146,4 +146,11 @@ the [disposable remote indexed run](evidence/2026-09-18-history-indexed-remote.m
 also measured 108 writes and gateway CPU of 0–1 ms. Account-wide quota,
 authenticated application requests and representative history mixes remain open.
 
+A later [staging size snapshot and synthetic mixed-audience local run](evidence/2026-09-18-history-mix-local.md)
+found 2,155 approximate archive candidates in 9,201 staging history rows.
+The indexed local probe wrote 236 D1 rows to archive 99 bulky Simulations
+with a staging-shaped audience fraction, while a compact deleted Site was
+skipped. Its large record sizes are a stress case, not staging's mean;
+production-sized archive retention and the auth capacity gate remain open.
+
 See [measured results](evidence/2026-09-17-history-r2.md).
