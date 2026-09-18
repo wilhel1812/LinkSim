@@ -49,16 +49,27 @@ export async function copyArchivedRowsWithR2(sql) {
     if (!/^[a-f0-9]{32}$/.test(accountId ?? '') || !sourceId || !sourceSecret || !stagingId || !stagingSecret) {
       throw Error('Separate production-read and staging-write R2 credentials are required for archived history refresh');
     }
-    const { S3Client, GetObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     clients = {
       source: new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId: sourceId, secretAccessKey: sourceSecret } }),
       staging: new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId: stagingId, secretAccessKey: stagingSecret } }),
-      GetObjectCommand, PutObjectCommand,
+      GetObjectCommand, HeadObjectCommand, PutObjectCommand,
     };
     return clients;
   })();
   const bucket = (name, side) => ({
+    async head(key) {
+      if (side !== 'staging') throw Error('Only staging archive metadata is queried');
+      try {
+        const { HeadObjectCommand, staging: client } = await connect();
+        const response = await client.send(new HeadObjectCommand({ Bucket: name, Key: key }));
+        return { size: response.ContentLength ?? 0 };
+      } catch (error) {
+        if (error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) return null;
+        throw Error('Staging history archive metadata could not be read');
+      }
+    },
     async get(key) {
       try {
         const { GetObjectCommand, [side]: client } = await connect();

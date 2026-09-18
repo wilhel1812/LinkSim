@@ -21,6 +21,7 @@ class Bucket {
   objects = new Map();
   failPut = false;
   corruptRead = false;
+  async head(key) { return this.objects.has(key) ? { size: this.objects.get(key).length } : null; }
   async get(key) {
     const raw = this.objects.get(key);
     if (raw === undefined) return null;

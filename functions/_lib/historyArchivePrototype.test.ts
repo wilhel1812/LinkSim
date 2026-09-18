@@ -5,10 +5,11 @@ import { readAuthorizedArchivedHistory } from '../../experiments/better-auth/his
 
 class Bucket {
   objects = new Map<string, string>();
-  puts = 0; gets = 0;
+  puts = 0; gets = 0; heads = 0;
   failPut = false; corrupt = false;
   afterGet: (() => void) | undefined;
   async put(key: string, body: string) { this.puts++; if (this.failPut) throw Error('R2 unavailable'); this.objects.set(key, body); }
+  async head(key: string) { this.heads++; return this.objects.has(key) ? { size: this.objects.get(key)!.length } : null; }
   async get(key: string) {
     this.gets++; const text = this.objects.get(key); this.afterGet?.();
     return text === undefined ? null : { size: new TextEncoder().encode(text).length, text: async () => this.corrupt ? '{}' : text };
@@ -274,6 +275,8 @@ it('reuses a verified staging copy across refreshes without another R2 write', a
     const second=await copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1);
     expect(second).toEqual(first);
     expect(staging.puts).toBe(1);
+    expect(staging.heads).toBe(2);
+    expect(staging.gets).toBe(2);
     staging.corrupt=true;
     await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow(/integrity/i);
     expect(staging.puts).toBe(1);

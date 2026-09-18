@@ -137,7 +137,7 @@ export const copyArchivedHistoryRowForStaging=async(source:ArchiveEnv,stagingBuc
   // Content addressing lets an intentional refresh reuse an immutable staging
   // object. A changed source/metadata gets a new key, preserving old backups.
   const stagingKey=`${namespace(stagingScope)}${id}/${stagingDigest}`;
-  if (!await stagingBucket.get(stagingKey)) {
+  if (!await stagingBucket.head(stagingKey)) {
     await stagingBucket.put(stagingKey,raw,{httpMetadata:{contentType:'application/json'}});
   }
   const verified=await readArchive({DB:source.DB,BUCKET:stagingBucket,scope:stagingScope},
