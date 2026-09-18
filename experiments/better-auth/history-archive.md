@@ -88,9 +88,14 @@ node experiments/better-auth/history-archive-remote.mjs run
 node experiments/better-auth/history-archive-remote.mjs delete
 ```
 
-Run cleanup while the four-hour secret-authenticated probe is still active. If
-setup/teardown is interrupted or the Worker expires, use the saved manifest to
-finish cleanup of **only** `linksim-history-r2-probe-1107`. Do not point the script
+The `run` action saves all results and exits nonzero for failed or incomplete
+measurements. Repeating `create` verifies the persisted D1 identity and resumes
+missing bucket creation; it does not recreate D1. `delete` verifies that identity,
+recreates a missing disposable bucket if necessary, and redeploys the same
+secret-protected probe with a ten-minute cleanup window before emptying/deleting
+resources. This works after expiry or interrupted initial deployment. If a
+provider operation still fails, retain the manifest/key and retry cleanup of
+**only** `linksim-history-r2-probe-1107`. Do not point the script
 at application databases/buckets. Prepare refuses an existing manifest; retain the
 sanitized results before removing completed scratch files for another run. Never
 save raw tail events, which contain the Authorization header.
