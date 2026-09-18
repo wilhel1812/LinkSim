@@ -5,6 +5,7 @@ const encoder = new TextEncoder();
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 type Row = {id:number; snapshot_json:string|null; details_json:string|null; archive_key:string|null; archive_digest:string|null};
 export type ArchiveEnv = {DB:D1Database; BUCKET:R2Bucket; scope:string};
+type ArchiveTarget = {id:number;resourceKind:'site'|'simulation';resourceId:string;actorUserId:string};
 const columns = 'id, snapshot_json, details_json, archive_key, archive_digest';
 const namespace = (scope:string) => {
   if (!/^(synthetic-)?(staging|production)$/.test(scope)) throw Error('Invalid archive scope');
@@ -67,12 +68,17 @@ export const hydrateHistoryRow=async(env:ArchiveEnv,id:number,resource?:{kind:'s
     : await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
   return row?hydrate(env,row):null;
 };
-export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;limit?:number;apply?:boolean}={}) => {
-  const afterId=options.afterId??0,limit=options.limit??10;
+export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;limit?:number;apply?:boolean;target?:ArchiveTarget}={}) => {
+  const target=options.target,afterId=options.afterId??0,limit=target?1:options.limit??10;
   if(!Number.isSafeInteger(afterId)||afterId<0||!Number.isInteger(limit)||limit<1||limit>10)throw Error('Invalid archive page');
+  if(target&&(!Number.isSafeInteger(target.id)||target.id<1||!['site','simulation'].includes(target.resourceKind)||
+    !target.resourceId||!target.actorUserId||options.afterId!==undefined||options.limit!==undefined))throw Error('Invalid archive target');
   const prefix=namespace(env.scope);
-  const rows=await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id>? ORDER BY id LIMIT ?`).bind(afterId,limit).all<Row>();
-  const result={scanned:rows.results.length,candidates:0,converted:0,conflicts:0,nextId:afterId,bytesBefore:0,bytesAfter:0,archiveBytes:0};
+  const rows=target
+    ? await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=? AND resource_kind=? AND resource_id=? AND actor_user_id=?`)
+      .bind(target.id,target.resourceKind,target.resourceId,target.actorUserId).all<Row>()
+    : await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id>? ORDER BY id LIMIT ?`).bind(afterId,limit).all<Row>();
+  const result={scanned:rows.results.length,candidates:0,converted:0,conflicts:0,nextId:target?target.id-1:afterId,bytesBefore:0,bytesAfter:0,archiveBytes:0};
   for(const row of rows.results){
     result.nextId=row.id;if(hasArchiveReference(env.scope,row))continue;
     const projected=project(row.snapshot_json,row.details_json);
@@ -90,19 +96,24 @@ export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;li
     await env.BUCKET.put(key,raw,{httpMetadata:{contentType:'application/json'}});
     const check=await readArchive(env,{...row,archive_key:key,archive_digest:checksum});
     if(check.snapshot_json!==row.snapshot_json||check.details_json!==row.details_json)throw Error('Archive verification failed');
-    const saved=await env.DB.prepare('UPDATE resource_changes SET snapshot_json=?,details_json=?,archive_key=?,archive_digest=? WHERE id=? AND archive_key IS NULL AND snapshot_json IS ? AND details_json IS ?')
-      .bind(projected.snapshot_json,projected.details_json,key,checksum,row.id,row.snapshot_json,row.details_json).run();
+    const identityWhere=target?' AND resource_kind=? AND resource_id=? AND actor_user_id=?':'';
+    const saved=await env.DB.prepare(`UPDATE resource_changes SET snapshot_json=?,details_json=?,archive_key=?,archive_digest=? WHERE id=? AND archive_key IS NULL AND snapshot_json IS ? AND details_json IS ?${identityWhere}`)
+      .bind(projected.snapshot_json,projected.details_json,key,checksum,row.id,row.snapshot_json,row.details_json,
+        ...(target?[target.resourceKind,target.resourceId,target.actorUserId]:[])).run();
     if(saved.meta.changes===1)result.converted++;else result.conflicts++;
   }
   return result;
 };
-export const restoreHistoryRow=async(env:ArchiveEnv,id:number) => {
+export const restoreHistoryRow=async(env:ArchiveEnv,id:number,target?:ArchiveTarget) => {
   namespace(env.scope);
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid history id');
-  const row=await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
+  if(target&&(target.id!==id||!['site','simulation'].includes(target.resourceKind)||!target.resourceId||!target.actorUserId))throw Error('Invalid archive target');
+  const identityWhere=target?' AND resource_kind=? AND resource_id=? AND actor_user_id=?':'';
+  const identityValues=target?[target.resourceKind,target.resourceId,target.actorUserId]:[];
+  const row=await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?${identityWhere}`).bind(id,...identityValues).first<Row>();
   if(!row || !hasArchiveReference(env.scope,row))return false;
   const restored=await hydrate(env,row);
-  const result=await env.DB.prepare('UPDATE resource_changes SET snapshot_json=?,details_json=?,archive_key=NULL,archive_digest=NULL WHERE id=? AND archive_key=? AND archive_digest=? AND snapshot_json IS ? AND details_json IS ?')
-    .bind(restored.snapshot_json,restored.details_json,id,row.archive_key,row.archive_digest,row.snapshot_json,row.details_json).run();
+  const result=await env.DB.prepare(`UPDATE resource_changes SET snapshot_json=?,details_json=?,archive_key=NULL,archive_digest=NULL WHERE id=? AND archive_key=? AND archive_digest=? AND snapshot_json IS ? AND details_json IS ?${identityWhere}`)
+    .bind(restored.snapshot_json,restored.details_json,id,row.archive_key,row.archive_digest,row.snapshot_json,row.details_json,...identityValues).run();
   return result.meta.changes===1;
 };

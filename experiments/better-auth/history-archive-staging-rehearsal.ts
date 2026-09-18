@@ -40,12 +40,16 @@ export async function handleStagingArchiveRehearsal(request: Request, env: Env):
   const path = new URL(request.url).pathname;
   let result: unknown;
   if (path === '/dry-run' || path === '/archive') {
-    result = await archiveHistoryPage(archiveEnv, { afterId: id - 1, limit: 1, apply: path === '/archive' });
+    result = await archiveHistoryPage(archiveEnv, {
+      target: { id, resourceKind: row.resource_kind as 'site' | 'simulation', resourceId: row.resource_id, actorUserId: row.actor_user_id },
+      apply: path === '/archive',
+    });
   } else if (path === '/hydrate') {
     const hydrated = await hydrateHistoryRow(archiveEnv, id, { kind: row.resource_kind as 'site' | 'simulation', id: row.resource_id });
     result = { found: !!hydrated, bytes: new TextEncoder().encode((hydrated?.snapshot_json ?? '') + (hydrated?.details_json ?? '')).length };
   } else {
-    result = { restored: await restoreHistoryRow(archiveEnv, id) };
+    result = { restored: await restoreHistoryRow(archiveEnv, id,
+      { id, resourceKind: row.resource_kind as 'site' | 'simulation', resourceId: row.resource_id, actorUserId: row.actor_user_id }) };
   }
   return Response.json({ result, metrics }, { headers: { 'cache-control': 'no-store' } });
 }

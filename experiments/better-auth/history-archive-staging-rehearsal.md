@@ -5,6 +5,9 @@ archive writes or add an application route. It runs a local Worker and Durable
 Object with remote bindings to **only** `linksim_staging` and
 `linksim-history-staging`. The checked-in generator rejects a changed D1 ID,
 bucket name, non-synthetic actor/resource ID, or expiry beyond 30 minutes.
+The archive scan and conditional D1 update both require the exact selected row
+ID and actor/resource identity; a deleted fixture cannot advance into another
+user's history.
 The gateway and object both require the generated 256-bit secret. The secret is
 stored only in an ignored, mode-0600 `.dev.vars` beside the generated Wrangler
 config; never paste it into an issue, PR, log, or shell argument. Stop the local
