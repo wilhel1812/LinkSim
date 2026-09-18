@@ -62,8 +62,9 @@ requested Site or Simulation before R2 access, verifies the D1 archive reference
 did not change during hydration, and checks permission again after the R2 read.
 Tests deny a stranger and a mismatched change without touching R2, and deny a
 grant revoked during the read. The existing API route verifies identity and
-current account state before calling this reader; staging still needs a bound
-bucket, additive schema and an end-to-end rehearsal before archiving is enabled.
+current account state before calling this reader. Staging has an additive
+schema migration with a deploy gate, but still needs a private bucket binding
+and an end-to-end rehearsal before archiving is enabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a

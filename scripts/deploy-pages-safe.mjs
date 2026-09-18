@@ -255,13 +255,15 @@ async function verifyRemoteSchema(targetName, databaseName) {
   const first = parsed[0];
   const rows = Array.isArray(first?.results) ? first.results : [];
   const columns = new Set(rows.map((row) => String(row?.name ?? "")).filter(Boolean));
-  const required = ["details_json", "snapshot_json"];
+  const required = targetName === "staging"
+    ? ["details_json", "snapshot_json", "archive_key", "archive_digest"]
+    : ["details_json", "snapshot_json"];
   const missing = required.filter((column) => !columns.has(column));
   assert(
     missing.length === 0,
     `Preflight failed: D1 schema missing columns in resource_changes: ${missing.join(
       ", ",
-    )}. Apply migration db/migrations/2026-03-15_changelog_details.sql before deploy.`,
+    )}. Apply the required resource_changes migrations before deploy.`,
   );
 
   const simulationsParsed = parseWranglerJsonPayload(simulationsResult.stdout);

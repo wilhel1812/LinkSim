@@ -3,7 +3,28 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { selectExportTables, selectRefreshTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
+const archiveMigration = readFileSync('db/migrations/2026-09-18_history_archive.sql', 'utf8');
 describe('staging export boundary', () => {
+  it('keeps archived staging rows replaceable by an inline production refresh after the archive migration', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(schema);
+      db.exec(archiveMigration);
+      const columns = db.prepare('PRAGMA table_info(resource_changes)').all().map(row => row.name);
+      expect(columns).toEqual(expect.arrayContaining(['archive_key', 'archive_digest']));
+      db.exec(`INSERT INTO users (id, username, created_at) VALUES ('u1', 'staging-name', '2026-01-01');
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json, archive_key, archive_digest) VALUES
+  ('simulation', 'sim-1', 'updated', 'u1', '2026-01-01', '{}',
+   'history-prototype/staging/1/object', 'checksum');`);
+      const source = schema + `\nINSERT INTO users (id, username, created_at) VALUES ('u1', 'production-name', '2026-01-01');
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json) VALUES ('simulation', 'sim-1', 'updated', 'u1', '2026-01-01', '{"id":"sim-1"}');`;
+      db.exec(sanitizeExport(source));
+      expect(db.prepare('SELECT snapshot_json, archive_key, archive_digest FROM resource_changes').get())
+        .toEqual({ snapshot_json: '{"id":"sim-1"}', archive_key: null, archive_digest: null });
+    } finally { db.close(); }
+  });
   it('rejects application schema drift before export or import', () => {
     expect(() => selectRefreshTables(['users'], ['users', 'sites'])).toThrow(/schema mismatch/);
     expect(() => selectRefreshTables(['users', 'sites'], ['users'])).toThrow(/schema mismatch/);
