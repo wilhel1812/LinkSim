@@ -64,6 +64,24 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
+  it("keeps the archive schema migration staging-only and probes it before deployment", () => {
+    const migration = "db/migrations/2026-09-18_history_archive.sql";
+    const probe = 'SELECT archive_key, archive_digest FROM resource_changes LIMIT 0;';
+    const step = "- name: Apply and verify staging history archive schema";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(previewJob).toContain(migration);
+    expect(previewJob.indexOf(migration)).toBeLessThan(previewJob.indexOf("- name: Deploy authenticated staging preview"));
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep.indexOf(probe)).toBeGreaterThan(-1);
+    expect(migrationStep.indexOf(`--file ${migration}`)).toBeGreaterThan(migrationStep.indexOf(probe));
+    expect(migrationStep.lastIndexOf(probe)).toBeGreaterThan(migrationStep.indexOf(`--file ${migration}`));
+    expect(productionJob).not.toContain(migration);
+    expect(productionJob).not.toContain(probe);
+    expect(deployScript).toContain('targetName === "staging"');
+    expect(deployScript).toContain('["details_json", "snapshot_json", "archive_key", "archive_digest"]');
+  });
+
   it("validates workflow-derived preview and release values before quoted shell use", () => {
     expect(previewJob).toContain(
       "PREVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
