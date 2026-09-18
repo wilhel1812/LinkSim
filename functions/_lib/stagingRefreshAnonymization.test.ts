@@ -52,6 +52,7 @@ describe("staging refresh identity anonymization", () => {
   it("exports only classified tables and sanitizes before staging import", () => {
     expect(refreshScript).toContain('staging-export.mjs tables');
     expect(refreshScript).toContain('TABLE_ARGS+=(--table');
+    expect(refreshScript).toContain('staging-export.mjs sanitize-with-archives');
     expect(refreshScript.indexOf('staging-export.mjs sanitize')).toBeLessThan(refreshScript.indexOf('--file "${REFRESH_DIR}/sanitized.sql"'));
     expect(refreshScript).not.toContain('--file "${REFRESH_DIR}/application.sql"');
   });

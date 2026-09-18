@@ -1,10 +1,28 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { selectExportTables, selectRefreshTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
 const archiveMigration = readFileSync('db/migrations/2026-09-18_history_archive.sql', 'utf8');
 describe('staging export boundary', () => {
+  it('runs the archive-aware CLI for inline exports without R2 credentials', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'linksim-staging-cli-'));
+    try {
+      const input = join(directory, 'source.sql');
+      const output = join(directory, 'sanitized.sql');
+      writeFileSync(input, schema + "\nINSERT INTO users (id,username,created_at) VALUES ('u1','private-name','2026-01-01');");
+      const result = spawnSync(process.execPath, ['scripts/staging-export.mjs', 'sanitize-with-archives', input, output],
+        { cwd: process.cwd(), timeout: 5000, encoding: 'utf8', env: { ...process.env,
+          R2_HISTORY_SOURCE_ACCESS_KEY_ID: '', R2_HISTORY_SOURCE_SECRET_ACCESS_KEY: '',
+          R2_HISTORY_STAGING_ACCESS_KEY_ID: '', R2_HISTORY_STAGING_SECRET_ACCESS_KEY: '' } });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8')).toContain('staging-user-1');
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
   it('keeps archived staging rows replaceable by an inline production refresh after the archive migration', () => {
     const db = new DatabaseSync(':memory:');
     try {
@@ -74,6 +92,30 @@ VALUES ('site', 'site-1', 'updated', 'u1', '2026-01-01', '{}', '{}',
     // A half-written reference is unsafe too, even if only one column is populated.
     expect(() => sanitizeExport(withArchiveColumns.replace("'history/production/1/object', 'checksum'", "NULL, 'checksum'")))
       .toThrow(/archived history.*staging/i);
+  });
+  it('rewrites every verified archive copy to a staging-only reference before import', () => {
+    const sourceKey = 'history-prototype/production/1/11111111-1111-4111-8111-111111111111';
+    const stagingKey = `history-prototype/staging/1/${'b'.repeat(64)}`;
+    const source = schema + `\n${archiveMigration}\nINSERT INTO users(id,username,created_at) VALUES('u1','production-name','2026-01-01');
+INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,
+  snapshot_json,archive_key,archive_digest) VALUES
+  (1,'simulation','sim-1','updated','u1','2026-01-01','{"id":"sim-1"}',
+   '${sourceKey}','${'a'.repeat(64)}');`;
+    const copy = { id: 1, sourceKey, sourceDigest: 'a'.repeat(64), stagingKey, stagingDigest: 'b'.repeat(64) };
+    const output = sanitizeExport(source, [copy]);
+    expect(output).not.toContain(sourceKey);
+    const staging = new DatabaseSync(':memory:');
+    try {
+      staging.exec(output);
+      expect(staging.prepare('SELECT archive_key,archive_digest FROM resource_changes WHERE id=1').get())
+        .toEqual({ archive_key: stagingKey, archive_digest: 'b'.repeat(64) });
+      expect(staging.prepare('SELECT username FROM users WHERE id=?').get('u1').username).toBe('staging-user-1');
+    } finally { staging.close(); }
+    for (const invalid of [[], [{ ...copy, sourceDigest: 'c'.repeat(64) }],
+      [{ ...copy, stagingKey: sourceKey }], [copy, copy]]) {
+      expect(() => sanitizeExport(source, invalid)).toThrow();
+    }
+    expect(() => sanitizeExport(source)).toThrow(/archived history.*staging/i);
   });
   it('keeps inline history usable when the future archive columns are empty', () => {
     const input = schema + `

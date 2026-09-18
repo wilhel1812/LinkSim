@@ -118,12 +118,12 @@ export const restoreHistoryRow=async(env:ArchiveEnv,id:number,target?:ArchiveTar
   return result.meta.changes===1;
 };
 
-// Synthetic staging-refresh proof. Real production transfer requires a
-// separately reviewed sanitizer, physical bucket isolation and import workflow.
+// The caller must supply physically separate production-read and staging-write
+// buckets. The staging refresh verifies both objects before rewriting D1 refs.
 export const copyArchivedHistoryRowForStaging=async(source:ArchiveEnv,stagingBucket:R2Bucket,id:number) => {
-  if(source.scope!=='synthetic-production')throw Error('Only synthetic production archives can be copied');
+  const stagingScope=source.scope==='production'?'staging':source.scope==='synthetic-production'?'synthetic-staging':null;
+  if(!stagingScope)throw Error('Only production archives can be copied');
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid history id');
-  const stagingScope='synthetic-staging';
   const row=await source.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
   if(!row||!hasArchiveReference(source.scope,row))throw Error('Source history is not archived');
   const hydrated=await hydrate(source,row);
@@ -133,9 +133,13 @@ export const copyArchivedHistoryRowForStaging=async(source:ArchiveEnv,stagingBuc
   const raw=JSON.stringify({version:1,scope:stagingScope,id,
     snapshot_json:hydrated.snapshot_json,details_json:hydrated.details_json});
   if(encoder.encode(raw).length>MAX_BYTES)throw Error('Staging archive oversized');
-  const stagingKey=`${namespace(stagingScope)}${id}/${crypto.randomUUID()}`;
   const stagingDigest=await digest(raw);
-  await stagingBucket.put(stagingKey,raw,{httpMetadata:{contentType:'application/json'}});
+  // Content addressing lets an intentional refresh reuse an immutable staging
+  // object. A changed source/metadata gets a new key, preserving old backups.
+  const stagingKey=`${namespace(stagingScope)}${id}/${stagingDigest}`;
+  if (!await stagingBucket.head(stagingKey)) {
+    await stagingBucket.put(stagingKey,raw,{httpMetadata:{contentType:'application/json'}});
+  }
   const verified=await readArchive({DB:source.DB,BUCKET:stagingBucket,scope:stagingScope},
     {...row,archive_key:stagingKey,archive_digest:stagingDigest});
   if(verified.snapshot_json!==hydrated.snapshot_json||verified.details_json!==hydrated.details_json)
