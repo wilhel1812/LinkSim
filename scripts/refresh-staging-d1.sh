@@ -16,6 +16,8 @@ TABLE_ARGS=()
 while IFS= read -r table; do TABLE_ARGS+=(--table "${table}"); done < "${REFRESH_DIR}/tables.txt"
 # Auth tables are never included in this export, even in the private temporary directory.
 npx wrangler d1 export linksim --config wrangler.toml --remote "${TABLE_ARGS[@]}" --output "${REFRESH_DIR}/application.sql"
-node scripts/staging-export.mjs sanitize "${REFRESH_DIR}/application.sql" "${REFRESH_DIR}/sanitized.sql"
+# Archived rows are copied and verified in the separate staging history bucket
+# before any rewritten D1 reference can be imported. Inline sources need no R2 token.
+node scripts/staging-export.mjs sanitize-with-archives "${REFRESH_DIR}/application.sql" "${REFRESH_DIR}/sanitized.sql"
 npx wrangler d1 execute linksim_staging --config wrangler.staging.toml --remote --file "${REFRESH_DIR}/sanitized.sql" --yes
 echo '[staging-refresh:d1] Sanitized application refresh complete; temporary files removed on exit.'

@@ -248,6 +248,38 @@ it('copies a validated production archive into a separately verified staging obj
   } finally { f.db.db.close(); }
 });
 
+it('supports a production-to-staging copy without reusing the source namespace', async () => {
+  const f=setup();
+  try {
+    const production={...f.env,scope:'production'};
+    await archiveHistoryPage(production,{apply:true});
+    const source=f.row();
+    const staging=new Bucket();
+    const copied=await copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1);
+    expect(copied.stagingKey).toMatch(/^history-prototype\/staging\/1\//);
+    expect(copied.stagingKey).not.toBe(source.archive_key);
+    expect(f.row()).toEqual(source);
+    const staged=JSON.parse(staging.objects.get(copied.stagingKey)!);
+    expect(staged).toMatchObject({scope:'staging',id:1,snapshot_json:f.snapshot,details_json:f.details});
+  } finally { f.db.db.close(); }
+});
+
+it('reuses a verified staging copy across refreshes without another R2 write', async () => {
+  const f=setup();
+  try {
+    const production={...f.env,scope:'production'};
+    await archiveHistoryPage(production,{apply:true});
+    const staging=new Bucket();
+    const first=await copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1);
+    const second=await copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1);
+    expect(second).toEqual(first);
+    expect(staging.puts).toBe(1);
+    staging.corrupt=true;
+    await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow(/integrity/i);
+    expect(staging.puts).toBe(1);
+  } finally { f.db.db.close(); }
+});
+
 it('refuses inline, corrupt, foreign or unverified archive copies and leaves source unchanged', async () => {
   const f=setup();
   try {
@@ -265,7 +297,7 @@ it('refuses inline, corrupt, foreign or unverified archive copies and leaves sou
     await expect(copyArchivedHistoryRowForStaging(production,staging as unknown as R2Bucket,1)).rejects.toThrow();
     staging.corrupt=false;
     await expect(copyArchivedHistoryRowForStaging({...production,scope:'synthetic-staging'},staging as unknown as R2Bucket,1)).rejects.toThrow();
-    await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},staging as unknown as R2Bucket,1)).rejects.toThrow(/Only synthetic/);
+    await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},staging as unknown as R2Bucket,1)).rejects.toThrow(/Invalid archive reference/);
     expect(f.row()).toEqual(source);
   } finally { f.db.db.close(); }
 });
@@ -284,6 +316,6 @@ it('keeps synthetic source history intact even if distinct bucket bindings alias
     expect(f.bucket.objects.get(String(source.archive_key))).toBe(original);
     expect(f.row()).toEqual(source);
     await expect(copyArchivedHistoryRowForStaging({...production,scope:'production'},aliased as unknown as R2Bucket,1))
-      .rejects.toThrow(/Only synthetic/);
+      .rejects.toThrow(/Invalid archive reference/);
   } finally { f.db.db.close(); }
 });

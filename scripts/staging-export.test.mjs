@@ -75,6 +75,30 @@ VALUES ('site', 'site-1', 'updated', 'u1', '2026-01-01', '{}', '{}',
     expect(() => sanitizeExport(withArchiveColumns.replace("'history/production/1/object', 'checksum'", "NULL, 'checksum'")))
       .toThrow(/archived history.*staging/i);
   });
+  it('rewrites every verified archive copy to a staging-only reference before import', () => {
+    const sourceKey = 'history-prototype/production/1/11111111-1111-4111-8111-111111111111';
+    const stagingKey = `history-prototype/staging/1/${'b'.repeat(64)}`;
+    const source = schema + `\n${archiveMigration}\nINSERT INTO users(id,username,created_at) VALUES('u1','production-name','2026-01-01');
+INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,
+  snapshot_json,archive_key,archive_digest) VALUES
+  (1,'simulation','sim-1','updated','u1','2026-01-01','{"id":"sim-1"}',
+   '${sourceKey}','${'a'.repeat(64)}');`;
+    const copy = { id: 1, sourceKey, sourceDigest: 'a'.repeat(64), stagingKey, stagingDigest: 'b'.repeat(64) };
+    const output = sanitizeExport(source, [copy]);
+    expect(output).not.toContain(sourceKey);
+    const staging = new DatabaseSync(':memory:');
+    try {
+      staging.exec(output);
+      expect(staging.prepare('SELECT archive_key,archive_digest FROM resource_changes WHERE id=1').get())
+        .toEqual({ archive_key: stagingKey, archive_digest: 'b'.repeat(64) });
+      expect(staging.prepare('SELECT username FROM users WHERE id=?').get('u1').username).toBe('staging-user-1');
+    } finally { staging.close(); }
+    for (const invalid of [[], [{ ...copy, sourceDigest: 'c'.repeat(64) }],
+      [{ ...copy, stagingKey: sourceKey }], [copy, copy]]) {
+      expect(() => sanitizeExport(source, invalid)).toThrow();
+    }
+    expect(() => sanitizeExport(source)).toThrow(/archived history.*staging/i);
+  });
   it('keeps inline history usable when the future archive columns are empty', () => {
     const input = schema + `
 ALTER TABLE resource_changes ADD COLUMN archive_key TEXT;

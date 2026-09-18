@@ -45,7 +45,7 @@ const literal = value => {
   if (value instanceof Uint8Array) return `X'${Buffer.from(value).toString('hex')}'`;
   return `'${String(value).replaceAll("'", "''")}'`;
 };
-export function sanitizeExport(sql) {
+export function sanitizeExport(sql, archiveCopies = []) {
   const db = new DatabaseSync(':memory:');
   try {
     db.exec(sql);
@@ -59,11 +59,33 @@ export function sanitizeExport(sql) {
       const hasKey = historyColumns.has('archive_key');
       const hasDigest = historyColumns.has('archive_digest');
       if (hasKey !== hasDigest) throw new Error('Incomplete archive schema in staging export');
-      // The sanitizer has no access to the production archive bucket. Until it
-      // can materialize an archived row, never import a production-only R2 key.
-      if (hasKey && db.prepare('SELECT 1 FROM resource_changes WHERE archive_key IS NOT NULL OR archive_digest IS NOT NULL LIMIT 1').get()) {
-        throw new Error('Archived history cannot be imported into staging until materialization is supported');
+      const archived = hasKey
+        ? db.prepare('SELECT id, archive_key, archive_digest FROM resource_changes WHERE archive_key IS NOT NULL OR archive_digest IS NOT NULL').all()
+        : [];
+      if (!Array.isArray(archiveCopies) || archived.length !== archiveCopies.length) {
+        throw new Error('Archived history cannot be imported into staging without complete verified copies');
       }
+      const copies = new Map();
+      for (const copy of archiveCopies) {
+        if (!copy || !Number.isSafeInteger(copy.id) || copy.id < 1 || copies.has(copy.id)) {
+          throw new Error('Invalid or duplicate staging archive copy');
+        }
+        copies.set(copy.id, copy);
+      }
+      for (const row of archived) {
+        const copy = copies.get(row.id);
+        if (!copy || copy.sourceKey !== row.archive_key || copy.sourceDigest !== row.archive_digest ||
+            !new RegExp(`^history-prototype/production/${row.id}/[0-9a-f-]{36}$`).test(row.archive_key ?? '') ||
+            copy.stagingKey !== `history-prototype/staging/${row.id}/${copy.stagingDigest}` ||
+            !/^[0-9a-f]{64}$/.test(row.archive_digest ?? '') || !/^[0-9a-f]{64}$/.test(copy.stagingDigest ?? '')) {
+          throw new Error('Archived history cannot be imported into staging without matching verified copies');
+        }
+        const changed = db.prepare('UPDATE resource_changes SET archive_key=?, archive_digest=? WHERE id=? AND archive_key=? AND archive_digest=?')
+          .run(copy.stagingKey, copy.stagingDigest, row.id, row.archive_key, row.archive_digest).changes;
+        if (changed !== 1) throw new Error('Staging archive reference changed during export');
+      }
+    } else if (archiveCopies.length) {
+      throw new Error('Unexpected staging archive copies without history table');
     }
     // No production display names, contact fields or avatar references are imported.
     db.exec(`UPDATE users SET username = 'staging-user-' || rowid,
@@ -107,5 +129,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.stdout.write(tables.join('\n') + '\n');
   } else if (mode === 'sanitize' && output) {
     writeFileSync(output, sanitizeExport(readFileSync(input, 'utf8')), { mode: 0o600, flag: 'wx' });
-  } else throw new Error('Usage: staging-export.mjs tables source.json target.json | sanitize input.sql output.sql');
+  } else if (mode === 'sanitize-with-archives' && output) {
+    const sql = readFileSync(input, 'utf8');
+    const { copyArchivedRowsWithR2 } = await import('./staging-history-transfer.mjs');
+    const copies = await copyArchivedRowsWithR2(sql);
+    writeFileSync(output, sanitizeExport(sql, copies), { mode: 0o600, flag: 'wx' });
+  } else throw new Error('Usage: staging-export.mjs tables source.json target.json | sanitize input.sql output.sql | sanitize-with-archives input.sql output.sql');
 }
