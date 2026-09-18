@@ -7,6 +7,17 @@ storage and application-wide quota headroom. Do not begin identity integration
 or enable real archive writes on this estimate. Production remains on Access.
 This decision uses existing observations; it adds no new live measurement.
 
+**Later same-day update:** [representative physical storage](2026-09-18-representative-physical-storage.md)
+measured 32.60 MB before and 23.77 MB after synthetic projection, with a
+further 0.92 MB for a 1,000-account auth probe allowance. A staging-like
+20-fold sensitivity now gives 476.3 MB, only 4.7% below the conservative
+500 MB ceiling. The maintainer accepted the earlier narrow storage-only
+sensitivity as a planning risk; do not reopen that accepted margin as a new
+approval gate. This experiment does not settle the larger production-vs-staging
+mix difference or the account-wide request/write/CPU measurements. It makes
+physical savings and archive write amplification measured for one fixture,
+while the overall capacity gate remains open for those other reasons.
+
 ## Request sensitivity, not a daily-active target
 
 The [activity model](2026-09-11-revised-activity-model.md) separates ordinary
