@@ -106,6 +106,39 @@ it('one concurrent archiver wins and an ambiguous committed update keeps its obj
   }finally{f.db.db.close();}
 });
 
+it('an exact-row rehearsal cannot advance to a different history row after deletion', async () => {
+  const f=setup();
+  try {
+    f.db.db.prepare("INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json) VALUES(2,'simulation','real-sim','updated','real-user','2026-09-18',?)")
+      .run(f.snapshot);
+    f.db.db.prepare('DELETE FROM resource_changes WHERE id=1').run();
+    const result=await archiveHistoryPage(f.env,{target:{id:1,resourceKind:'simulation',resourceId:'sim',actorUserId:'owner'},apply:true});
+    expect(result).toMatchObject({scanned:0,converted:0});
+    expect(f.db.db.prepare('SELECT archive_key FROM resource_changes WHERE id=2').get()).toEqual({archive_key:null});
+    expect(f.bucket.puts).toBe(0);
+  } finally { f.db.db.close(); }
+});
+
+it('an exact-row rehearsal loses the compare-and-swap if identity changes during upload', async () => {
+  const f=setup();
+  try {
+    f.bucket.afterGet=()=>f.db.db.prepare("UPDATE resource_changes SET resource_id='different' WHERE id=1").run();
+    const result=await archiveHistoryPage(f.env,{target:{id:1,resourceKind:'simulation',resourceId:'sim',actorUserId:'owner'},apply:true});
+    expect(result).toMatchObject({scanned:1,converted:0,conflicts:1});
+    expect(f.row().archive_key).toBeNull();
+  } finally { f.db.db.close(); }
+});
+
+it('an exact-row restore leaves history archived if identity changes during hydration', async () => {
+  const f=setup();
+  try {
+    await archiveHistoryPage(f.env,{target:{id:1,resourceKind:'simulation',resourceId:'sim',actorUserId:'owner'},apply:true});
+    f.bucket.afterGet=()=>f.db.db.prepare("UPDATE resource_changes SET actor_user_id='different' WHERE id=1").run();
+    expect(await restoreHistoryRow(f.env,1,{id:1,resourceKind:'simulation',resourceId:'sim',actorUserId:'owner'})).toBe(false);
+    expect(f.row().archive_key).not.toBeNull();
+  } finally { f.db.db.close(); }
+});
+
 it('probe rejects anonymous and expired calls before reading any bindings',async()=>{
  const worker=(await import('../../experiments/better-auth/history-archive-worker')).default;
  for(const path of ['/archive','/hydrate','/restore','/cleanup']){
