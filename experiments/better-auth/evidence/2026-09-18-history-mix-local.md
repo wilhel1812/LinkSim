@@ -6,15 +6,17 @@ wrote none, and returned no resource content or user identity. At that instant:
 
 | Kind | Revisions | Stored snapshot + details bytes | Mean | Maximum | Estimated archive candidates |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Simulation | 3,845 | 17,747,055 | 4,616 | 17,837 | 2,155 |
-| Site | 5,356 | 4,314,984 | 806 | 2,025 | 0 |
+| Simulation | 3,845 | 17,778,010 | 4,624 | 17,850 | 2,155 |
+| Site | 5,356 | 4,318,932 | 806 | 2,026 | 0 |
 
 The candidate estimate removes `$.snapshot` and `$.diff.snapshot` with SQLite
 `json_remove` and counts rows with at least 2,048 bytes removed. It approximates
-the prototype's JavaScript serialization; it is not an exact dry run. None of
+the prototype's JavaScript serialization; it is not an exact dry run. All SQL
+lengths cast text to BLOB first, so SQLite counts UTF-8 bytes rather than
+characters. None of
 the 9,201 rows had a non-JSON snapshot or non-JSON non-null details field at
 this snapshot. Estimated
-removable bytes across candidate Simulations were 13,308,623. Of the 2,155
+removable bytes across candidate Simulations were 13,335,790. Of the 2,155
 candidate Simulations, 796 were currently public/shared, seven had a
 public/shared prior visibility in the details, and 284 had a nonempty grant
 array. Those groups can overlap. The staging database was 30,412,800 bytes.
@@ -26,18 +28,18 @@ The exact aggregate SQL was run one statement at a time with Wrangler D1
 
 ```sql
 SELECT resource_kind, COUNT(*) AS revisions,
-  SUM(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))) AS stored_bytes,
-  ROUND(AVG(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,'')))) AS mean_bytes,
-  MAX(LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))) AS max_bytes,
-  SUM(CASE WHEN LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))<2048 THEN 1 ELSE 0 END) AS small_rows,
-  SUM(CASE WHEN LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,''))>=65536 THEN 1 ELSE 0 END) AS large_rows
+  SUM(LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB))) AS stored_bytes,
+  ROUND(AVG(LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB)))) AS mean_bytes,
+  MAX(LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB))) AS max_bytes,
+  SUM(CASE WHEN LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB))<2048 THEN 1 ELSE 0 END) AS small_rows,
+  SUM(CASE WHEN LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB))>=65536 THEN 1 ELSE 0 END) AS large_rows
 FROM resource_changes GROUP BY resource_kind;
 
 WITH sizes AS (
   SELECT resource_kind,
-    LENGTH(COALESCE(snapshot_json,''))+LENGTH(COALESCE(details_json,'')) AS before_bytes,
-    CASE WHEN json_valid(snapshot_json) THEN LENGTH(snapshot_json)-LENGTH(json_remove(snapshot_json,'$.snapshot')) ELSE 0 END
-    + CASE WHEN json_valid(details_json) THEN LENGTH(details_json)-LENGTH(json_remove(details_json,'$.diff.snapshot')) ELSE 0 END AS estimated_removed_bytes
+    LENGTH(CAST(COALESCE(snapshot_json,'') AS BLOB))+LENGTH(CAST(COALESCE(details_json,'') AS BLOB)) AS before_bytes,
+    CASE WHEN json_valid(snapshot_json) THEN LENGTH(CAST(snapshot_json AS BLOB))-LENGTH(CAST(json_remove(snapshot_json,'$.snapshot') AS BLOB)) ELSE 0 END
+    + CASE WHEN json_valid(details_json) THEN LENGTH(CAST(details_json AS BLOB))-LENGTH(CAST(json_remove(details_json,'$.diff.snapshot') AS BLOB)) ELSE 0 END AS estimated_removed_bytes
   FROM resource_changes
 )
 SELECT resource_kind, COUNT(*) AS revisions,
@@ -48,8 +50,8 @@ FROM sizes GROUP BY resource_kind;
 
 WITH candidates AS (
   SELECT snapshot_json, details_json,
-    (CASE WHEN json_valid(snapshot_json) THEN LENGTH(snapshot_json)-LENGTH(json_remove(snapshot_json,'$.snapshot')) ELSE 0 END
-    + CASE WHEN json_valid(details_json) THEN LENGTH(details_json)-LENGTH(json_remove(details_json,'$.diff.snapshot')) ELSE 0 END) AS removed
+    (CASE WHEN json_valid(snapshot_json) THEN LENGTH(CAST(snapshot_json AS BLOB))-LENGTH(CAST(json_remove(snapshot_json,'$.snapshot') AS BLOB)) ELSE 0 END
+    + CASE WHEN json_valid(details_json) THEN LENGTH(CAST(details_json AS BLOB))-LENGTH(CAST(json_remove(details_json,'$.diff.snapshot') AS BLOB)) ELSE 0 END) AS removed
   FROM resource_changes WHERE resource_kind='simulation'
 )
 SELECT COUNT(*) AS candidate_rows,
@@ -65,10 +67,10 @@ FROM resource_changes;
 ```
 
 In order, D1 reported 9,201, 9,201, 3,846 and 9,201 rows read, all with
-zero writes and one attempt. The first query also returned 926 Simulation rows
+zero writes and one attempt. The first query also returned 925 Simulation rows
 under 2 KB and 5,356 Site rows under 2 KB, with zero rows of either kind at
 or above 64 KB. The second query returned 2,155 candidate Simulations,
-13,308,623 candidate removed bytes, and no candidate Sites. The third returned
+13,335,790 candidate removed bytes, and no candidate Sites. The third returned
 2,155 candidates, 796 current public/shared, seven former public/shared and
 284 with grants. The fourth returned 9,201 revisions, zero invalid snapshots
 and zero non-JSON non-null details. All four reported a 30,412,800-byte
