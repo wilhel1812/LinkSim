@@ -36,6 +36,7 @@ node experiments/better-auth/prepare-history-archive-staging.mjs call dry-run
 node experiments/better-auth/prepare-history-archive-staging.mjs call archive
 node experiments/better-auth/prepare-history-archive-staging.mjs call hydrate
 node experiments/better-auth/prepare-history-archive-staging.mjs call restore
+node experiments/better-auth/prepare-history-archive-staging.mjs call object-count
 node experiments/better-auth/prepare-history-archive-staging.mjs cleanup
 ```
 
@@ -51,6 +52,11 @@ and Manual Sync verification separately; this synthetic account cannot test
 an authenticated application revert. The existing local integration suite
 covers authorized revert. A later staging test with a maintainer-owned test
 Simulation is still required for that end-to-end path.
+
+For deployed CPU and independent R2 retention evidence, use the separate
+[short-lived deployed runtime](history-archive-staging-deployed.md) only after
+its exact code/config has passed review. It binds the same synthetic fixture,
+stores its secret through Wrangler, and deletes only its own temporary Worker.
 
 The rehearsal has no delete endpoint. Do not delete an R2 object referenced by
 D1 or by a possible D1 backup/Time Travel state. A failed or ambiguous archive

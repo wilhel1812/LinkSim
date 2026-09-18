@@ -26,9 +26,10 @@ creation to 30,416,896 after archive, then back to 30,420,992 after restore.
 After restore, `snapshot_json` again exactly matched the original Simulation
 payload; both archive reference columns were null. The object code never
 deletes R2 data. The R2 bucket summary still reported `0 objects / 0 B`
-immediately after the run, so remote object retention has **not yet been
-independently confirmed**; bucket metrics may be delayed. No object cleanup
-will be attempted until backup/Time Travel retention is designed.
+immediately after the run, so its delayed metrics could not establish
+retention at that point. A later deployed [R2 list probe](2026-09-18-history-deployed-cpu.md)
+found the object under this row's staging prefix before a second archive run.
+No object cleanup will be attempted until backup/Time Travel retention is designed.
 
 This rehearsal does not satisfy deployed CPU headroom, a live authorized
 application revert, a live sanitized staging refresh, Manual Sync on a mixed

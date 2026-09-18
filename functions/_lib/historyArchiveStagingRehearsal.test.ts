@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { SqliteD1 } from './testSqliteD1';
 import { handleStagingArchiveRehearsal } from '../../experiments/better-auth/history-archive-staging-rehearsal';
 import { stagingArchiveRehearsalConfig, validStagingRehearsalResult } from '../../experiments/better-auth/prepare-history-archive-staging.mjs';
+import { stagingDeployedArchiveConfig } from '../../experiments/better-auth/history-archive-staging-deployed.mjs';
 
 const setup = () => {
   const db = new SqliteD1();
@@ -12,6 +13,7 @@ const setup = () => {
   const bucket = {
     put: async (key: string, value: string) => { objects.set(key, value); },
     get: async (key: string) => { const value = objects.get(key); return value === undefined ? null : { size: new TextEncoder().encode(value).length, text: async () => value }; },
+    list: async ({ prefix }: { prefix: string }) => ({ objects: [...objects.keys()].filter(key => key.startsWith(prefix)).map(key => ({ key })), truncated: false }),
   };
   const measuredDb = { prepare(sql: string) {
     const stmt = db.prepare(sql);
@@ -43,6 +45,8 @@ it('keeps the staging rehearsal dry until the exact row and secret are supplied'
     expect(f.objects.size).toBe(0);
     expect((await f.call('/archive')).status).toBe(200);
     expect(f.objects.size).toBe(1);
+    const count = await (await f.call('/object-count')).json() as { result: { objects: number; truncated: boolean } };
+    expect(count.result).toEqual({ objects: 1, truncated: false });
     const hydrated = await (await f.call('/hydrate')).json() as { result: { found: boolean; archived: boolean; bytes: number } };
     expect(hydrated.result).toMatchObject({ found: true, archived: true, bytes: new TextEncoder().encode(f.snapshot).length });
     expect((await f.call('/restore')).status).toBe(200);
@@ -82,10 +86,26 @@ it('reports a successful command only when its archive result actually succeeded
   expect(validStagingRehearsalResult('archive', { result: { scanned: 1, candidates: 1, converted: 1, conflicts: 0 } })).toBe(true);
   expect(validStagingRehearsalResult('hydrate', { result: { found: true, archived: true, bytes: 4285 } })).toBe(true);
   expect(validStagingRehearsalResult('restore', { result: { restored: true } })).toBe(true);
+  expect(validStagingRehearsalResult('object-count', { result: { objects: 1, truncated: false } })).toBe(true);
   for (const [operation, result] of [
     ['dry-run', { scanned: 1, candidates: 0, converted: 0, conflicts: 0 }],
     ['archive', { scanned: 1, candidates: 1, converted: 0, conflicts: 1 }],
     ['hydrate', { found: true, archived: false, bytes: 4285 }],
     ['restore', { restored: false }],
+    ['object-count', { objects: 0, truncated: false }],
   ] as const) expect(validStagingRehearsalResult(operation, { result })).toBe(false);
+});
+
+it('generates a disposable deployed runtime with only staging D1/R2 and no inline secret', () => {
+  const config = stagingDeployedArchiveConfig({
+    name: 'linksim-history-staging-probe-abcdef123456', rowId: 9202, resourceKind: 'simulation',
+    resourceId: 'archive-rehearsal-sim-1107-20260918', actorUserId: 'archive-rehearsal-user-1107-20260918',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  expect(config.workers_dev).toBe(true);
+  expect(config.d1_databases).toEqual([{ binding: 'DB', database_name: 'linksim_staging', database_id: 'a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c' }]);
+  expect(config.r2_buckets).toEqual([{ binding: 'HISTORY_BUCKET', bucket_name: 'linksim-history-staging', preview_bucket_name: 'linksim-history-staging' }]);
+  expect(config.vars.HISTORY_SCOPE).toBe('staging');
+  expect(JSON.stringify(config)).not.toContain('REHEARSAL_KEY');
+  expect(() => stagingDeployedArchiveConfig({ ...config.vars, name: 'linksim', rowId: 9202, resourceKind: 'simulation', resourceId: 'archive-rehearsal-sim', actorUserId: 'archive-rehearsal-user', expiresAt: new Date(Date.now() + 60_000).toISOString() })).toThrow();
 });
