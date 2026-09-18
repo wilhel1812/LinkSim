@@ -5,6 +5,8 @@ This project supports a separate staging stack with production-like data.
 ## What is configured
 
 - Staging Worker environment in [`wrangler.staging.toml`](../wrangler.staging.toml)
+- Private history bucket `linksim-history-staging` bound only to stable staging.
+  Preview builds use a separate Wrangler configuration without that binding.
 - Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](../package.json)
 - Custom domain: https://staging.linksim.link
@@ -28,7 +30,7 @@ not receive Cloudflare secrets and are never deployed by this workflow.
 
 The workflow keeps one signed PR comment current as the head SHA changes. The
 preview uses only `linksim_staging` and `linksim-avatars-staging`; shared staging
-remains the acceptance environment.
+remains the acceptance environment. Previews cannot read the private history bucket.
 
 Keep the repository variable `ENABLE_AUTHENTICATED_PREVIEWS` unset until the
 Pages root and wildcard preview hostnames are protected by Access, their AUD

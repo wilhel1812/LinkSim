@@ -51,8 +51,9 @@ Application revert now uses the authorized archive-aware reader when both
 the unchanged D1 projection, and current permission before applying the full
 snapshot. If an archived row is encountered without the binding, revert fails
 closed instead of saving the compact projection. Tests cover corruption and a
-grant revoked during R2 read. No application deployment supplies these bindings
-yet, so this is a disabled read-path integration, not archive activation.
+grant revoked during R2 read. Stable staging supplies the private history
+binding and scope; archive writes remain disabled, so this is a read-path
+integration rather than archive activation.
 Disabling archive writes alone is not rollback once rows are archived: keep the
 reader or restore rows.
 
@@ -62,9 +63,9 @@ requested Site or Simulation before R2 access, verifies the D1 archive reference
 did not change during hydration, and checks permission again after the R2 read.
 Tests deny a stranger and a mismatched change without touching R2, and deny a
 grant revoked during the read. The existing API route verifies identity and
-current account state before calling this reader. Staging has an additive
-schema migration with a deploy gate, but still needs a private bucket binding
-and an end-to-end rehearsal before archiving is enabled.
+current account state before calling this reader. Staging has the additive
+schema migration and isolated private bucket binding, but still needs an
+end-to-end rehearsal before archiving is enabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a

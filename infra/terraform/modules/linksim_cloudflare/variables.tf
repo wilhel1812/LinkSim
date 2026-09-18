@@ -42,6 +42,12 @@ variable "pages_env_vars_secret" {
   sensitive   = true
 }
 
+variable "pages_production_env_vars_plain" {
+  description = "Non-secret Pages vars present only on this project's production branch."
+  type        = map(string)
+  default     = {}
+}
+
 variable "pages_access_audience_keys" {
   description = "Access application keys whose computed AUD values are published to Pages ACCESS_AUD."
   type        = set(string)
@@ -79,6 +85,12 @@ variable "r2_binding_name" {
   description = "Pages R2 binding name."
   type        = string
   default     = "AVATAR_BUCKET"
+}
+
+variable "history_r2_bucket_name" {
+  description = "Optional private history bucket bound only to this project's production branch."
+  type        = string
+  default     = null
 }
 
 variable "r2_bucket_jurisdiction" {

@@ -61,6 +61,10 @@ variable "r2_binding_name" {
   default = "AVATAR_BUCKET"
 }
 
+variable "history_r2_bucket_name" {
+  type = string
+}
+
 variable "r2_bucket_jurisdiction" {
   type    = string
   default = "default"

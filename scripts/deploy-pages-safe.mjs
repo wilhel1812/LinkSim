@@ -13,6 +13,7 @@ const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
 const wranglerProd = path.join(root, "wrangler.toml");
 const wranglerStaging = path.join(root, "wrangler.staging.toml");
+const wranglerStagingPreview = path.join(root, "wrangler.staging-preview.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
 const distDir = path.join(root, "dist");
 const releaseManifestPath = path.join(distDir, "release.json");
@@ -36,18 +37,20 @@ const TARGETS = {
       name: "linksim-staging",
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
+      historyBucketName: "linksim-history-staging",
     },
   },
   "staging-preview": {
     projectName: "linksim-staging",
     branch: "CURRENT",
     requiredBranch: "",
-    configPath: wranglerStaging,
+    configPath: wranglerStagingPreview,
     environmentLabel: "staging-preview",
     expected: {
       name: "linksim-staging",
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
+      historyBucketName: "",
     },
   },
   "prod-main": {
@@ -60,6 +63,7 @@ const TARGETS = {
       name: "linksim",
       databaseName: "linksim",
       bucketName: "linksim-avatars",
+      historyBucketName: "",
     },
   },
 };
@@ -114,6 +118,11 @@ const parseTomlValue = (content, key) => {
   const match = line.match(/=\s*"([^"]+)"/);
   return match ? match[1] : "";
 };
+
+const parseR2Bindings = (content) => content.split("[[r2_buckets]]").slice(1).map((section) => {
+  const body = section.split(/\n\s*\[/)[0];
+  return { binding: parseTomlValue(body, "binding"), bucketName: parseTomlValue(body, "bucket_name") };
+});
 
 const parseDotEnv = (content) => {
   const parsed = {};
@@ -355,16 +364,20 @@ async function preflight(targetName, target) {
 
   const name = parseTomlValue(configText, "name");
   const databaseName = parseTomlValue(configText, "database_name");
-  const bucketName = parseTomlValue(configText, "bucket_name");
+  const r2Bindings = parseR2Bindings(configText);
+  const expectedR2Bindings = [{ binding: "AVATAR_BUCKET", bucketName: target.expected.bucketName }];
+  if (target.expected.historyBucketName) {
+    expectedR2Bindings.push({ binding: "HISTORY_BUCKET", bucketName: target.expected.historyBucketName });
+  }
   assert(name === target.expected.name, `Preflight failed: config name '${name}' != '${target.expected.name}'.`);
   assert(
     databaseName === target.expected.databaseName,
     `Preflight failed: database_name '${databaseName}' != '${target.expected.databaseName}'.`,
   );
-  assert(
-    bucketName === target.expected.bucketName,
-    `Preflight failed: bucket_name '${bucketName}' != '${target.expected.bucketName}'.`,
-  );
+  assert(JSON.stringify(r2Bindings) === JSON.stringify(expectedR2Bindings),
+    `Preflight failed: unexpected R2 bindings for ${targetName}.`);
+  assert(parseTomlValue(configText, "HISTORY_SCOPE") === (targetName === "staging" ? "staging" : ""),
+    `Preflight failed: unexpected HISTORY_SCOPE for ${targetName}.`);
 
   await verifyRemoteSchema(targetName, databaseName);
 
