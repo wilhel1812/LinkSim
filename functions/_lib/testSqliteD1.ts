@@ -24,13 +24,13 @@ class SqliteStatement {
 
   async run() {
     await this.hooks.beforeRun?.(this.sql);
-    this.runSync();
-    return { success: true };
+    const result = this.runSync();
+    return { success: true, meta: { changes: Number(result.changes) } };
   }
 
   runSync() {
     try {
-      this.db.prepare(this.sql).run(...this.values as never[]);
+      return this.db.prepare(this.sql).run(...this.values as never[]);
     } catch (error) {
       throw new Error(`${String(error)}\nSQL: ${this.sql}`);
     }
