@@ -54,6 +54,17 @@ export function sanitizeExport(sql) {
     const tables = selectExportTables(names);
     if (tables.length !== names.length) throw new Error('Excluded table present in application export');
     if (!tables.includes('users')) throw new Error('User schema missing');
+    if (tables.includes('resource_changes')) {
+      const historyColumns = new Set(db.prepare('PRAGMA table_info(resource_changes)').all().map(row => row.name));
+      const hasKey = historyColumns.has('archive_key');
+      const hasDigest = historyColumns.has('archive_digest');
+      if (hasKey !== hasDigest) throw new Error('Incomplete archive schema in staging export');
+      // The sanitizer has no access to the production archive bucket. Until it
+      // can materialize an archived row, never import a production-only R2 key.
+      if (hasKey && db.prepare('SELECT 1 FROM resource_changes WHERE archive_key IS NOT NULL OR archive_digest IS NOT NULL LIMIT 1').get()) {
+        throw new Error('Archived history cannot be imported into staging until materialization is supported');
+      }
+    }
     // No production display names, contact fields or avatar references are imported.
     db.exec(`UPDATE users SET username = 'staging-user-' || rowid,
       email = 'staging+user-' || rowid || '@example.invalid', bio = '', access_request_note = '',

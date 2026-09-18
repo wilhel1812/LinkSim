@@ -41,4 +41,36 @@ describe('staging export boundary', () => {
     expect(() => sanitizeExport(schema + '\nCREATE TABLE auth_session (token TEXT);')).toThrow();
     expect(() => sanitizeExport(schema + '\nCREATE TABLE unknown (secret TEXT);')).toThrow();
   });
+  it('refuses archived history references before a staging import can copy production bucket keys', () => {
+    const withArchiveColumns = schema + `
+ALTER TABLE resource_changes ADD COLUMN archive_key TEXT;
+ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT;
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json, details_json, archive_key, archive_digest)
+VALUES ('site', 'site-1', 'updated', 'u1', '2026-01-01', '{}', '{}',
+  'history/production/1/object', 'checksum');`;
+    expect(() => sanitizeExport(withArchiveColumns)).toThrow(/archived history.*staging/i);
+    // A half-written reference is unsafe too, even if only one column is populated.
+    expect(() => sanitizeExport(withArchiveColumns.replace("'history/production/1/object', 'checksum'", "NULL, 'checksum'")))
+      .toThrow(/archived history.*staging/i);
+  });
+  it('keeps inline history usable when the future archive columns are empty', () => {
+    const input = schema + `
+ALTER TABLE resource_changes ADD COLUMN archive_key TEXT;
+ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT;
+INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at,
+  snapshot_json, details_json) VALUES ('site', 'site-1', 'updated', 'u1', '2026-01-01',
+  '{"snapshot":{"name":"Site"}}', '{"changedFields":["name"]}');`;
+    const output = sanitizeExport(input);
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(output);
+      expect(db.prepare('SELECT snapshot_json, details_json, archive_key, archive_digest FROM resource_changes').get())
+        .toEqual({ snapshot_json: '{"snapshot":{"name":"Site"}}', details_json: '{"changedFields":["name"]}', archive_key: null, archive_digest: null });
+    } finally { db.close(); }
+  });
+  it('rejects an incomplete archive schema before exporting history', () => {
+    expect(() => sanitizeExport(schema + '\nALTER TABLE resource_changes ADD COLUMN archive_key TEXT;'))
+      .toThrow(/incomplete archive schema/i);
+  });
 });
