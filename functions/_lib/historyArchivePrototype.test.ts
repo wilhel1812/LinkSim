@@ -94,6 +94,41 @@ it('preserves real Library recovery and authorized history listing, and reverts 
     expect(await restoreHistoryRow(f.env,1)).toBe(true);
   }finally{f.db.db.close();}
 });
+it('keeps full Library recovery and both revert paths usable with mixed archived and inline revisions', async()=>{
+  const {fetchLibraryForUser,fetchResourceChanges,revertResourceFromChangeCopy,upsertLibrarySnapshot}=await import('./db');
+  const f=setup();try{
+    const actor={id:'owner',isAdmin:false,isModerator:false};
+    const env={DB:f.env.DB,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'} as Parameters<typeof upsertLibrarySnapshot>[0];
+    const inline=JSON.stringify({id:'sim',name:'Inline revision',ownerUserId:'owner',visibility:'private',sharedWith:[],snapshot:{sites:[]}});
+    f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Current','private','active',?,'2026-09-18')")
+      .run(JSON.stringify({id:'sim',name:'Current',ownerUserId:'owner',visibility:'private',sharedWith:[],snapshot:{sites:[]}}));
+    f.db.db.prepare("INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json) VALUES(2,'simulation','sim','updated','owner','2026-09-18',?)")
+      .run(inline);
+    await archiveHistoryPage(f.env,{apply:true});
+    expect(f.row().archive_key).toBeTruthy();
+    expect(f.db.db.prepare('SELECT archive_key FROM resource_changes WHERE id=2').get()).toEqual({archive_key:null});
+    const getsBeforeRecovery=f.bucket.gets;
+
+    // Manual recovery fetches the complete current Library and pushes it without dirty flags.
+    const before=await fetchLibraryForUser(env,'owner');
+    expect(before.simulationPresets).toHaveLength(1);
+    expect((await upsertLibrarySnapshot(env,actor,{siteLibrary:before.siteLibrary,simulationPresets:before.simulationPresets})).conflicts).toEqual([]);
+    expect((await fetchLibraryForUser(env,'owner')).simulationPresets.map((entry)=>entry.id)).toEqual(['sim']);
+    expect(f.bucket.gets).toBe(getsBeforeRecovery,'full Library recovery must use D1 projections');
+    const history=await fetchResourceChanges(env,'simulation','sim',actor);
+    expect(history).toMatchObject({ok:true});
+    expect(f.bucket.gets).toBe(getsBeforeRecovery,'history listing must use D1 projections');
+
+    expect(await revertResourceFromChangeCopy(env,'simulation','sim',1,actor)).toEqual({ok:true});
+    expect(f.bucket.gets).toBeGreaterThan(getsBeforeRecovery);
+    const getsAfterArchivedRevert=f.bucket.gets;
+    expect(JSON.parse(String(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).snapshot.padding).toBe('x'.repeat(4096));
+    expect(await revertResourceFromChangeCopy(env,'simulation','sim',2,actor)).toEqual({ok:true});
+    expect(f.bucket.gets).toBe(getsAfterArchivedRevert,'inline revert must not need R2');
+    expect(JSON.parse(String(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Inline revision');
+    expect((await fetchLibraryForUser(env,'owner')).simulationPresets.map((entry)=>entry.id)).toEqual(['sim']);
+  }finally{f.db.db.close();}
+});
 it('one concurrent archiver wins and an ambiguous committed update keeps its object',async()=>{
   const f=setup();try{
     const results=await Promise.all([archiveHistoryPage(f.env,{apply:true}),archiveHistoryPage(f.env,{apply:true})]);
