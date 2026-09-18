@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { copyArchivedHistoryRowForStaging } from '../functions/_lib/historyArchive.ts';
-import { selectExportTables } from './staging-export.mjs';
+import { selectExportTables } from './staging-table-inventory.mjs';
 
 // Source rows are read from the same private D1 export the sanitizer will use.
 // No production binding or bucket is mutated by this operator-only helper.

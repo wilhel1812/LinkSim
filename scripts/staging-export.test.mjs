@@ -1,10 +1,28 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { selectExportTables, selectRefreshTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
 const archiveMigration = readFileSync('db/migrations/2026-09-18_history_archive.sql', 'utf8');
 describe('staging export boundary', () => {
+  it('runs the archive-aware CLI for inline exports without R2 credentials', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'linksim-staging-cli-'));
+    try {
+      const input = join(directory, 'source.sql');
+      const output = join(directory, 'sanitized.sql');
+      writeFileSync(input, schema + "\nINSERT INTO users (id,username,created_at) VALUES ('u1','private-name','2026-01-01');");
+      const result = spawnSync(process.execPath, ['scripts/staging-export.mjs', 'sanitize-with-archives', input, output],
+        { cwd: process.cwd(), timeout: 5000, encoding: 'utf8', env: { ...process.env,
+          R2_HISTORY_SOURCE_ACCESS_KEY_ID: '', R2_HISTORY_SOURCE_SECRET_ACCESS_KEY: '',
+          R2_HISTORY_STAGING_ACCESS_KEY_ID: '', R2_HISTORY_STAGING_SECRET_ACCESS_KEY: '' } });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8')).toContain('staging-user-1');
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
   it('keeps archived staging rows replaceable by an inline production refresh after the archive migration', () => {
     const db = new DatabaseSync(':memory:');
     try {
