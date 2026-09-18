@@ -175,4 +175,28 @@ observed physical size reduction after updating indexed synthetic history JSON,
 including a mixed set with full revisions retained. This does not activate
 archiving or establish long-term 1,000-account storage headroom.
 
+## Synthetic staging-refresh copy proof
+
+`copyArchivedHistoryRowForStaging` accepts only synthetic scopes and reuses the archive reader, digest check,
+projection check, and destination verification. The local test copies a
+synthetic production-scoped archived revision into a distinct synthetic
+staging bucket, then hydrates it through a staging-scoped D1 reference. Corrupt
+source objects, failed writes, corrupt destination reads, wrong scope, and
+inline rows fail without changing source D1. An interrupted copy may leave an
+unreferenced staging object, which is safer than deleting an object after an
+ambiguous write.
+
+The routine staging export remains fail-closed for archived production rows.
+Before integrating this primitive, the refresh workflow must assemble a
+complete verified mapping for every exported archive reference, rewrite keys
+and digests in the sanitized SQL only after all object copies succeed, reject
+missing or stale mappings, and import from a consistent source snapshot. The
+copy proof does not establish physical bucket isolation: R2 bindings do not
+expose a bucket name to this helper, and two binding objects may alias one
+bucket. Real transfer must verify distinct configured bucket names before
+obtaining bindings. It also does not provide production-scope transfer, remote
+R2 credentials, bulk transfer scheduling, atomic D1 import, or cleanup of
+orphaned objects. No production bucket exists
+yet, and neither real production history nor authentication data was copied.
+
 See [measured results](evidence/2026-09-17-history-r2.md).
