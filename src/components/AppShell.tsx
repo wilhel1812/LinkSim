@@ -2433,6 +2433,7 @@ export function AppShell() {
         >
           <div className="library-manager-card settings-panel-wrapper">
             <SettingsPanel
+              authSource={authSource}
               initialSection={settingsRoute.section}
               onClose={closeSettings}
               onSignOutError={(message) => pushNotification({ id: "sign-out-failed", message, tone: "error" })}

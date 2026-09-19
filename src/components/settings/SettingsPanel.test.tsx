@@ -207,7 +207,7 @@ describe("SettingsPanel", () => {
     mockState.authState = "signed_in";
     localStorage.setItem("linksim:had-authenticated-session:v1", "1");
 
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel authSource="better-auth" initialSection={null} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
@@ -231,13 +231,55 @@ describe("SettingsPanel", () => {
     signOutBetterAuthPilotMock.mockRejectedValue(new Error("revocation failed"));
     const onSignOutError = vi.fn();
 
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
+    render(<SettingsPanel authSource="better-auth" initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     await waitFor(() => expect(signOutBetterAuthPilotMock).toHaveBeenCalledOnce());
     expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
     expect(mockState.setAuthState).not.toHaveBeenCalledWith("signed_out");
     expect(onSignOutError).toHaveBeenCalledWith("revocation failed");
+  });
+
+  it("keeps Access-only logout independent of the Better Auth runtime", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+
+    render(<SettingsPanel authSource="access" initialSection={null} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(mockState.setAuthState).toHaveBeenCalledWith("signed_out"));
+    expect(signOutBetterAuthPilotMock).not.toHaveBeenCalled();
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull();
+  });
+
+  it("fails closed while the pilot authentication source is unresolved", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    const onSignOutError = vi.fn();
+
+    render(<SettingsPanel authSource={null} initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(onSignOutError).toHaveBeenCalledWith("Sign-in status is still loading. Try again."));
+    expect(signOutBetterAuthPilotMock).not.toHaveBeenCalled();
+    expect(mockState.setAuthState).not.toHaveBeenCalledWith("signed_out");
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
   });
 
   it("switches to Preferences section when its nav item is clicked", () => {
