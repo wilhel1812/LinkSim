@@ -97,6 +97,20 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(workflow).not.toContain("schedule:");
   });
 
+  it("applies and probes the Better Auth schema on staging only", () => {
+    const migration = "db/migrations/2026-09-19_better_auth_schema.sql";
+    const probe = "db/probes/better-auth-schema.sql";
+    const step = "- name: Apply and verify staging Better Auth schema";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(previewJob).toContain(migration);
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep).toContain(`--file ${migration} --yes`);
+    expect(migrationStep).toContain(`--file ${probe}`);
+    expect(productionJob).not.toContain(migration);
+    expect(productionJob).not.toContain(probe);
+  });
+
   it("validates workflow-derived preview and release values before quoted shell use", () => {
     expect(previewJob).toContain(
       "PREVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}",

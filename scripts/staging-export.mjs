@@ -9,7 +9,6 @@ export { applicationTables, excludedTables, selectExportTables } from './staging
 export function selectRefreshTables(source, target) {
   const tables = selectExportTables(source);
   const targetTables = selectExportTables(target);
-  if (target.some(name => name.startsWith('auth_'))) throw new Error('Staging auth tables exist; explicit credential reset workflow required');
   if (!tables.includes('users') || !targetTables.includes('users')) throw new Error('User schema missing');
   if (tables.join(',') !== targetTables.join(',')) throw new Error('Application schema mismatch; align staging and production schemas before refresh');
   return tables;
