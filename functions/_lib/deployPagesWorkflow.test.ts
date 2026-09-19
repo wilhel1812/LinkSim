@@ -82,6 +82,21 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(deployScript).toContain('["details_json", "snapshot_json", "archive_key", "archive_digest"]');
   });
 
+  it("applies and probes disabled archive-maintenance state on staging only", () => {
+    const migration = "db/migrations/2026-09-19_history_archive_maintenance.sql";
+    const probe = "SELECT singleton, utc_day, daily_attempted_objects, daily_archive_bytes, lifetime_archive_bytes, active_run_id, active_run_token, lease_expires_at, setup_run_id, setup_d1_rows_read, setup_d1_rows_written FROM history_archive_maintenance_budget WHERE singleton = 1;";
+    const step = "- name: Apply and verify staging history archive maintenance state";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep).toContain(`--file ${migration} --yes`);
+    expect(migrationStep).toContain(probe);
+    expect(migrationStep).toContain("reserved_scanned_rows, reserved_d1_rows_read, reserved_d1_rows_written, reserved_r2_puts, reserved_r2_gets");
+    expect(productionJob).not.toContain(migration);
+    expect(productionJob).not.toContain("history_archive_maintenance_budget");
+    expect(workflow).not.toContain("schedule:");
+  });
+
   it("validates workflow-derived preview and release values before quoted shell use", () => {
     expect(previewJob).toContain(
       "PREVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}",

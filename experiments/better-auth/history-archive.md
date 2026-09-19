@@ -1,8 +1,53 @@
 # Synthetic R2/D1 history archive prototype
 
+## Internal maintenance guardrails
+
+`functions/_lib/historyArchiveMaintenance.ts` is an internal primitive with no
+route, schedule, UI, or deployed caller. It returns `disabled` unless its caller
+passes `enabled: true`. The existing archive implementation still owns object
+creation, verification, compare-and-swap, hydration, and restore behavior.
+
+An enabled run requires the additive maintenance migration. Before each page
+scan, it persistently reserves the maximum rows scanned/read and the associated
+D1 writes. Before each candidate can reach R2, it persistently reserves the R2
+PUT/GET, D1 read/write allowance, UTC-day object attempt and envelope bytes, and
+lifetime archive bytes. The UTC day is derived for each reservation. All
+reservations are conservative and are not released after a later failure, so an
+interrupted invocation cannot regain that allowance by resuming. Checkpoints contain
+only counts, timestamps, a cursor, a bounded run ID, status, and a fixed failure
+category; they never contain resource identifiers, user identifiers, JSON, keys,
+digests, URLs, or error text.
+
+Each invocation also reserves 64 D1 rows read and three D1 rows written in the
+budget singleton as part of acquiring its lease. This conservatively covers the
+three schema probes, lease acquisition, run-state lookup, and run-state setup.
+Lower caller limits are rejected before bindings are touched. If an invocation
+stops immediately after acquisition, the next acquisition for the same run adds
+another setup reservation instead of regaining the earlier allowance.
+
+The budget singleton is also the run lock. Each acquisition receives a unique
+token. Reservations, checkpoints, and release require that token and an
+unexpired 30-minute lease, fencing an older invocation after takeover. A
+different run cannot replace a running checkpoint; after expiry only the same
+run may resume. If an invocation is
+interrupted without reaching its failure handler, the same numeric GitHub-style
+run ID can resume its stored `running` checkpoint after the lease expires;
+prior reservations and D1/R2 counters still count toward the per-run ceilings.
+Completed and explicitly failed runs cannot resume.
+
+The immutable ceilings are 1,000 attempted objects and 100,000,000 envelope
+bytes per UTC day, 5,000,000,000 lifetime envelope bytes, 25,000 scanned rows,
+50,000 D1 rows read, and 7,500 D1 rows written per run, with pages of at most ten
+rows. Smaller caller limits are allowed for a bounded rehearsal; larger values
+are rejected before bindings are touched. Missing schema or D1 metrics, an
+invalid reference, R2/integrity failure, compare-and-swap conflict, or exhausted
+budget stops the run before another candidate. Successfully committed rows and
+immutable objects are retained; this primitive performs no deletion or restore.
+
 Status: **storage and separate Durable Object runtime demonstrated; not approved
 for application activation. Pages maintenance CPU gate failed.** No application
-route, schema or binding changes, and no new UI or authentication behavior.
+route or binding changes, and no new UI or authentication behavior. The additive
+maintenance tables store only budgets and checkpoints and do not invoke writes.
 Keep `HISTORY_DETAILS_COMPRESSION` disabled. The target remains 1,000 registered
 accounts, not 1,000 daily-active users.
 

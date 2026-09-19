@@ -68,7 +68,9 @@ export const hydrateHistoryRow=async(env:ArchiveEnv,id:number,resource?:{kind:'s
     : await env.DB.prepare(`SELECT ${columns} FROM resource_changes WHERE id=?`).bind(id).first<Row>();
   return row?hydrate(env,row):null;
 };
-export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;limit?:number;apply?:boolean;target?:ArchiveTarget}={}) => {
+type ArchiveCandidate = { id:number; archiveBytes:number };
+export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;limit?:number;apply?:boolean;target?:ArchiveTarget;
+  beforeApply?:(candidate:ArchiveCandidate)=>Promise<void>|void;stopOnConflict?:boolean}={}) => {
   const target=options.target,afterId=options.afterId??0,limit=target?1:options.limit??10;
   if(!Number.isSafeInteger(afterId)||afterId<0||!Number.isInteger(limit)||limit<1||limit>10)throw Error('Invalid archive page');
   if(target&&(!Number.isSafeInteger(target.id)||target.id<1||!['site','simulation'].includes(target.resourceKind)||
@@ -90,6 +92,7 @@ export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;li
     if(encoder.encode(raw).length>MAX_BYTES)throw Error('Archive oversized');
     result.candidates++;result.bytesBefore+=before;result.bytesAfter+=after;result.archiveBytes+=encoder.encode(raw).length;
     if(options.apply!==true)continue;
+    await options.beforeApply?.({id:row.id,archiveBytes:encoder.encode(raw).length});
     const key=`${prefix}${row.id}/${crypto.randomUUID()}`,checksum=await digest(raw);
     // Unique immutable key per attempt. A failed/ambiguous D1 write may have
     // committed: never delete its object in catch/finally or rollback.
@@ -100,7 +103,10 @@ export const archiveHistoryPage=async(env:ArchiveEnv,options:{afterId?:number;li
     const saved=await env.DB.prepare(`UPDATE resource_changes SET snapshot_json=?,details_json=?,archive_key=?,archive_digest=? WHERE id=? AND archive_key IS NULL AND snapshot_json IS ? AND details_json IS ?${identityWhere}`)
       .bind(projected.snapshot_json,projected.details_json,key,checksum,row.id,row.snapshot_json,row.details_json,
         ...(target?[target.resourceKind,target.resourceId,target.actorUserId]:[])).run();
-    if(saved.meta.changes===1)result.converted++;else result.conflicts++;
+    if(saved.meta.changes===1)result.converted++;else {
+      result.conflicts++;
+      if(options.stopOnConflict)throw Error('History archive conflict');
+    }
   }
   return result;
 };
