@@ -57,6 +57,16 @@ it('does not overwrite concurrent archive/restore updates or claim foreign envir
     expect(await restoreHistoryRow(f.env,1)).toBe(false);expect(f.row().snapshot_json).toContain('third-owner');
   }finally{f.db.db.close();}
 });
+it('runs maintenance reservation before R2 and stops immediately on a conflict', async () => {
+  const f=setup();try {
+    await expect(archiveHistoryPage(f.env,{apply:true,beforeApply:()=>{throw Error('budget exhausted');}}))
+      .rejects.toThrow(/budget exhausted/);
+    expect(f.bucket.puts).toBe(0);expect(f.row().archive_key).toBeNull();
+    f.bucket.afterGet=()=>f.db.db.prepare("UPDATE resource_changes SET snapshot_json=json_set(snapshot_json,'$.ownerUserId','new-owner') WHERE id=1").run();
+    await expect(archiveHistoryPage(f.env,{apply:true,stopOnConflict:true})).rejects.toThrow(/conflict/i);
+    expect(f.row().archive_key).toBeNull();
+  }finally{f.db.db.close();}
+});
 it('keeps migrated metadata authoritative without changing immutable original details', async () => {
   const f=setup();try {
     await archiveHistoryPage(f.env,{apply:true});
