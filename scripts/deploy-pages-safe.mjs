@@ -21,7 +21,7 @@ const ENV_FILES_FOR_VITE = [".env", ".env.local", ".env.production", ".env.produ
 const LINK_PROFILE_CHART_PATH = path.join(root, "src", "components", "LinkProfileChart.tsx");
 
 const REQUIRED_ENV_BY_TARGET = {
-  staging: ["VITE_MAPTILER_KEY"],
+  staging: ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"],
   "staging-preview": ["VITE_MAPTILER_KEY"],
   "prod-main": ["VITE_MAPTILER_KEY"],
 };

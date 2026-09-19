@@ -36,6 +36,7 @@ type SidebarProps = {
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
   onSignInRequested?: () => void;
+  showSignInForAccessPilot?: boolean;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
   authBootstrapPending?: boolean;
@@ -50,6 +51,7 @@ export function Sidebar({
   onOpenHelp,
   onOpenSettings,
   onSignInRequested,
+  showSignInForAccessPilot = false,
   hideLibraryBrowsing = false,
   readOnly = false,
   authBootstrapPending = false,
@@ -413,7 +415,7 @@ export function Sidebar({
   };
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
-      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} showSignInForAccessPilot={showSignInForAccessPilot} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>

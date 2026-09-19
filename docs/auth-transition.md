@@ -46,10 +46,38 @@ Access identity while Access still protects staging `/api/*`. The future
 `better-auth` mode fails closed instead. Production and arbitrary preview hosts
 have no auth-runtime binding in this batch.
 
-The runtime has no public route and its default fetch handler returns 404. It
-has no OAuth provider, passkey plugin, login UI, registration, or migration flow
-yet. Those remain later batches after the staging boundary and operational
-measurements pass.
+Issue #1144 adds a single-account GitHub pilot on stable staging. Pages exposes
+only Better Auth's social-login initiation, GitHub callback, and logout routes;
+the session-check RPC remains private. The pilot requires an exact configured
+GitHub account ID and an exact existing LinkSim user ID. Session creation fails
+closed unless that pair has a current, eligible mapping. It does not perform an
+email claim or create a LinkSim account. Turnstile protects social-login
+initiation, Better Auth keeps its D1-backed rate limiter and CSRF/OAuth-state
+checks, and OAuth tokens are encrypted at rest.
+
+While Access remains the outer staging boundary, an Access-authenticated pilot
+user sees the existing sign-in chip and can establish the Better Auth session
+without losing the current workspace. Once Better Auth is authoritative for the
+request, the existing profile chip returns. Logout revokes Better Auth before
+using the existing Access logout path. The pilot flag, provider credentials,
+Turnstile widget, identity pair, Durable Object and cookies are stable-staging
+only; arbitrary previews and production remain unchanged.
+
+The Durable Object still has no public fetch route and returns 404 by default.
+General registration, email claims, migration, passkeys, GitLab and account
+linking remain later batches. Better Auth may create an inert internal
+user/account row before a mapping failure is known; such a failure creates no
+session or LinkSim mapping and a later valid retry remains idempotent.
+
+The staging GitHub OAuth application uses
+`https://staging.linksim.link/api/auth/callback/github`. The `staging` GitHub
+environment must provide `BETTER_AUTH_SECRET`,
+`BETTER_AUTH_GITHUB_CLIENT_ID`, `BETTER_AUTH_GITHUB_CLIENT_SECRET`,
+`VITE_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`,
+`AUTH_PILOT_GITHUB_ACCOUNT_ID`, and `AUTH_PILOT_LINKSIM_USER_ID`. The deployment
+workflow validates these inputs, installs the corresponding runtime secrets
+before deploying the Durable Object, and enables the browser pilot only for
+stable staging.
 
 ## Capacity gate
 

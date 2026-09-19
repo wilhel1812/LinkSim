@@ -160,14 +160,35 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(productionTerraformMain).not.toContain("pages_production_durable_object_namespaces");
   });
 
-  it("deploys the private auth runtime before the staging Pages application", () => {
-    const secret = deployWorkflow.indexOf("secret put BETTER_AUTH_SECRET");
+  it("configures the staging auth pilot before deploying its runtime and Pages application", () => {
+    const secretNames = [
+      "BETTER_AUTH_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
+      "TURNSTILE_SITE_KEY",
+      "TURNSTILE_SECRET_KEY",
+      "AUTH_PILOT_GITHUB_ACCOUNT_ID",
+      "AUTH_PILOT_LINKSIM_USER_ID",
+    ];
     const runtime = deployWorkflow.indexOf("wrangler deploy --config workers/auth-runtime/wrangler.staging.toml");
     const pages = deployWorkflow.indexOf("npm run deploy:staging");
     expect(runtime).toBeGreaterThan(0);
-    expect(secret).toBeGreaterThan(runtime);
-    expect(pages).toBeGreaterThan(secret);
-    expect(deployWorkflow).toContain("secrets.BETTER_AUTH_SECRET");
+    for (const secretName of secretNames) {
+      const secret = deployWorkflow.indexOf(`secret put ${secretName}`);
+      const sourceSecret = secretName === "TURNSTILE_SITE_KEY"
+        ? "VITE_TURNSTILE_SITE_KEY"
+        : secretName === "GITHUB_CLIENT_ID" || secretName === "GITHUB_CLIENT_SECRET"
+          ? `BETTER_AUTH_${secretName}`
+          : secretName;
+      expect(deployWorkflow).toContain(`secrets.${sourceSecret}`);
+      expect(secret).toBeGreaterThan(0);
+      expect(secret).toBeLessThan(runtime);
+    }
+    expect(pages).toBeGreaterThan(runtime);
     expect(deployWorkflow).toContain('test "${#BETTER_AUTH_SECRET}" -ge 32');
+    expect(deployWorkflow).toContain('VITE_BETTER_AUTH_PILOT: "true"');
+    expect(deployWorkflow).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(deployWorkflow).toContain("TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(productionTerraformMain).not.toContain("AUTH_PILOT_GITHUB_ACCOUNT_ID");
   });
 });

@@ -129,6 +129,7 @@ export type DeepLinkAuthState = "guest" | "authenticated" | "revoked";
 export type AuthStatusResult = {
   authenticated: boolean;
   authState: DeepLinkAuthState;
+  authSource: "access" | "better-auth" | "dev" | null;
 };
 export type DeepLinkStatusResult = {
   status: DeepLinkStatus;
@@ -140,6 +141,7 @@ export type DeepLinkStatusResult = {
 const normalizeAuthStatus = (data: {
   authenticated?: unknown;
   authState?: unknown;
+  authSource?: unknown;
 }): AuthStatusResult => {
   const authState: DeepLinkAuthState =
     data.authState === "authenticated" || data.authState === "revoked" || data.authState === "guest"
@@ -150,6 +152,10 @@ const normalizeAuthStatus = (data: {
   return {
     authenticated: data.authenticated === true,
     authState,
+    authSource:
+      data.authSource === "access" || data.authSource === "better-auth" || data.authSource === "dev"
+        ? data.authSource
+        : null,
   };
 };
 
@@ -523,6 +529,7 @@ export const fetchAuthStatus = async (): Promise<AuthStatusResult> => {
   const data = await apiCall<{
     authenticated?: unknown;
     authState?: unknown;
+    authSource?: unknown;
   }>("/api/public-simulation?mode=auth", { method: "GET" });
   return normalizeAuthStatus(data);
 };

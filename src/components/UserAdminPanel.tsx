@@ -85,6 +85,8 @@ type UserAdminPanelProps = {
    * When provided, clicking "Sign in" delegates sign-in handling to the shell.
    */
   onSignInRequested?: () => void;
+  /** Show the existing sign-in chip while Access still supplies the workspace during the Better Auth pilot. */
+  showSignInForAccessPilot?: boolean;
 };
 
 export function UserAdminPanel({
@@ -94,6 +96,7 @@ export function UserAdminPanel({
   renderMode = "chip",
   onOpenSettings,
   onSignInRequested,
+  showSignInForAccessPilot = false,
 }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
@@ -944,7 +947,7 @@ export function UserAdminPanel({
     <>
       <PanelToolbar
         title={
-          isSignedIn && displayUser ? (
+          isSignedIn && displayUser && !showSignInForAccessPilot ? (
             <button aria-label="Open user settings" className="user-chip" onClick={() => onOpenSettings?.()} type="button">
               <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
               {canModerate && unreadNotifications.length > 0 ? (

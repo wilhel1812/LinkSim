@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 
 import { makeAuthSessionLog, type AuthSessionResultCategory } from "./logging";
 import { authRuntimeOptions, type AuthRuntimeEnv } from "./options";
+import { hasExactRequestOrigin, isExposedAuthRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
 
 const SESSION_HEADERS = [
   "cookie",
@@ -12,6 +13,8 @@ const SESSION_HEADERS = [
   "user-agent",
   "cf-connecting-ip",
 ] as const;
+
+const AUTH_HEADERS = [...SESSION_HEADERS, "x-captcha-response"] as const;
 
 const responseCookies = (headers: Headers): string[] => {
   const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] };
@@ -59,6 +62,27 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
       console.info(JSON.stringify(makeAuthSessionLog(500, "error", Date.now() - started)));
       return { status: 500, setCookies: [] };
     }
+  }
+
+  async handleAuth(request: Request) {
+    if (!isExposedAuthRoute(request)) return new Response(null, { status: 404 });
+    if (requiresMutationOrigin(request) && !hasExactRequestOrigin(request)) {
+      return new Response(null, { status: 403 });
+    }
+
+    const headers = new Headers();
+    for (const name of AUTH_HEADERS) {
+      const value = request.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    const origin = new URL(this.env.AUTH_ORIGIN).origin;
+    const incoming = new URL(request.url);
+    const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
+    return this.auth.handler(new Request(url, {
+      method: request.method,
+      headers,
+      body: requiresMutationOrigin(request) ? await request.arrayBuffer() : undefined,
+    }));
   }
 
   fetch() {

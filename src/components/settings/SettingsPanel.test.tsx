@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CloudUser } from "../../lib/cloudUser";
 import { SettingsPanel } from "./SettingsPanel";
+
+const { signOutBetterAuthPilotMock } = vi.hoisted(() => ({
+  signOutBetterAuthPilotMock: vi.fn(),
+}));
+
+vi.mock("../../lib/betterAuthPilot", () => ({
+  isBetterAuthPilotEnabled: () => true,
+  signOutBetterAuthPilot: signOutBetterAuthPilotMock,
+}));
 
 // Stub sub-sections so SettingsPanel tests focus on panel-level behaviour.
 vi.mock("./sections/ProfileSection", () => ({
@@ -61,9 +70,11 @@ vi.mock("../../store/appStore", () => ({
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks();
   // Reset to non-admin, signed-out state.
   mockState.currentUser = null;
   mockState.authState = "checking";
+  signOutBetterAuthPilotMock.mockResolvedValue(undefined);
 
   // Stub history methods to avoid jsdom URL errors.
   vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
@@ -184,7 +195,7 @@ describe("SettingsPanel", () => {
     outsideButton.remove();
   });
 
-  it("clears the authenticated-session marker on explicit sign out", () => {
+  it("revokes Better Auth before clearing local state on explicit sign out", async () => {
     mockState.currentUser = {
       id: "u1",
       username: "Alice",
@@ -199,7 +210,34 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
-    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull();
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+    await waitFor(() => expect(signOutBetterAuthPilotMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull());
+    expect(mockState.setCurrentUser).toHaveBeenCalledWith(null);
+    expect(mockState.setAuthState).toHaveBeenCalledWith("signed_out");
+  });
+
+  it("retains the local authenticated state when Better Auth revocation fails", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    signOutBetterAuthPilotMock.mockRejectedValue(new Error("revocation failed"));
+    const onSignOutError = vi.fn();
+
+    render(<SettingsPanel initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(signOutBetterAuthPilotMock).toHaveBeenCalledOnce());
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+    expect(mockState.setAuthState).not.toHaveBeenCalledWith("signed_out");
+    expect(onSignOutError).toHaveBeenCalledWith("revocation failed");
   });
 
   it("switches to Preferences section when its nav item is clicked", () => {
