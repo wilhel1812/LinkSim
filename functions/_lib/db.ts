@@ -1,6 +1,6 @@
 import { encodeHistoryDetails } from "./historyDetails";
 import { hydrateHistoryRow, type ArchiveEnv } from "./historyArchive";
-import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
+import { BETTER_AUTH_MAPPED_IDENTITY_CLAIM, type CloudResourceRecord, type DbVisibility, type Env, type Grant, type ResourceRole, type UserRole, type Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
 import {
   normalizeUserSimulationDefaultsPreference,
@@ -1302,6 +1302,10 @@ export const ensureUser = async (
   userId: string,
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
+  // Better Auth identities have already been resolved through the durable
+  // auth-user -> LinkSim-user mapping for this request. The legacy Access path
+  // creates and reconciles identities, so it must never run for a mapped user.
+  if (tokenPayload?.[BETTER_AUTH_MAPPED_IDENTITY_CLAIM] === true) return;
   await ensureSchema(env);
   const now = new Date().toISOString();
   const email = deriveDefaultEmail(userId, tokenPayload);

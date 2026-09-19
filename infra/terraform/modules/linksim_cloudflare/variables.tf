@@ -48,6 +48,12 @@ variable "pages_production_env_vars_plain" {
   default     = {}
 }
 
+variable "pages_production_durable_object_namespaces" {
+  description = "Durable Object namespace IDs bound only to the Pages production branch, keyed by binding name."
+  type        = map(string)
+  default     = {}
+}
+
 variable "pages_access_audience_keys" {
   description = "Access application keys whose computed AUD values are published to Pages ACCESS_AUD."
   type        = set(string)

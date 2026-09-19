@@ -51,6 +51,23 @@ export async function findAuthIdentityByLinkSimUserId(db: D1Database, linksimUse
   return publicMapping(row);
 }
 
+export async function resolveCurrentAuthIdentity(db: D1Database, authUserId: string) {
+  const row = await db.prepare(`
+    SELECT mapping.auth_user_id, mapping.linksim_user_id
+    FROM auth_identity_map AS mapping
+    JOIN auth_user AS auth_user ON auth_user.id = mapping.auth_user_id
+    JOIN users AS link_user ON link_user.id = mapping.linksim_user_id
+    LEFT JOIN deleted_users AS deleted ON deleted.id = link_user.id
+    LEFT JOIN identity_subject_states AS state ON state.user_id = link_user.id
+    WHERE mapping.auth_user_id = ?
+      AND deleted.id IS NULL
+      AND (state.user_id IS NULL OR state.status = 'current')
+      AND (link_user.is_admin = 1 OR link_user.is_moderator = 1 OR link_user.is_approved = 1)
+    LIMIT 1
+  `).bind(authUserId).first<MappingRow>();
+  return publicMapping(row);
+}
+
 export async function attachAuthIdentity(
   db: D1Database,
   authUserId: string,

@@ -29,6 +29,28 @@ session tokens, cryptography, or recovery codes.
    work preservation, and tested migration flows.
 5. Staging rehearsal and separately approved protected production cutover.
 
+## Current integration batch
+
+Issue #1139 adds the first application integration beneath the existing staging
+Access boundary. Stable staging binds Pages Functions directly to the private
+`linksim-auth-runtime-staging` Durable Object and checks a Better Auth session
+once for each protected application request. The request reuses that result in
+existing handlers; application account state and permissions remain authoritative
+in D1.
+
+`AUTH_SESSION_SOURCE=transition` means a valid Better Auth session must resolve
+through the durable auth-user/LinkSim-user mapping and cannot fall back to an
+Access identity when that mapping is invalid. Requests with no Better Auth
+session, or a temporarily unavailable auth runtime, may use a fully verified
+Access identity while Access still protects staging `/api/*`. The future
+`better-auth` mode fails closed instead. Production and arbitrary preview hosts
+have no auth-runtime binding in this batch.
+
+The runtime has no public route and its default fetch handler returns 404. It
+has no OAuth provider, passkey plugin, login UI, registration, or migration flow
+yet. Those remain later batches after the staging boundary and operational
+measurements pass.
+
 ## Capacity gate
 
 Target 1,000 registered accounts with activity comparable to current users.

@@ -72,9 +72,9 @@ const recordId = (value: unknown): string | undefined => value && typeof value =
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     await assertUserAccess(env, auth.userId);
@@ -147,9 +147,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 };
 
-export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPut: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     const me = await assertUserAccess(env, auth.userId);

@@ -64,6 +64,10 @@ resource "cloudflare_pages_project" "project" {
     }
     production = {
       compatibility_date = var.pages_compatibility_date
+      durable_object_namespaces = {
+        for name, namespace_id in var.pages_production_durable_object_namespaces :
+        name => { namespace_id = namespace_id }
+      }
       d1_databases = {
         (var.d1_binding_name) = {
           id = var.d1_database_id

@@ -39,6 +39,18 @@ variable "pages_access_audience_keys" {
   default = []
 }
 
+variable "pages_production_durable_object_namespaces" {
+  type = map(string)
+
+  validation {
+    condition = (
+      length(var.pages_production_durable_object_namespaces) == 1 &&
+      can(regex("^[0-9a-f]{32}$", var.pages_production_durable_object_namespaces["AUTH"]))
+    )
+    error_message = "Stable staging requires exactly one AUTH Durable Object namespace ID."
+  }
+}
+
 variable "d1_database_name" {
   type = string
 }

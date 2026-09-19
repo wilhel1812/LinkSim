@@ -1,0 +1,21 @@
+name = "linksim-auth-runtime-staging"
+main = "index.ts"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[vars]
+AUTH_ORIGIN = "https://staging.linksim.link"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linksim_staging"
+database_id = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuthRuntime"]

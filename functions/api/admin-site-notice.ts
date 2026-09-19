@@ -2,13 +2,17 @@ import { verifyAuth } from "../_lib/auth";
 import { assertUserAccess, ensureUser, fetchUserProfile } from "../_lib/db";
 import { clearSiteNotice, publishSiteNotice, readSiteNotice } from "../_lib/siteNotice";
 import { ApiRequestError, errorResponse, handleOptions, json, readBoundedJson, withCors } from "../_lib/http";
-import type { Env } from "../_lib/types";
+import type { AuthRequestData, Env } from "../_lib/types";
 import { normalizeSiteNoticeDraft, type SiteNoticeDraft } from "../../src/lib/siteNotice";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-const requireAdmin = async (request: Request, env: Env): Promise<string | Response> => {
-  const auth = await verifyAuth(request, env);
+const requireAdmin = async (
+  request: Request,
+  env: Env,
+  data: AuthRequestData,
+): Promise<string | Response> => {
+  const auth = await verifyAuth(request, env, data);
   if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
   await ensureUser(env, auth.userId, auth.tokenPayload);
   await assertUserAccess(env, auth.userId);
@@ -18,9 +22,9 @@ const requireAdmin = async (request: Request, env: Env): Promise<string | Respon
   return auth.userId;
 };
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const actor = await requireAdmin(request, env);
+    const actor = await requireAdmin(request, env, data);
     if (actor instanceof Response) return actor;
     const notice = await readSiteNotice(env);
     return withCors(request, json({ notice }, { headers: { "cache-control": "no-store" } }));
@@ -29,9 +33,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 };
 
-export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPut: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const actorId = await requireAdmin(request, env);
+    const actorId = await requireAdmin(request, env, data);
     if (actorId instanceof Response) return actorId;
     const rawDraft = await readBoundedJson<unknown>(request, { maxBytes: 4096, maxDepth: 3 });
     let draft: SiteNoticeDraft;
@@ -51,9 +55,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   }
 };
 
-export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const actorId = await requireAdmin(request, env);
+    const actorId = await requireAdmin(request, env, data);
     if (actorId instanceof Response) return actorId;
     await clearSiteNotice(env, { actorId, source: "admin-panel" });
     return withCors(request, json({ notice: null }, { headers: { "cache-control": "no-store" } }));

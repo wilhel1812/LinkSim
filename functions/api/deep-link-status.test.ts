@@ -51,6 +51,20 @@ describe("api/deep-link-status", () => {
     });
   });
 
+  it("treats an unavailable optional auth runtime as a guest public check", async () => {
+    verifyAuthMock.mockRejectedValueOnce(new Error("Authentication runtime unavailable"));
+    const res = await onRequestGet(mkCtx(
+      new Request("https://example.test/api/deep-link-status?sim=sim-1"),
+    ));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      status: "ok",
+      simulationId: "sim-1",
+      authenticated: false,
+      authState: "guest",
+    });
+  });
+
   it("returns missing when simulation id is missing", async () => {
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status")));
     expect(res.status).toBe(200);

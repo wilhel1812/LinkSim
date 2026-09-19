@@ -10,6 +10,10 @@ const stagingWrangler = read("wrangler.staging.toml");
 const previewWrangler = read("wrangler.staging-preview.toml");
 const productionWrangler = read("wrangler.toml");
 const deployScript = read("scripts/deploy-pages-safe.mjs");
+const deployWorkflow = read(".github/workflows/deploy-pages.yml");
+const stagingTerraformMain = read("infra/terraform/environments/staging/main.tf");
+const productionTerraformMain = read("infra/terraform/environments/prod/main.tf");
+const terraformVariables = read("infra/terraform/modules/linksim_cloudflare/variables.tf");
 const runtimeTypes = read("functions/_lib/types.ts");
 const accessPolicyDocs = read("docs/access-policy-templates.md");
 const authSetupDocs = read("docs/cloudflare-auth-setup.md");
@@ -118,10 +122,52 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(deployScript).toContain('wrangler.staging-preview.toml');
     expect(deployScript).toContain('configPath: wranglerStagingPreview');
     expect(staging).toContain('history_r2_bucket_name');
-    expect(read("infra/terraform/environments/staging/main.tf")).toMatch(/pages_production_env_vars_plain\s*=\s*\{ HISTORY_SCOPE = "staging" \}/);
+    expect(stagingTerraformMain).toMatch(/pages_production_env_vars_plain\s*=\s*\{[\s\S]*HISTORY_SCOPE\s*=\s*"staging"[\s\S]*AUTH_SESSION_SOURCE\s*=\s*"transition"[\s\S]*\}/);
+    const sharedStagingVars = staging.split("pages_env_vars_plain = {")[1]?.split("}\n")[0] ?? "";
+    expect(sharedStagingVars).not.toContain("AUTH_SESSION_SOURCE");
     expect(production).not.toContain('history_r2_bucket_name');
     expect(previewWrangler).toBe(stagingWrangler
       .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
-      .replace('\nHISTORY_SCOPE = "staging"', ""));
+      .replace(/\n\[\[durable_objects\.bindings\]\]\nname = "AUTH"\nclass_name = "AuthRuntime"\nscript_name = "linksim-auth-runtime-staging"\n/, "")
+      .replace('\nHISTORY_SCOPE = "staging"', "")
+      .replace('\nAUTH_SESSION_SOURCE = "transition"', ""));
+  });
+
+  it("binds the private auth Durable Object only to stable staging", () => {
+    expect(stagingWrangler).toContain('name = "AUTH"');
+    expect(stagingWrangler).toContain('class_name = "AuthRuntime"');
+    expect(stagingWrangler).toContain('script_name = "linksim-auth-runtime-staging"');
+    expect(stagingWrangler).toContain('AUTH_SESSION_SOURCE = "transition"');
+    expect(deployScript).toContain("parseDurableObjectBindings");
+    expect(deployScript).toContain("unexpected Durable Object bindings");
+    expect(previewWrangler).not.toContain('name = "AUTH"');
+    expect(previewWrangler).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionWrangler).not.toContain('name = "AUTH"');
+    expect(productionWrangler).not.toContain("AUTH_SESSION_SOURCE");
+  });
+
+  it("keeps the staging Durable Object binding represented in Terraform", () => {
+    expect(terraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
+    expect(moduleSource).toContain("var.pages_production_durable_object_namespaces");
+    expect(stagingTerraformMain).toContain("pages_production_durable_object_namespaces");
+    expect(read("infra/terraform/environments/staging/variables.tf")).toContain(
+      "Stable staging requires exactly one AUTH Durable Object namespace ID.",
+    );
+    const namespaceVariable = read("infra/terraform/environments/staging/variables.tf")
+      .split('variable "pages_production_durable_object_namespaces" {')[1]
+      ?.split("\n}\n")[0] ?? "";
+    expect(namespaceVariable).not.toContain("default");
+    expect(productionTerraformMain).not.toContain("pages_production_durable_object_namespaces");
+  });
+
+  it("deploys the private auth runtime before the staging Pages application", () => {
+    const secret = deployWorkflow.indexOf("secret put BETTER_AUTH_SECRET");
+    const runtime = deployWorkflow.indexOf("wrangler deploy --config workers/auth-runtime/wrangler.staging.toml");
+    const pages = deployWorkflow.indexOf("npm run deploy:staging");
+    expect(runtime).toBeGreaterThan(0);
+    expect(secret).toBeGreaterThan(runtime);
+    expect(pages).toBeGreaterThan(secret);
+    expect(deployWorkflow).toContain("secrets.BETTER_AUTH_SECRET");
+    expect(deployWorkflow).toContain('test "${#BETTER_AUTH_SECRET}" -ge 32');
   });
 });
