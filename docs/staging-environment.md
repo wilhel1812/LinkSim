@@ -60,8 +60,13 @@ are rejected.
 This is a private application-data fixture, not a fully anonymous public dataset:
 resource payloads, history, locations, application IDs, and permissions remain.
 Use synthetic accounts for authentication/migration tests. A staging database
-with auth tables is deliberately blocked until an explicit credential reset
-workflow is added; never overwrite enrolled staging identities implicitly.
+may retain its own authentication tables and identity mappings while the
+allowlisted application tables are replaced. Production authentication data is
+never included in the export, and the refresh never overwrites enrolled staging
+credentials, sessions, passkeys, or mappings. A retained mapping can temporarily
+refer to a LinkSim user absent from the refreshed application fixture; runtime
+authentication must continue to reject it unless that current application user
+exists and remains eligible.
 The staging archive schema is additive; it does not enable application archive
 writes. Inline-only refreshes need no history-bucket credentials. If production
 history later contains archived rows, the refresh verifies each source object,

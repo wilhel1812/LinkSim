@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { selectExportTables, selectRefreshTables, sanitizeExport } from './staging-export.mjs';
 const schema = readFileSync('db/schema.sql', 'utf8');
 const archiveMigration = readFileSync('db/migrations/2026-09-18_history_archive.sql', 'utf8');
+const authMigration = readFileSync('db/migrations/2026-09-19_better_auth_schema.sql', 'utf8');
 describe('staging export boundary', () => {
   it('runs the archive-aware CLI for inline exports without R2 credentials', () => {
     const directory = mkdtempSync(join(tmpdir(), 'linksim-staging-cli-'));
@@ -47,7 +48,7 @@ INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id,
     expect(() => selectRefreshTables(['users'], ['users', 'sites'])).toThrow(/schema mismatch/);
     expect(() => selectRefreshTables(['users', 'sites'], ['users'])).toThrow(/schema mismatch/);
     expect(selectRefreshTables(['users', 'calculation_jobs'], ['users'])).toEqual(['users']);
-    expect(() => selectRefreshTables(['users'], ['users', 'auth_session'])).toThrow(/credential reset/);
+    expect(selectRefreshTables(['users'], ['users', 'auth_session', 'auth_identity_map'])).toEqual(['users']);
   });
   it('classifies the deployed schema including transient calculation jobs without exporting jobs', () => {
     const db = new DatabaseSync(':memory:');
@@ -79,6 +80,45 @@ INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id,
   it('rejects auth data or unknown tables accidentally present in an export', () => {
     expect(() => sanitizeExport(schema + '\nCREATE TABLE auth_session (token TEXT);')).toThrow();
     expect(() => sanitizeExport(schema + '\nCREATE TABLE unknown (secret TEXT);')).toThrow();
+  });
+  it('replaces application data without deleting target-local authentication data', () => {
+    const target = new DatabaseSync(':memory:');
+    try {
+      target.exec(schema);
+      target.exec(authMigration);
+      target.exec(`INSERT INTO users (id, username, created_at) VALUES ('shared-linksim', 'staging-name', '2026-01-01');
+        INSERT INTO auth_user (id, name, email, emailVerified, createdAt, updatedAt)
+          VALUES ('staging-auth', 'Staging', 'staging@example.invalid', 1, '2026-01-01', '2026-01-01');
+        INSERT INTO auth_identity_map VALUES ('staging-auth', 'shared-linksim', '2026-01-01');`);
+      const source = schema + "\nINSERT INTO users (id, username, created_at) VALUES ('shared-linksim', 'private-name', '2026-01-01');";
+      target.exec('BEGIN');
+      target.exec(sanitizeExport(source));
+      target.exec('COMMIT');
+      expect(target.prepare('SELECT id FROM auth_user').all()).toEqual([{ id: 'staging-auth' }]);
+      expect(target.prepare('SELECT auth_user_id FROM auth_identity_map').all()).toEqual([{ auth_user_id: 'staging-auth' }]);
+      expect(target.prepare('SELECT id FROM users').all()).toEqual([{ id: 'shared-linksim' }]);
+      expect(target.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally { target.close(); }
+  });
+  it('preserves target-local auth mappings when imported users no longer contain the mapped ID', () => {
+    const target = new DatabaseSync(':memory:');
+    try {
+      target.exec(schema);
+      target.exec(authMigration);
+      target.exec(`INSERT INTO users (id, username, created_at) VALUES ('staging-only', 'staging-name', '2026-01-01');
+        INSERT INTO auth_user (id, name, email, emailVerified, createdAt, updatedAt)
+          VALUES ('staging-auth', 'Staging', 'staging@example.invalid', 1, '2026-01-01', '2026-01-01');
+        INSERT INTO auth_identity_map VALUES ('staging-auth', 'staging-only', '2026-01-01');`);
+      const source = schema + "\nINSERT INTO users (id, username, created_at) VALUES ('production-only', 'private-name', '2026-01-01');";
+      target.exec('BEGIN');
+      target.exec(sanitizeExport(source));
+      target.exec('COMMIT');
+      expect(target.prepare('SELECT id FROM auth_user').all()).toEqual([{ id: 'staging-auth' }]);
+      expect(target.prepare('SELECT auth_user_id, linksim_user_id FROM auth_identity_map').all())
+        .toEqual([{ auth_user_id: 'staging-auth', linksim_user_id: 'staging-only' }]);
+      expect(target.prepare('SELECT id FROM users').all()).toEqual([{ id: 'production-only' }]);
+      expect(target.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally { target.close(); }
   });
   it('refuses archived history references before a staging import can copy production bucket keys', () => {
     const withArchiveColumns = schema + `

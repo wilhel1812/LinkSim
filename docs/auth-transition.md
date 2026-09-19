@@ -20,9 +20,10 @@ session tokens, cryptography, or recovery codes.
    per protected request. Reuse that result in the request; keep current
    application-account and resource authorization authoritative. No public route
    may expose an internal session check. Keep library session cookie caching off.
-3. Only after capacity passes: namespaced Better Auth tables and a unique
-   auth-user/application-user mapping, central API guard and route inventory,
-   preserving existing LinkSim IDs and API/resource response shapes.
+3. After the maintainer's qualified capacity acceptance, install namespaced
+   Better Auth tables and a unique auth-user/application-user mapping on staging.
+   Runtime integration, the central API guard and route inventory remain gated;
+   preserve existing LinkSim IDs and API/resource response shapes.
 4. Existing sign-in/settings UI integration, optional multiple passkeys,
    fresh-auth credential changes, safe same-origin return URLs, local unsynced
    work preservation, and tested migration flows.
@@ -55,13 +56,12 @@ Notice query analytics and request metrics are distinct; do not claim exact
 request savings from their ratio. Re-measure after foundations deploy.
 
 The [1,000-registered-account capacity decision](../experiments/better-auth/evidence/2026-09-18-registered-capacity-decision.md)
-reconciles the current request and storage sensitivities. As of September 18,
-the gate is **not passed**: the projected archived 50-account storage mix has
-only about 16.5% room under a conservative 500 MB/database ceiling at 1,000
-accounts, before auth tables or growth. That projection is not measured physical
-reclamation. Finish the operational archive path and representative account-wide
-measurements before beginning identity integration. This does not change the
-approved 1,000-registered-user target or the narrow D1-write exception.
+reconciles the current request and storage sensitivities. On September 19 the
+maintainer accepted that evidence for the narrow, reversible step of installing
+the additive auth schema on staging. The target remains 1,000 registered users.
+This does not approve production schema, auth runtime, routes, credentials,
+archive writes, Access removal or cutover. Account-wide runtime and quota gates
+remain open before any of those steps.
 
 ## Migration and recovery invariants
 

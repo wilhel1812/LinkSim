@@ -1,10 +1,12 @@
 # 1,000 registered accounts: capacity decision (2026-09-18)
 
-**Decision: capacity gate remains open.** The free-tier architecture is plausible
-at the requested **1,000 registered accounts with activity comparable to the
-current population**, but the available evidence does not establish sufficient
-storage and application-wide quota headroom. Do not begin identity integration
-or enable real archive writes on this estimate. Production remains on Access.
+**Decision updated September 19: qualified acceptance for reversible staging
+schema only.** The maintainer accepted the evidence below for installing the
+additive Better Auth schema and identity-map primitive on staging. The target
+remains **1,000 registered accounts with activity comparable to the current
+population**. This does not approve production schema, auth runtime, routes,
+credentials, archive writes, Access removal or cutover. Account-wide runtime
+and quota gates remain open before those steps. Production remains on Access.
 This decision uses existing observations; it adds no new live measurement.
 
 **Later same-day update:** [representative physical storage](2026-09-18-representative-physical-storage.md)
