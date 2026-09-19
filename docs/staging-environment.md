@@ -7,6 +7,9 @@ This project supports a separate staging stack with production-like data.
 - Staging Worker environment in [`wrangler.staging.toml`](../wrangler.staging.toml)
 - Private history bucket `linksim-history-staging` bound only to stable staging.
   Preview builds use a separate Wrangler configuration without that binding.
+- Private `linksim-auth-runtime-staging` Durable Object bound only to stable
+  staging. Pages uses its RPC session check under the existing Access API
+  boundary; the Worker has no public route or `workers.dev` hostname.
 - Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](../package.json)
 - Custom domain: https://staging.linksim.link
@@ -131,3 +134,8 @@ preview uses its own `https://<preview>.linksim-staging.pages.dev` API; it does
 not call the shared-staging API cross-origin. Originless API clients remain
 supported, while production, staging, and preview browser origins cannot call
 one another.
+
+Stable staging currently runs the auth boundary in `transition` mode. A mapped
+Better Auth session is authoritative when present; requests without one retain
+the verified Access fallback. Preview and production deployments do not receive
+the Durable Object binding or transition variable.

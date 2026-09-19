@@ -3,6 +3,22 @@ export type DbVisibility = "private" | "public_read" | "public_write";
 export type ResourceRole = "viewer" | "editor" | "admin";
 export type UserRole = "admin" | "moderator" | "user" | "pending";
 
+export const BETTER_AUTH_MAPPED_IDENTITY_CLAIM = "__linksim_better_auth_mapped";
+
+export type AuthRuntimeSessionResult = {
+  status: number;
+  authUserId?: string;
+  setCookies?: string[];
+};
+
+export type AuthRuntimeStub = {
+  checkSession(request: Request): Promise<AuthRuntimeSessionResult>;
+};
+
+export type AuthRuntimeNamespace = {
+  getByName(name: string): AuthRuntimeStub;
+};
+
 export type Grant = {
   userId: string;
   role: ResourceRole;
@@ -23,6 +39,8 @@ export type LibrarySnapshotPayload = {
 
 export type Env = {
   DB: D1Database;
+  AUTH?: AuthRuntimeNamespace;
+  AUTH_SESSION_SOURCE?: "access" | "transition" | "better-auth";
   // Disabled unless explicitly enabled after runtime/storage validation.
   HISTORY_DETAILS_COMPRESSION?: string;
   HISTORY_BUCKET?: R2Bucket;
@@ -51,5 +69,12 @@ export type AuthContext = {
   userId: string;
   tokenPayload: Record<string, unknown>;
   verifiedIdpEmail?: string;
-  source?: "jwt" | "headers" | "dev";
+  source?: "jwt" | "headers" | "dev" | "better-auth";
+  authUserId?: string;
+  setCookieHeaders?: string[];
+};
+
+export type AuthRequestData = Record<string, unknown> & {
+  authPromise?: Promise<AuthContext | null>;
+  authResponseCookies?: string[];
 };

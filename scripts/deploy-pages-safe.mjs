@@ -38,6 +38,11 @@ const TARGETS = {
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
       historyBucketName: "linksim-history-staging",
+      authRuntime: {
+        name: "AUTH",
+        className: "AuthRuntime",
+        scriptName: "linksim-auth-runtime-staging",
+      },
     },
   },
   "staging-preview": {
@@ -51,6 +56,7 @@ const TARGETS = {
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
       historyBucketName: "",
+      authRuntime: null,
     },
   },
   "prod-main": {
@@ -64,6 +70,7 @@ const TARGETS = {
       databaseName: "linksim",
       bucketName: "linksim-avatars",
       historyBucketName: "",
+      authRuntime: null,
     },
   },
 };
@@ -122,6 +129,15 @@ const parseTomlValue = (content, key) => {
 const parseR2Bindings = (content) => content.split("[[r2_buckets]]").slice(1).map((section) => {
   const body = section.split(/\n\s*\[/)[0];
   return { binding: parseTomlValue(body, "binding"), bucketName: parseTomlValue(body, "bucket_name") };
+});
+
+const parseDurableObjectBindings = (content) => content.split("[[durable_objects.bindings]]").slice(1).map((section) => {
+  const body = section.split(/\n\s*\[/)[0];
+  return {
+    name: parseTomlValue(body, "name"),
+    className: parseTomlValue(body, "class_name"),
+    scriptName: parseTomlValue(body, "script_name"),
+  };
 });
 
 const parseDotEnv = (content) => {
@@ -365,6 +381,7 @@ async function preflight(targetName, target) {
   const name = parseTomlValue(configText, "name");
   const databaseName = parseTomlValue(configText, "database_name");
   const r2Bindings = parseR2Bindings(configText);
+  const durableObjectBindings = parseDurableObjectBindings(configText);
   const expectedR2Bindings = [{ binding: "AVATAR_BUCKET", bucketName: target.expected.bucketName }];
   if (target.expected.historyBucketName) {
     expectedR2Bindings.push({ binding: "HISTORY_BUCKET", bucketName: target.expected.historyBucketName });
@@ -378,6 +395,11 @@ async function preflight(targetName, target) {
     `Preflight failed: unexpected R2 bindings for ${targetName}.`);
   assert(parseTomlValue(configText, "HISTORY_SCOPE") === (targetName === "staging" ? "staging" : ""),
     `Preflight failed: unexpected HISTORY_SCOPE for ${targetName}.`);
+  const expectedDurableObjectBindings = target.expected.authRuntime ? [target.expected.authRuntime] : [];
+  assert(JSON.stringify(durableObjectBindings) === JSON.stringify(expectedDurableObjectBindings),
+    `Preflight failed: unexpected Durable Object bindings for ${targetName}.`);
+  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === (targetName === "staging" ? "transition" : ""),
+    `Preflight failed: unexpected AUTH_SESSION_SOURCE for ${targetName}.`);
 
   await verifyRemoteSchema(targetName, databaseName);
 

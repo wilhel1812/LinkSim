@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
-import { inspectAuthRequest, verifyAuth } from "./auth";
+import { AuthRuntimeUnavailableError, authResponseCookies, inspectAuthRequest, verifyAuth } from "./auth";
 import type { Env } from "./types";
 
 const makeEnv = (overrides?: Partial<Env>): Env =>
@@ -61,6 +61,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_AUD: "aud", ACCESS_TEAM_DOMAIN: "team.example" }),
+      undefined,
       decodeTestJwt,
     );
     expect(auth).toBeNull();
@@ -82,6 +83,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "staging-aud, preview-aud" }),
+      undefined,
       decodeTestJwt,
     );
 
@@ -107,6 +109,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "preview-aud" }),
+      undefined,
       decodeTestJwt,
     );
 
@@ -141,6 +144,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "staging-aud,preview-aud" }),
+      undefined,
       decodeTestJwt,
     );
 
@@ -164,6 +168,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "preview-aud" }),
+      undefined,
       decodeTestJwt,
     );
 
@@ -193,6 +198,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example" }),
+      undefined,
       decodeTestJwt,
     );
     expect(auth).toBeNull();
@@ -210,6 +216,7 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(
       request,
       makeEnv({ ACCESS_TEAM_DOMAIN: "team.example" }),
+      undefined,
       decodeTestJwt,
     );
     expect(auth?.userId).toBe("user-123");
@@ -242,5 +249,110 @@ describe("verifyAuth", () => {
     );
     expect(auth?.userId).toBe("local-dev");
     expect(auth?.source).toBe("dev");
+  });
+
+  it("checks the private runtime once per request and maps the Better Auth user", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: { cookie: "better-auth.session_token=session" },
+    });
+    let checks = 0;
+    const env = makeEnv({
+      AUTH_SESSION_SOURCE: "better-auth",
+      AUTH: {
+        getByName: () => ({
+          checkSession: async (forwarded: Request) => {
+            checks += 1;
+            expect(forwarded.headers.get("cookie")).toContain("better-auth.session_token");
+            expect(forwarded.headers.get("cf-access-jwt-assertion")).toBeNull();
+            return {
+              status: 200,
+              authUserId: "auth-1",
+              setCookies: ["better-auth.session_token=refreshed; Secure; HttpOnly"],
+            };
+          },
+        }),
+      },
+      DB: {
+        prepare: () => ({
+          bind: () => ({ first: async () => ({ auth_user_id: "auth-1", linksim_user_id: "linksim-1" }) }),
+        }),
+      } as unknown as D1Database,
+    });
+
+    const first = await verifyAuth(request, env);
+    const second = await verifyAuth(request, env);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      userId: "linksim-1",
+      source: "better-auth",
+      authUserId: "auth-1",
+      setCookieHeaders: ["better-auth.session_token=refreshed; Secure; HttpOnly"],
+    });
+    expect(checks).toBe(1);
+  });
+
+  it("does not fall back to Access when an authenticated Better Auth identity is unmapped", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: { "cf-access-authenticated-user-id": "access-user" },
+    });
+    const auth = await verifyAuth(request, makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: { getByName: () => ({ checkSession: async () => ({ status: 200, authUserId: "auth-1", setCookies: [] }) }) },
+      DB: {
+        prepare: () => ({ bind: () => ({ first: async () => null }) }),
+      } as unknown as D1Database,
+    }));
+    expect(auth).toBeNull();
+  });
+
+  it("falls back to Access for no Better Auth session only in transition mode", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: { "cf-access-authenticated-user-id": "access-user" },
+    });
+    const auth = await verifyAuth(request, makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: { getByName: () => ({ checkSession: async () => ({
+        status: 401,
+        setCookies: ["better-auth.session_token=; Max-Age=0; Secure; HttpOnly"],
+      }) }) },
+    }));
+    expect(auth).toMatchObject({ userId: "access-user", source: "headers" });
+    expect(authResponseCookies(request)).toEqual([
+      "better-auth.session_token=; Max-Age=0; Secure; HttpOnly",
+    ]);
+  });
+
+  it("falls back on runtime failure only in transition mode and fails closed after cutover", async () => {
+    const runtime = { getByName: () => ({ checkSession: async () => { throw new Error("offline"); } }) };
+    const transitionRequest = new Request("https://staging.linksim.link/api/me", {
+      headers: { "cf-access-authenticated-user-id": "access-user" },
+    });
+    await expect(verifyAuth(transitionRequest, makeEnv({
+      AUTH_SESSION_SOURCE: "transition", AUTH: runtime,
+    }))).resolves.toMatchObject({ userId: "access-user" });
+
+    const cutoverRequest = new Request("https://staging.linksim.link/api/me");
+    await expect(verifyAuth(cutoverRequest, makeEnv({
+      AUTH_SESSION_SOURCE: "better-auth", AUTH: runtime,
+    }))).rejects.toBeInstanceOf(AuthRuntimeUnavailableError);
+  });
+
+  it("never switches to Access after Better Auth succeeds but mapping resolution fails", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: { "cf-access-authenticated-user-id": "different-access-user" },
+    });
+    const env = makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: {
+        getByName: () => ({
+          checkSession: async () => ({ status: 200, authUserId: "auth-1", setCookies: [] }),
+        }),
+      },
+      DB: {
+        prepare: () => { throw new Error("D1 unavailable"); },
+      } as unknown as D1Database,
+    });
+
+    await expect(verifyAuth(request, env)).rejects.toBeInstanceOf(AuthRuntimeUnavailableError);
   });
 });

@@ -11,9 +11,9 @@ import type { Env } from "../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
 
     await ensureUser(env, auth.userId, auth.tokenPayload);

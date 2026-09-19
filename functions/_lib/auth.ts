@@ -3,7 +3,14 @@ import {
   jwtVerify,
   type JWTPayload,
 } from "jose";
-import type { AuthContext, Env } from "./types";
+import { resolveCurrentAuthIdentity } from "./authIdentityMap";
+import {
+  BETTER_AUTH_MAPPED_IDENTITY_CLAIM,
+  type AuthContext,
+  type AuthRequestData,
+  type AuthRuntimeSessionResult,
+  type Env,
+} from "./types";
 
 
 export class AuthVerificationTimeoutError extends Error {
@@ -13,10 +20,26 @@ export class AuthVerificationTimeoutError extends Error {
   }
 }
 
+export class AuthRuntimeUnavailableError extends Error {
+  constructor() {
+    super("Authentication runtime unavailable");
+    this.name = "AuthRuntimeUnavailableError";
+  }
+}
+
 type AccessTokenVerifier = (token: string, env: Env) => Promise<JWTPayload>;
 
 const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 const VERIFIED_IDP_EMAIL_CLAIM = "__linksim_verified_idp_email";
+const authRequestCache = new WeakMap<Request, Promise<AuthContext | null>>();
+const authResponseCookieCache = new WeakMap<Request, string[]>();
+const FORWARDED_AUTH_HEADERS = [
+  "cookie",
+  "content-type",
+  "accept",
+  "user-agent",
+  "cf-connecting-ip",
+] as const;
 
 const normalizeTeamDomain = (raw: string): string => {
   const trimmed = raw.trim();
@@ -239,7 +262,7 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
   };
 };
 
-export const verifyAuth = async (
+const verifyAccessAuth = async (
   request: Request,
   env: Env,
   verifier: AccessTokenVerifier = verifyAccessToken,
@@ -283,4 +306,125 @@ export const verifyAuth = async (
   }
   emitAuthLog(env, { result: "fail", reason: "no_auth_context", ...authSignals });
   return null;
+};
+
+type BetterAuthResult =
+  | { kind: "no-session"; setCookieHeaders: string[] }
+  | { kind: "authenticated"; authUserId: string; setCookieHeaders: string[] };
+
+const checkBetterAuthSession = async (
+  request: Request,
+  env: Env,
+): Promise<BetterAuthResult> => {
+  if (!env.AUTH) throw new AuthRuntimeUnavailableError();
+
+  const headers = new Headers();
+  for (const name of FORWARDED_AUTH_HEADERS) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  const requestOrigin = new URL(request.url).origin;
+  if (request.headers.get("origin") === requestOrigin) {
+    headers.set("origin", requestOrigin);
+  }
+
+  let result: AuthRuntimeSessionResult;
+  try {
+    result = await env.AUTH.getByName("auth").checkSession(new Request(
+      `${requestOrigin}/api/auth/get-session`,
+      { method: "GET", headers },
+    ));
+  } catch {
+    throw new AuthRuntimeUnavailableError();
+  }
+
+  const setCookieHeaders = Array.isArray(result.setCookies)
+    ? result.setCookies.filter((cookie): cookie is string => typeof cookie === "string" && cookie.length > 0)
+    : [];
+  if (result.status === 401) return { kind: "no-session", setCookieHeaders };
+  if (result.status !== 200 || typeof result.authUserId !== "string" || !result.authUserId.trim()) {
+    throw new AuthRuntimeUnavailableError();
+  }
+
+  const authUserId = result.authUserId.trim();
+  return { kind: "authenticated", authUserId, setCookieHeaders };
+};
+
+const resolveBetterAuthContext = async (
+  env: Env,
+  session: Extract<BetterAuthResult, { kind: "authenticated" }>,
+): Promise<AuthContext | null> => {
+  let mapping;
+  try {
+    mapping = await resolveCurrentAuthIdentity(env.DB, session.authUserId);
+  } catch {
+    // Once Better Auth has authenticated a session, never switch that request
+    // to an Access identity because application identity resolution failed.
+    throw new AuthRuntimeUnavailableError();
+  }
+  if (!mapping) return null;
+  return {
+    userId: mapping.linksimUserId,
+    authUserId: session.authUserId,
+    source: "better-auth",
+    setCookieHeaders: session.setCookieHeaders,
+    tokenPayload: {
+      [BETTER_AUTH_MAPPED_IDENTITY_CLAIM]: true,
+    },
+  };
+};
+
+const verifyConfiguredAuth = async (
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier,
+  data?: AuthRequestData,
+): Promise<AuthContext | null> => {
+  const source = env.AUTH_SESSION_SOURCE ?? "access";
+  if (source === "access") return verifyAccessAuth(request, env, verifier);
+
+  let betterAuth: BetterAuthResult;
+  try {
+    betterAuth = await checkBetterAuthSession(request, env);
+  } catch (error) {
+    if (source === "better-auth") throw error;
+    emitAuthLog(env, { result: "fallback", source: "better-auth", reason: "runtime_unavailable" });
+    return verifyAccessAuth(request, env, verifier);
+  }
+
+  if (betterAuth.kind === "authenticated") {
+    const context = await resolveBetterAuthContext(env, betterAuth);
+    authResponseCookieCache.set(request, betterAuth.setCookieHeaders);
+    if (data) data.authResponseCookies = betterAuth.setCookieHeaders;
+    emitAuthLog(env, {
+      result: context ? "ok" : "fail",
+      source: "better-auth",
+      reason: context ? undefined : "identity_mapping_invalid",
+    });
+    return context;
+  }
+  authResponseCookieCache.set(request, betterAuth.setCookieHeaders);
+  if (data) data.authResponseCookies = betterAuth.setCookieHeaders;
+  if (source === "better-auth") return null;
+
+  return verifyAccessAuth(request, env, verifier);
+};
+
+export const authResponseCookies = (request: Request, data?: AuthRequestData): string[] =>
+  data?.authResponseCookies ?? authResponseCookieCache.get(request) ?? [];
+
+export const verifyAuth = (
+  request: Request,
+  env: Env,
+  data?: AuthRequestData,
+  verifier: AccessTokenVerifier = verifyAccessToken,
+): Promise<AuthContext | null> => {
+  if (data?.authPromise) return data.authPromise;
+  let pending = authRequestCache.get(request);
+  if (!pending) {
+    pending = verifyConfiguredAuth(request, env, verifier, data);
+    authRequestCache.set(request, pending);
+  }
+  if (data) data.authPromise = pending;
+  return pending;
 };

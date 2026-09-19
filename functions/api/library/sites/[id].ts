@@ -5,9 +5,9 @@ import type { Env } from "../../../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     const me = await assertUserAccess(env, auth.userId);

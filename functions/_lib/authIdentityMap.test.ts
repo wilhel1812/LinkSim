@@ -9,6 +9,7 @@ import {
   attachAuthIdentity,
   findAuthIdentityByAuthUserId,
   findAuthIdentityByLinkSimUserId,
+  resolveCurrentAuthIdentity,
 } from "./authIdentityMap";
 import { SqliteD1 } from "./testSqliteD1";
 
@@ -24,10 +25,10 @@ describe("auth identity mapping", () => {
     database = new SqliteD1();
     database.db.exec(migration);
     database.db.prepare(
-      "INSERT INTO users (id, username, created_at) VALUES (?, ?, ?)",
+      "INSERT INTO users (id, username, is_approved, created_at) VALUES (?, ?, 1, ?)",
     ).run("linksim-1", "first", "2026-09-19T00:00:00.000Z");
     database.db.prepare(
-      "INSERT INTO users (id, username, created_at) VALUES (?, ?, ?)",
+      "INSERT INTO users (id, username, is_approved, created_at) VALUES (?, ?, 1, ?)",
     ).run("linksim-2", "second", "2026-09-19T00:00:00.000Z");
     for (const [id, email] of [["auth-1", "first@example.invalid"], ["auth-2", "second@example.invalid"]]) {
       database.db.prepare(`INSERT INTO auth_user
@@ -135,6 +136,50 @@ describe("auth identity mapping", () => {
     });
     await expect(findAuthIdentityByAuthUserId(db, "missing")).resolves.toBeNull();
     await expect(findAuthIdentityByLinkSimUserId(db, "missing")).resolves.toBeNull();
+  });
+
+  it("resolves only mappings to a current live LinkSim account", async () => {
+    const db = database as unknown as D1Database;
+    await attachAuthIdentity(db, "auth-1", "linksim-1");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toEqual({
+      authUserId: "auth-1", linksimUserId: "linksim-1",
+    });
+
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, created_at, updated_at) VALUES (?, 'blocked', ?, ?)`)
+      .run("linksim-1", "2026-09-19T00:00:00.000Z", "2026-09-19T00:00:00.000Z");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toBeNull();
+
+    database.db.prepare("UPDATE identity_subject_states SET status = 'superseded' WHERE user_id = ?")
+      .run("linksim-1");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toBeNull();
+
+    database.db.prepare("UPDATE identity_subject_states SET status = 'current' WHERE user_id = ?")
+      .run("linksim-1");
+    database.db.prepare("INSERT INTO deleted_users (id, deleted_at) VALUES (?, ?)")
+      .run("linksim-1", "2026-09-19T00:00:00.000Z");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toBeNull();
+  });
+
+  it("rejects pending and revoked application accounts", async () => {
+    const db = database as unknown as D1Database;
+    await attachAuthIdentity(db, "auth-1", "linksim-1");
+    database.db.prepare(
+      "UPDATE users SET is_approved = 0, approved_by_user_id = NULL WHERE id = ?",
+    ).run("linksim-1");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toBeNull();
+
+    database.db.prepare(
+      "UPDATE users SET approved_by_user_id = 'revoked:administrator' WHERE id = ?",
+    ).run("linksim-1");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toBeNull();
+
+    database.db.prepare(
+      "UPDATE users SET is_admin = 1 WHERE id = ?",
+    ).run("linksim-1");
+    await expect(resolveCurrentAuthIdentity(db, "auth-1")).resolves.toEqual({
+      authUserId: "auth-1", linksimUserId: "linksim-1",
+    });
   });
 
   it("has one winner when concurrent claims target the same LinkSim user", async () => {
