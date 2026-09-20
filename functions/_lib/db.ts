@@ -861,7 +861,7 @@ const readVerifiedIdentityCommandState = async (
     }>()) ?? { claim_status: null, current_user_id: null, subject_status: null, deleted_at: null };
 
 export const executeVerifiedIdentityEnsure = async (
-  env: Pick<Env, "DB">,
+  env: Pick<Env, "DB" | "AUTH_SESSION_SOURCE">,
   input: VerifiedIdentityEnsureInput,
 ): Promise<void> => {
   const { userId, email: normalizedEmail, defaultEmail, bootstrapAdmin, now } = input;
@@ -872,9 +872,8 @@ export const executeVerifiedIdentityEnsure = async (
       SELECT 1 FROM identity_subject_states
       WHERE user_id = ? AND status IN ('superseded', 'blocked')
     ) AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?)`;
-
-  await env.DB.batch([
-    env.DB
+  const mappedClaimGuard = env.AUTH_SESSION_SOURCE === "transition"
+    ? [env.DB
       .prepare(
         `INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
          SELECT meta.singleton, meta.version, meta.applied_at
@@ -888,7 +887,11 @@ export const executeVerifiedIdentityEnsure = async (
                AND claim.current_user_id <> ?
            )`,
       )
-      .bind(normalizedEmail, userId),
+      .bind(normalizedEmail, userId)]
+    : [];
+
+  await env.DB.batch([
+    ...mappedClaimGuard,
     env.DB
       .prepare(
         `INSERT INTO verified_identity_claims

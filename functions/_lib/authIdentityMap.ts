@@ -215,9 +215,13 @@ export async function provisionAuthIdentity(
         FROM auth_user AS auth
         WHERE auth.id = ? AND auth.emailVerified = 1 AND lower(trim(auth.email)) = ?
           AND (SELECT COUNT(*) FROM auth_account AS account
-               WHERE account.userId = auth.id AND account.providerId = 'github'
-                 AND account.accountId = ? AND account.accountId GLOB '[0-9]*'
-                 AND account.accountId NOT GLOB '*[^0-9]*') = 1
+               WHERE account.userId = auth.id AND account.providerId = 'github') = 1
+          AND EXISTS (
+            SELECT 1 FROM auth_account AS account
+            WHERE account.userId = auth.id AND account.providerId = 'github'
+              AND account.accountId = ? AND account.accountId GLOB '[0-9]*'
+              AND account.accountId NOT GLOB '*[^0-9]*'
+          )
           AND NOT EXISTS (SELECT 1 FROM verified_identity_claims WHERE normalized_email = ?)
           AND NOT EXISTS (SELECT 1 FROM identity_subject_states WHERE normalized_email = ?)
           AND NOT EXISTS (

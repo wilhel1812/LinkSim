@@ -71,9 +71,6 @@ export class SqliteD1 {
       );
       INSERT INTO identity_lifecycle_meta VALUES
         (1, '2026-08-12-identity-lifecycle-v1', '2026-08-12T00:00:00.000Z');
-      CREATE TABLE auth_identity_map (
-        auth_user_id TEXT PRIMARY KEY, linksim_user_id TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL
-      );
       CREATE TABLE user_identity_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, target_user_id TEXT NOT NULL,
         source_user_id TEXT, actor_user_id TEXT, idp_email TEXT, details_json TEXT, created_at TEXT NOT NULL

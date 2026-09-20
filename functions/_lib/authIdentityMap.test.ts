@@ -23,7 +23,6 @@ describe("auth identity mapping", () => {
 
   beforeEach(() => {
     database = new SqliteD1();
-    database.db.exec("DROP TABLE auth_identity_map");
     database.db.exec(migration);
     database.db.prepare(
       "INSERT INTO users (id, username, is_approved, created_at) VALUES (?, ?, 1, ?)",

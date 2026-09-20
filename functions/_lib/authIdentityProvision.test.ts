@@ -283,6 +283,10 @@ describe("Better Auth identity provisioning", () => {
   it.each([
     ["email verification", () => database.db.prepare("UPDATE auth_user SET emailVerified = 0 WHERE id = 'auth-1'").run()],
     ["GitHub account", () => database.db.prepare("UPDATE auth_account SET accountId = 'invalid' WHERE userId = 'auth-1'").run()],
+    ["second GitHub account", () => database.db.prepare(`INSERT INTO auth_account
+      (id, accountId, providerId, userId, createdAt, updatedAt)
+      VALUES ('account-auth-1-second', '67890', 'github', 'auth-1', ?, ?)`)
+      .run(BEFORE_DEADLINE, BEFORE_DEADLINE)],
     ["legacy evidence", () => database.db.prepare(`INSERT INTO identity_subject_states
       (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
       VALUES ('late-legacy', 'new@example.org', 'current', 'late-legacy', 1, ?, ?)`)
