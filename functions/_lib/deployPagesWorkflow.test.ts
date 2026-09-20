@@ -283,10 +283,18 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(deployScript).toContain("users.basemap_preferences_json");
   });
 
-  it("keeps MapTiler required and passes CARTO only as an optional build secret", () => {
-    expect(deployScript).toContain('staging: ["VITE_MAPTILER_KEY"]');
+  it("requires the staging auth pilot inputs and passes CARTO only as an optional build secret", () => {
+    expect(deployScript).toContain(
+      'staging: ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"]',
+    );
+    expect(deployScript).toContain('"staging-preview": ["VITE_MAPTILER_KEY"]');
+    expect(deployScript).toContain('"prod-main": ["VITE_MAPTILER_KEY"]');
     expect(deployScript).not.toContain('staging: ["VITE_MAPTILER_KEY", "VITE_CARTO_KEY"]');
     expect(workflow).toContain("VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}");
+    expect(stagingJob).toContain('VITE_BETTER_AUTH_PILOT: "true"');
+    expect(stagingJob).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(previewJob).not.toContain("VITE_BETTER_AUTH_PILOT");
+    expect(productionJob).not.toContain("VITE_BETTER_AUTH_PILOT");
   });
 
   it("fetches the production baseline before validating a staging deployment", () => {

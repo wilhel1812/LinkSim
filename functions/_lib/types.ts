@@ -13,6 +13,7 @@ export type AuthRuntimeSessionResult = {
 
 export type AuthRuntimeStub = {
   checkSession(request: Request): Promise<AuthRuntimeSessionResult>;
+  handleAuth(request: Request): Promise<Response>;
 };
 
 export type AuthRuntimeNamespace = {

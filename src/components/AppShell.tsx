@@ -14,6 +14,11 @@ import {
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import {
+  consumeAuthCallbackError,
+  isBetterAuthPilotEnabled,
+  signInWithGithubPilot,
+} from "../lib/betterAuthPilot";
 import { parseRadioPresetShareHash, type RadioPresetShareParseResult } from "../lib/radioPresetShare";
 import { normalizeUserSimulationDefaultsPreference } from "../lib/simulationDefaults";
 import { buildImportedRadioPresetPreference } from "../lib/radioPresetImport";
@@ -198,6 +203,7 @@ export function AppShell() {
   const [inspectorMotionPhase, setInspectorMotionPhase] = useState<PanelMotionPhase>("idle");
   const [profileMotionPhase, setProfileMotionPhase] = useState<PanelMotionPhase>("idle");
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
+  const [authSource, setAuthSource] = useState<"access" | "better-auth" | "dev" | null>(null);
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [showUsernameSetup, setShowUsernameSetup] = useState(false);
@@ -337,6 +343,7 @@ export function AppShell() {
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
+  const betterAuthPilotEnabled = isBetterAuthPilotEnabled();
 
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
   const activeSimulation = useMemo(
@@ -350,6 +357,14 @@ export function AppShell() {
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (!betterAuthPilotEnabled || !consumeAuthCallbackError(window.location, window.history)) return;
+    pushNotification({
+      id: "github-sign-in-failed",
+      message: "GitHub sign-in failed. Try again.",
+      tone: "error",
+    });
+  }, [betterAuthPilotEnabled, pushNotification]);
   const dismissNotification = useCallback((id: string) => {
     setUiNotifications((current) => {
       const next = dismissUiNotification(current, id);
@@ -597,10 +612,22 @@ export function AppShell() {
     }
   }, []);
 
-  const handleUserSignInRequested = useCallback(() => {
+  const handleUserSignInRequested = useCallback(async () => {
     clearAuthRetryTimer();
+    if (betterAuthPilotEnabled) {
+      try {
+        await signInWithGithubPilot(window.location);
+      } catch (error) {
+        pushNotification({
+          id: "github-sign-in-failed",
+          message: getUiErrorMessage(error),
+          tone: "error",
+        });
+      }
+      return;
+    }
     window.location.href = buildAuthStartPath(window.location);
-  }, [clearAuthRetryTimer]);
+  }, [betterAuthPilotEnabled, clearAuthRetryTimer, pushNotification]);
 
   const clearPresetImport = useCallback(() => {
     setPresetImport(null);
@@ -861,6 +888,7 @@ export function AppShell() {
           if (!isLocalRuntime) {
             const authStatus = await fetchAuthStatus();
             if (!isCurrentRun()) return;
+            setAuthSource(authStatus.authSource);
             const bootstrapState = resolveAuthBootstrapState({
               authState: authStatus.authState,
               hadAuthenticatedSession: hadAuthenticatedSessionRef.current,
@@ -889,6 +917,7 @@ export function AppShell() {
             hadAuthenticatedSessionRef.current = true;
             failureStage = "profile";
           }
+          if (isLocalRuntime) setAuthSource("dev");
           const profile = await fetchMe({ timeoutMs: ACCESS_FETCH_TIMEOUT_MS });
           if (!isCurrentRun()) return;
           window.clearTimeout(timeoutId);
@@ -2083,6 +2112,7 @@ export function AppShell() {
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
             onSignInRequested={handleUserSignInRequested}
+            showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
             readOnly={!canPersistWorkspace}
             renderedBasemapAttribution={renderedBasemapAttribution}
             panelToggleControl={
@@ -2303,6 +2333,7 @@ export function AppShell() {
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
                 onSignInRequested={handleUserSignInRequested}
+                showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
                 readOnly={!canPersistWorkspace}
                 renderedBasemapAttribution={renderedBasemapAttribution}
                 panelToggleControl={panelSizeControls("Navigator")}
@@ -2401,7 +2432,13 @@ export function AppShell() {
           tier="raised"
         >
           <div className="library-manager-card settings-panel-wrapper">
-            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} suspended={Boolean(presetImport)} />
+            <SettingsPanel
+              authSource={authSource}
+              initialSection={settingsRoute.section}
+              onClose={closeSettings}
+              onSignOutError={(message) => pushNotification({ id: "sign-out-failed", message, tone: "error" })}
+              suspended={Boolean(presetImport)}
+            />
           </div>
         </ModalOverlay>
       ) : null}

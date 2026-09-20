@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 
 const hoisted = vi.hoisted(() => {
   const fetchMe = vi.fn();
@@ -9,6 +9,7 @@ const hoisted = vi.hoisted(() => {
   const fetchCloudLibrary = vi.fn();
   const fetchPublicSimulationLibrary = vi.fn();
   const loadSimulationPreset = vi.fn();
+  const signInWithGithubPilot = vi.fn();
 
   const state: Record<string, unknown> = {
     srtmTiles: [{ id: "tile-1" }],
@@ -72,6 +73,9 @@ const hoisted = vi.hoisted(() => {
     fetchCloudLibrary,
     fetchPublicSimulationLibrary,
     loadSimulationPreset,
+    signInWithGithubPilot,
+    betterAuthPilotEnabled: false,
+    authCallbackError: false,
     runtimeEnvironment: "production",
     state,
     useAppStore,
@@ -119,12 +123,23 @@ vi.mock("../lib/environment", () => ({
   getCurrentRuntimeEnvironment: () => hoisted.runtimeEnvironment,
 }));
 
+vi.mock("../lib/betterAuthPilot", () => ({
+  consumeAuthCallbackError: vi.fn(() => hoisted.authCallbackError),
+  isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
+  signInWithGithubPilot: hoisted.signInWithGithubPilot,
+}));
+
 vi.mock("../store/appStore", () => ({
   useAppStore: hoisted.useAppStore,
 }));
 
 vi.mock("./MapView", () => ({ MapView: () => null }));
-vi.mock("./Sidebar", () => ({ Sidebar: () => null }));
+vi.mock("./Sidebar", () => ({
+  Sidebar: ({ onSignInRequested, showSignInForAccessPilot }: { onSignInRequested?: () => void; showSignInForAccessPilot?: boolean }) =>
+    showSignInForAccessPilot
+      ? React.createElement("button", { onClick: onSignInRequested }, "Pilot sign in")
+      : null,
+}));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
 vi.mock("./WelcomeModal", () => ({ default: () => null }));
 vi.mock("./OnboardingTutorialModal", () => ({ default: () => null }));
@@ -223,6 +238,9 @@ describe("AppShell deeplink cold-load flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hoisted.runtimeEnvironment = "production";
+    hoisted.betterAuthPilotEnabled = false;
+    hoisted.authCallbackError = false;
+    hoisted.signInWithGithubPilot.mockResolvedValue("started");
     installLocalStorageMock();
     vi.stubGlobal("React", React);
     Object.assign(hoisted.state, {
@@ -299,6 +317,41 @@ describe("AppShell deeplink cold-load flow", () => {
     expect(buildAuthStartPath({ pathname: "/sim/site", search: "?mode=demo", hash: "#panel" })).toBe(
       "/api/auth-start?returnTo=%2Fsim%2Fsite%3Fmode%3Ddemo%23panel",
     );
+  });
+
+  it("offers Better Auth login while retaining an Access-backed workspace", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = await renderAppShell();
+    try {
+      const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      expect(button).toBeTruthy();
+      fireEvent.click(button as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location);
+      expect(hoisted.fetchMe).toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("reports a cleaned-up GitHub callback failure through app notifications", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.authCallbackError = true;
+    window.history.replaceState(null, "", "/");
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain("GitHub sign-in failed. Try again.");
+    } finally {
+      unmountAppShell(view);
+    }
   });
 
   it("previews every shared radio preset value before an anonymous import", async () => {

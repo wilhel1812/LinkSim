@@ -39,13 +39,13 @@ describe("cloudUser client", () => {
 
   it("reads auth state from the existing public simulation boundary", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ authenticated: false, authState: "guest" }), {
+      new Response(JSON.stringify({ authenticated: false, authState: "guest", authSource: null }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
     );
 
-    await expect(fetchAuthStatus()).resolves.toEqual({ authenticated: false, authState: "guest" });
+    await expect(fetchAuthStatus()).resolves.toEqual({ authenticated: false, authState: "guest", authSource: null });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/public-simulation?mode=auth",
       expect.objectContaining({ method: "GET" }),

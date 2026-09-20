@@ -5,6 +5,7 @@ import { useAppStore } from "../../store/appStore";
 import { fetchMe, mergeCloudUserProfilePatch, type CloudUser, type CloudUserProfilePatch } from "../../lib/cloudUser";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { clearAuthenticatedSessionMarker } from "../../lib/appShellGuards";
+import { isBetterAuthPilotEnabled, signOutBetterAuthPilot } from "../../lib/betterAuthPilot";
 import { ProfileSection } from "./sections/ProfileSection";
 import { PreferencesSection } from "./sections/PreferencesSection";
 import { SettingsNav, settingsNavIcons, type SettingsNavItem } from "./SettingsNav";
@@ -18,6 +19,8 @@ type SettingsPanelProps = {
   onClose: () => void;
   /** Disable panel-level focus and keyboard handling while a raised child modal is active. */
   suspended?: boolean;
+  onSignOutError?: (message: string) => void;
+  authSource?: "access" | "better-auth" | "dev" | null;
 };
 
 const useIsNarrow = () => {
@@ -35,7 +38,7 @@ const useIsNarrow = () => {
   return isNarrow;
 };
 
-export function SettingsPanel({ initialSection, onClose, suspended = false }: SettingsPanelProps) {
+export function SettingsPanel({ initialSection, onClose, suspended = false, onSignOutError, authSource = null }: SettingsPanelProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
@@ -124,14 +127,24 @@ export function SettingsPanel({ initialSection, onClose, suspended = false }: Se
     [setAuthState, setCurrentUser],
   );
 
-  const handleSignOut = useCallback(() => {
-    clearAuthenticatedSessionMarker();
-    meRef.current = null;
-    setMe(null);
-    setCurrentUser(null);
-    setAuthState("signed_out");
-    window.location.href = "/cdn-cgi/access/logout";
-  }, [setAuthState, setCurrentUser]);
+  const handleSignOut = useCallback(async () => {
+    try {
+      if (isBetterAuthPilotEnabled()) {
+        if (authSource === null) {
+          throw new Error("Sign-in status is still loading. Try again.");
+        }
+        if (authSource === "better-auth") await signOutBetterAuthPilot();
+      }
+      clearAuthenticatedSessionMarker();
+      meRef.current = null;
+      setMe(null);
+      setCurrentUser(null);
+      setAuthState("signed_out");
+      window.location.href = "/cdn-cgi/access/logout";
+    } catch (error) {
+      onSignOutError?.(getUiErrorMessage(error));
+    }
+  }, [authSource, onSignOutError, setAuthState, setCurrentUser]);
 
   const navItems = useMemo<SettingsNavItem<SettingsSectionId>[]>(() => {
     const items: SettingsNavItem<SettingsSectionId>[] = [

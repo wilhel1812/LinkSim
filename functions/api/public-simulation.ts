@@ -8,37 +8,48 @@ export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handl
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
 
 type PublicAuthState = "guest" | "authenticated" | "revoked";
+type PublicAuthSource = "access" | "better-auth" | "dev" | null;
 type PublicActor = { id: string; isAdmin: boolean; isModerator: boolean };
+
+const publicAuthSource = (source: string | undefined): Exclude<PublicAuthSource, null> =>
+  source === "better-auth" ? "better-auth" : source === "dev" ? "dev" : "access";
 
 const resolveAuth = async (
   request: Request,
   env: Env,
   strict: boolean,
   data: AuthRequestData,
-): Promise<{ authenticated: boolean; authState: PublicAuthState; actor: PublicActor | null }> => {
+): Promise<{
+  authenticated: boolean;
+  authState: PublicAuthState;
+  authSource: PublicAuthSource;
+  actor: PublicActor | null;
+}> => {
   const auth = strict
     ? await verifyAuth(request, env, data)
     : await verifyAuth(request, env, data).catch(() => null);
   if (!auth) {
-    return { authenticated: false, authState: "guest", actor: null };
+    return { authenticated: false, authState: "guest", authSource: null, actor: null };
   }
+  const authSource = publicAuthSource(auth.source);
 
   try {
     await ensureUser(env, auth.userId, auth.tokenPayload);
   } catch (error) {
     if (isRevokedAuthError(error)) {
-      return { authenticated: false, authState: "revoked", actor: null };
+      return { authenticated: false, authState: "revoked", authSource, actor: null };
     }
     throw error;
   }
   const profile = await fetchUserProfile(env, auth.userId);
   if (profile?.accountState === "revoked") {
-    return { authenticated: false, authState: "revoked", actor: null };
+    return { authenticated: false, authState: "revoked", authSource, actor: null };
   }
 
   return {
     authenticated: true,
     authState: "authenticated",
+    authSource,
     actor: {
       id: profile?.id ?? auth.userId,
       isAdmin: Boolean(profile?.isAdmin),
@@ -55,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) =
       return withCors(
         request,
         json(
-          { authenticated: auth.authenticated, authState: auth.authState },
+          { authenticated: auth.authenticated, authState: auth.authState, authSource: auth.authSource },
           { headers: NO_STORE_HEADERS },
         ),
       );

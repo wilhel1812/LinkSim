@@ -129,6 +129,17 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     expect(screen.queryByRole("button", { name: /open user settings/i })).not.toBeInTheDocument();
   });
 
+  it("reuses the sign-in chip for the pilot while retaining the Access profile", async () => {
+    const onSignInRequested = vi.fn();
+
+    render(<UserAdminPanel onSignInRequested={onSignInRequested} showSignInForAccessPilot />);
+
+    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(onSignInRequested).toHaveBeenCalledOnce();
+    expect(mockStoreState.currentUser).toBe(signedInUser);
+    expect(screen.getAllByRole("button", { name: /open user settings/i })).toHaveLength(1);
+  });
+
   it("does not fetch the protected profile while auth is still checking", () => {
     mockStoreState.authState = "checking";
     mockStoreState.currentUser = null;

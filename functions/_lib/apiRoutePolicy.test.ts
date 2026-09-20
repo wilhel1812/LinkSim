@@ -11,6 +11,9 @@ describe("API authentication policy", () => {
     ["GET", "/api/health"],
     ["GET", "/api/avatar/users/example/avatar.webp"],
     ["GET", "/api/auth-start"],
+    ["POST", "/api/auth/sign-in/social"],
+    ["GET", "/api/auth/callback/github"],
+    ["POST", "/api/auth/sign-out"],
   ])("keeps the intentional public exception %s %s", (method, path) => {
     expect(requiresApiAuthentication(new Request(`https://linksim.link${path}`, { method })))
       .toBe(false);
@@ -18,8 +21,8 @@ describe("API authentication policy", () => {
 
   it.each([
     ["GET", "/api/me"],
+    ["GET", "/api/auth/sign-in/social"],
     ["GET", "/api/auth/get-session"],
-    ["POST", "/api/auth/sign-out"],
     ["GET", "/api/geocode"],
     ["POST", "/api/v1/calculate"],
     ["POST", "/api/calculate"],
