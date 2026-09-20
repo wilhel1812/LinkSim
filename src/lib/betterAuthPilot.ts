@@ -66,6 +66,51 @@ export class PasskeyPilotError extends Error {
   }
 }
 
+export type PasskeyOperation = "sign-in" | "load" | "add" | "rename" | "remove";
+
+const passkeyAction = (operation: PasskeyOperation): string => {
+  switch (operation) {
+    case "sign-in": return "sign in with a passkey";
+    case "load": return "load your passkeys";
+    case "add": return "add the passkey";
+    case "rename": return "rename the passkey";
+    case "remove": return "remove the passkey";
+  }
+};
+
+export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOperation): string => {
+  const message = error instanceof Error ? error.message.trim() : String(error ?? "").trim();
+  const code = error instanceof PasskeyPilotError ? error.code : undefined;
+  const status = error instanceof PasskeyPilotError ? error.status : undefined;
+
+  if (/^(?:load failed|failed to fetch|networkerror\b)/iu.test(message)) {
+    return operation === "sign-in"
+      ? "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub."
+      : operation === "load"
+        ? "LinkSim could not load your passkeys. Reload the page and try again."
+        : `LinkSim could not ${passkeyAction(operation)}. Check your connection, reload the page, and try again.`;
+  }
+  if (/session is not fresh/iu.test(message)) {
+    return `Your sign-in is too old to ${passkeyAction(operation)}. Sign out, sign in with GitHub again, and retry within five minutes.`;
+  }
+  if (status === 401 && operation !== "sign-in") {
+    return `You are no longer signed in, so LinkSim could not ${passkeyAction(operation)}. Sign in with GitHub and try again.`;
+  }
+  if (operation === "sign-in" && (
+    code === "ERROR_CEREMONY_ABORTED"
+    || /(?:notallowederror|cancelled|canceled|timed out|no credentials?)/iu.test(message)
+  )) {
+    return "Passkey sign-in was cancelled or no matching passkey is available. Try again, or sign in with GitHub.";
+  }
+  if (operation === "sign-in" && /(?:webauthn|passkeys? (?:are|is) not supported)/iu.test(message)) {
+    return "This browser or device could not use passkeys. Try a current browser with screen lock enabled, or sign in with GitHub.";
+  }
+  if (operation === "sign-in") {
+    return "LinkSim could not sign in with the passkey. Try again, or sign in with GitHub.";
+  }
+  return `LinkSim could not ${passkeyAction(operation)}. Try again. If the problem continues, sign out and sign in with GitHub.`;
+};
+
 let turnstileLoading: Promise<TurnstileApi> | undefined;
 const createPilotAuthClient = () => createAuthClient({
   baseURL: window.location.origin,

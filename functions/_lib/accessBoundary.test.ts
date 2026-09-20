@@ -7,6 +7,7 @@ import {
   validateAcceptedAudiences,
   validatePreviewUrl,
   verifyPreviewBoundary,
+  verifyHttpBoundary,
 } from "../../scripts/access-boundary.mjs";
 
 const PUBLIC_POLICY_ID = "32915afb-f399-4c5c-90ea-e5bf0f377b7c";
@@ -42,6 +43,14 @@ const stagingApps = () => [
     name: "LinkSim Staging Public App Shell",
     domain: "staging.linksim.link",
     aud: "shell-aud",
+    policyId: PUBLIC_POLICY_ID,
+    decision: "bypass",
+  }),
+  makeApp({
+    id: "auth-api",
+    name: "LinkSim Staging Better Auth Routes",
+    domain: "staging.linksim.link/api/auth/*",
+    aud: "auth-api-aud",
     policyId: PUBLIC_POLICY_ID,
     decision: "bypass",
   }),
@@ -91,7 +100,7 @@ describe("Cloudflare Access boundary reconciliation", () => {
 
   it("is idempotent once the Pages root uses the bypass policy", () => {
     const apps = stagingApps();
-    apps[2] = makeApp({
+    apps[3] = makeApp({
       id: "pages-root",
       name: "LinkSim Staging Pages Root",
       domain: "linksim-staging.pages.dev",
@@ -114,7 +123,7 @@ describe("Cloudflare Access boundary reconciliation", () => {
 
   it("preserves supported application settings while changing only policy bindings", () => {
     const app = {
-      ...stagingApps()[2],
+      ...stagingApps()[3],
       allowed_idps: ["github-idp"],
       auto_redirect_to_identity: true,
       app_launcher_visible: false,
@@ -157,6 +166,36 @@ describe("Cloudflare Access boundary reconciliation", () => {
         expected,
       ),
     ).toThrow("ACCESS_AUD");
+  });
+
+  it("keeps Better Auth bootstrap public while protected APIs and credential management stay closed", async () => {
+    const responses = new Map([
+      [ACCESS_BOUNDARIES.staging.rootUrl, new Response("shell", { status: 200 })],
+      [ACCESS_BOUNDARIES.staging.apiUrl, new Response(null, {
+        status: 302,
+        headers: {
+          location: "https://team.cloudflareaccess.com/cdn-cgi/access/login/api?kid=e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
+        },
+      })],
+      [ACCESS_BOUNDARIES.staging.authBootstrapUrl, new Response("options", { status: 200 })],
+      [ACCESS_BOUNDARIES.staging.authManagementUrl, new Response("unauthorized", { status: 401 })],
+      [ACCESS_BOUNDARIES.staging.pagesRootUrl, new Response(null, {
+        status: 302,
+        headers: { location: ACCESS_BOUNDARIES.staging.pagesRootRedirect },
+      })],
+    ]);
+    const fetchBoundary = vi.fn(async (input: string | URL) => {
+      const response = responses.get(String(input));
+      if (!response) throw new Error(`Unexpected URL: ${String(input)}`);
+      return response;
+    });
+
+    await expect(verifyHttpBoundary(
+      ACCESS_BOUNDARIES.staging,
+      { expectPagesRedirect: true, fetchImpl: fetchBoundary },
+    )).resolves.toBeUndefined();
+    expect(fetchBoundary).toHaveBeenCalledWith(ACCESS_BOUNDARIES.staging.authBootstrapUrl, { redirect: "manual" });
+    expect(fetchBoundary).toHaveBeenCalledWith(ACCESS_BOUNDARIES.staging.authManagementUrl, { redirect: "manual" });
   });
 
   it("extracts the Access application audience from a login redirect", () => {

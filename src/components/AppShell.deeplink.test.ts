@@ -130,6 +130,9 @@ vi.mock("../lib/betterAuthPilot", () => ({
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
   signInWithGithubPilot: hoisted.signInWithGithubPilot,
   signInWithPasskeyPilot: hoisted.signInWithPasskeyPilot,
+  getPasskeyUiErrorMessage: (error: Error) => error.message === "Load failed"
+    ? "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub."
+    : "Passkey sign-in failed. Try again, or sign in with GitHub.",
 }));
 
 vi.mock("../store/appStore", () => ({
@@ -369,6 +372,29 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
       await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length >= 2);
       expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe("/?workspace=local#panel");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("explains how to recover when mobile passkey sign-in cannot reach the auth endpoint", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.signInWithPasskeyPilot.mockRejectedValueOnce(new TypeError("Load failed"));
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+    window.history.replaceState(null, "", "/");
+
+    const view = await renderAppShell();
+    try {
+      const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Passkey sign in");
+      fireEvent.click(button as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(document.body.textContent).toContain(
+        "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub.",
+      );
     } finally {
       unmountAppShell(view);
     }

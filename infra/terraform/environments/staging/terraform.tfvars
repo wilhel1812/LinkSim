@@ -61,6 +61,17 @@ access_applications = {
       }
     ]
   }
+  better_auth_routes = {
+    name   = "LinkSim Staging Better Auth Routes"
+    domain = "staging.linksim.link/api/auth/*"
+    type   = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+        precedence = 1
+      }
+    ]
+  }
   pages_root = {
     name   = "LinkSim Staging Pages Root"
     domain = "linksim-staging.pages.dev"

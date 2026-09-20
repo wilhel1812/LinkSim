@@ -17,6 +17,10 @@ vi.mock("../../../lib/betterAuthPilot", () => ({
   addBetterAuthPasskey: passkeys.add,
   renameBetterAuthPasskey: passkeys.update,
   removeBetterAuthPasskey: passkeys.remove,
+  getPasskeyUiErrorMessage: (error: Error, operation: string) =>
+    operation === "remove" && error.message === "Session is not fresh"
+      ? "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes."
+      : "Actionable passkey error",
 }));
 
 vi.mock("../../../store/appStore", () => ({
@@ -83,12 +87,14 @@ describe("Profile passkey management", () => {
     expect(passkeys.list.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("uses the existing generic error presentation and does not remove another credential", async () => {
+  it("explains how to recover from a stale credential-management session", async () => {
     passkeys.remove.mockRejectedValue(new Error("Session is not fresh"));
     render(<ProfileSection me={me} onMeUpdated={vi.fn()} passkeysEnabled />);
     await screen.findByText("MacBook");
     fireEvent.click(screen.getByRole("button", { name: "Remove MacBook" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Session is not fresh");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes.",
+    );
     expect(passkeys.remove).toHaveBeenCalledTimes(1);
   });
 });

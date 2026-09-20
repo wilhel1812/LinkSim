@@ -8,10 +8,12 @@ import { AvatarDropZone } from "../AvatarDropZone";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import {
   addBetterAuthPasskey,
+  getPasskeyUiErrorMessage,
   listBetterAuthPasskeys,
   removeBetterAuthPasskey,
   renameBetterAuthPasskey,
   type BetterAuthPasskey,
+  type PasskeyOperation,
 } from "../../../lib/betterAuthPilot";
 
 type ProfileSectionProps = {
@@ -56,14 +58,17 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
         setPasskeyNames(Object.fromEntries(next.map((passkey) => [passkey.id, passkey.name ?? ""])));
       })
       .catch((error) => {
-        if (!cancelled) setPasskeyError(getUiErrorMessage(error));
+        if (!cancelled) setPasskeyError(getPasskeyUiErrorMessage(error, "load"));
       });
     return () => {
       cancelled = true;
     };
   }, [me, passkeysEnabled]);
 
-  const runPasskeyMutation = useCallback(async (mutation: () => Promise<void>) => {
+  const runPasskeyMutation = useCallback(async (
+    operation: Exclude<PasskeyOperation, "sign-in" | "load">,
+    mutation: () => Promise<void>,
+  ) => {
     if (passkeyBusy) return;
     setPasskeyBusy(true);
     setPasskeyError(null);
@@ -71,7 +76,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
       await mutation();
       await refreshPasskeys();
     } catch (error) {
-      setPasskeyError(getUiErrorMessage(error));
+      setPasskeyError(getPasskeyUiErrorMessage(error, operation));
     } finally {
       setPasskeyBusy(false);
     }
@@ -272,7 +277,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
             <button
               className="btn-ghost"
               disabled={passkeyBusy || !newPasskeyName.trim()}
-              onClick={() => void runPasskeyMutation(async () => {
+              onClick={() => void runPasskeyMutation("add", async () => {
                 await addBetterAuthPasskey(newPasskeyName.trim());
                 setNewPasskeyName("");
               })}
@@ -311,7 +316,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
                         aria-label={`Save ${label} name`}
                         className="btn-ghost"
                         disabled={passkeyBusy || !(passkeyNames[passkey.id] ?? "").trim()}
-                        onClick={() => void runPasskeyMutation(() => renameBetterAuthPasskey(
+                        onClick={() => void runPasskeyMutation("rename", () => renameBetterAuthPasskey(
                           passkey.id,
                           (passkeyNames[passkey.id] ?? "").trim(),
                         ))}
@@ -323,7 +328,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
                         aria-label={`Remove ${label}`}
                         className="btn-ghost btn-danger"
                         disabled={passkeyBusy}
-                        onClick={() => void runPasskeyMutation(() => removeBetterAuthPasskey(passkey.id))}
+                        onClick={() => void runPasskeyMutation("remove", () => removeBetterAuthPasskey(passkey.id))}
                         type="button"
                       >
                         Remove

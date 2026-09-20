@@ -7,7 +7,9 @@ import {
   createPasskeyManagement,
   createGithubPilotSignIn,
   getTurnstileToken,
+  getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
+  PasskeyPilotError,
 } from "./betterAuthPilot";
 
 describe("Better Auth pilot client", () => {
@@ -149,6 +151,33 @@ describe("Better Auth pilot client", () => {
       code: "ERROR_CEREMONY_ABORTED",
       status: 400,
     });
+  });
+
+  it("turns browser transport failures into an actionable passkey sign-in message", () => {
+    expect(getPasskeyUiErrorMessage(new TypeError("Load failed"), "sign-in")).toBe(
+      "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub.",
+    );
+    expect(getPasskeyUiErrorMessage(new TypeError("Failed to fetch"), "load")).toBe(
+      "LinkSim could not load your passkeys. Reload the page and try again.",
+    );
+  });
+
+  it("explains stale sessions and cancelled passkey ceremonies", () => {
+    expect(getPasskeyUiErrorMessage(new PasskeyPilotError("Session is not fresh", undefined, 403), "remove")).toBe(
+      "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes.",
+    );
+    expect(getPasskeyUiErrorMessage(
+      new PasskeyPilotError("Auth cancelled", "ERROR_CEREMONY_ABORTED", 400),
+      "sign-in",
+    )).toBe(
+      "Passkey sign-in was cancelled or no matching passkey is available. Try again, or sign in with GitHub.",
+    );
+  });
+
+  it("keeps unknown passkey failures useful without exposing internal text", () => {
+    expect(getPasskeyUiErrorMessage(new Error("database connection string leaked"), "add")).toBe(
+      "LinkSim could not add the passkey. Try again. If the problem continues, sign out and sign in with GitHub.",
+    );
   });
 
   it("lists and mutates only the selected passkey through library actions", async () => {
