@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BarChart3, CircleAlert, CircleQuestionMark, CircleUserRound, KeyRound } from "lucide-react";
+import { BarChart3, CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -84,9 +84,7 @@ type UserAdminPanelProps = {
   /**
    * When provided, clicking "Sign in" delegates sign-in handling to the shell.
    */
-  onSignInRequested?: () => void;
-  /** Sign in with an enrolled passkey through the Better Auth staging integration. */
-  onPasskeySignInRequested?: () => void;
+  onSignInRequested?: (trigger: HTMLElement) => void;
   /** Show the existing sign-in chip while Access still supplies the workspace during the Better Auth pilot. */
   showSignInForAccessPilot?: boolean;
 };
@@ -98,7 +96,6 @@ export function UserAdminPanel({
   renderMode = "chip",
   onOpenSettings,
   onSignInRequested,
-  onPasskeySignInRequested,
   showSignInForAccessPilot = false,
 }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -541,9 +538,9 @@ export function UserAdminPanel({
     return false;
   };
 
-  const handleSignUp = useCallback(() => {
+  const handleSignUp = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     if (onSignInRequested) {
-      onSignInRequested();
+      onSignInRequested(event.currentTarget);
       return;
     }
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -994,17 +991,6 @@ export function UserAdminPanel({
                   <BarChart3 aria-hidden="true" strokeWidth={1.8} />
                 </a>
               </>
-            ) : null}
-            {onPasskeySignInRequested && (!isSignedIn || showSignInForAccessPilot) ? (
-              <button
-                aria-label="Sign in with a passkey"
-                className="user-icon-button"
-                onClick={onPasskeySignInRequested}
-                title="Sign in with a passkey"
-                type="button"
-              >
-                <KeyRound aria-hidden="true" strokeWidth={1.8} />
-              </button>
             ) : null}
             {onOpenHelp ? (
               <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">

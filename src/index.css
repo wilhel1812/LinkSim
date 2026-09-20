@@ -3341,6 +3341,25 @@ button {
   clip-path: polygon(50% 0, 0 100%, 100% 100%);
 }
 
+.auth-sign-in-popover {
+  width: min(360px, calc(100vw - 16px));
+}
+
+.auth-sign-in-popover-content {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-sign-in-popover-content h2,
+.auth-sign-in-popover-content p {
+  margin: 0;
+}
+
+.auth-sign-in-popover-content > button,
+.auth-sign-in-popover-content > div > button {
+  width: 100%;
+}
+
 .ui-settings-popover-list {
   list-style: none;
   margin: 0;

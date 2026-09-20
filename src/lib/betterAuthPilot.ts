@@ -54,6 +54,17 @@ type PasskeyActions = {
 
 export type BetterAuthPasskey = Pick<Passkey, "id" | "name" | "createdAt">;
 
+export const getGithubSignInUiErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message.trim() : String(error ?? "").trim();
+  if (/^(?:load failed|failed to fetch|networkerror\b)/iu.test(message)) {
+    return "GitHub sign-in could not reach LinkSim. Check your connection, reload the page, and try again.";
+  }
+  if (/anti-bot|turnstile|captcha/iu.test(message)) {
+    return "GitHub sign-in could not complete the anti-bot check. Reload the page and try again.";
+  }
+  return "GitHub sign-in could not start. Try again. If the problem continues, reload the page.";
+};
+
 export class PasskeyPilotError extends Error {
   readonly name = "PasskeyPilotError";
   readonly code: string | undefined;
