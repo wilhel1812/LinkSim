@@ -44,7 +44,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.AUTH) return empty(503);
 
   try {
-    const response = await env.AUTH.getByName("auth").handleAuth(
+    const response = await env.AUTH.getByName("auth").fetch(
       await forwardedRequest(request),
     );
     return hardened(response);

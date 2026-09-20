@@ -4,7 +4,7 @@ import { onRequest } from "./[[path]]";
 
 const call = async (request: Request, runtime?: (request: Request) => Promise<Response>) => {
   const env = runtime
-    ? { AUTH: { getByName: () => ({ checkSession: vi.fn(), handleAuth: runtime }) } }
+    ? { AUTH: { getByName: () => ({ checkSession: vi.fn(), fetch: runtime }) } }
     : {};
   return onRequest({ request, env } as unknown as Parameters<typeof onRequest>[0]);
 };

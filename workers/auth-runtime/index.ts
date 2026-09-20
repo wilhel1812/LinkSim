@@ -64,7 +64,7 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
     }
   }
 
-  async handleAuth(request: Request) {
+  async fetch(request: Request) {
     if (!isExposedAuthRoute(request)) return new Response(null, { status: 404 });
     if (requiresMutationOrigin(request) && !hasExactRequestOrigin(request)) {
       return new Response(null, { status: 403 });
@@ -85,9 +85,6 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
     }));
   }
 
-  fetch() {
-    return new Response(null, { status: 404 });
-  }
 }
 
 export default {
