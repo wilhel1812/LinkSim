@@ -360,6 +360,39 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("keeps the embedded challenge mounted when the trigger is clicked during GitHub sign-in", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+    let finishSignIn!: (result: "started") => void;
+    hoisted.signInWithGithubPilot.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSignIn = resolve;
+    }));
+
+    const view = await renderAppShell();
+    try {
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      fireEvent.click(document.querySelector('button[aria-label="Continue with GitHub"]') as HTMLButtonElement);
+      await flushMicrotasks();
+      const challenge = document.querySelector<HTMLElement>('[aria-label="Anti-bot check"]');
+      expect(challenge).toBeTruthy();
+
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toContainElement(challenge);
+
+      finishSignIn("started");
+      await flushMicrotasks();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
   it("confirms a returned GitHub session before settling on Access", async () => {
     vi.useFakeTimers();
     hoisted.betterAuthPilotEnabled = true;

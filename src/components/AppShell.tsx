@@ -628,13 +628,14 @@ export function AppShell() {
   }, []);
 
   const handleUserSignInRequested = useCallback((trigger: HTMLElement) => {
+    if (authSignInBusyMethod) return;
     clearAuthRetryTimer();
     if (betterAuthPilotEnabled) {
       setAuthSignInAnchor((current) => current === trigger ? null : trigger);
       return;
     }
     window.location.href = buildAuthStartPath(window.location);
-  }, [betterAuthPilotEnabled, clearAuthRetryTimer]);
+  }, [authSignInBusyMethod, betterAuthPilotEnabled, clearAuthRetryTimer]);
 
   const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement) => {
     clearAuthRetryTimer();
