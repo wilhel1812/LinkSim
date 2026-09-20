@@ -9,6 +9,21 @@ export const json = (body: unknown, init?: ResponseInit): Response => {
   });
 };
 
+type CookieHeaders = Headers & {
+  getAll?: (name: string) => string[];
+  getSetCookie?: () => string[];
+};
+
+export const getSetCookieHeaders = (headers: Headers): string[] => {
+  const cookieHeaders = headers as CookieHeaders;
+  const workerCookies = cookieHeaders.getAll?.("set-cookie");
+  if (workerCookies?.length) return workerCookies;
+  const standardCookies = cookieHeaders.getSetCookie?.();
+  if (standardCookies?.length) return standardCookies;
+  const combined = headers.get("set-cookie");
+  return combined ? [combined] : [];
+};
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,

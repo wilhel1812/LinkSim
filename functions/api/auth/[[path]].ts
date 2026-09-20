@@ -1,4 +1,5 @@
 import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../_lib/apiRoutePolicy";
+import { getSetCookieHeaders } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
 
 const FORWARDED_HEADERS = [
@@ -13,6 +14,9 @@ const FORWARDED_HEADERS = [
 
 const hardened = (response: Response): Response => {
   const headers = new Headers(response.headers);
+  const cookies = getSetCookieHeaders(response.headers);
+  headers.delete("set-cookie");
+  for (const cookie of cookies) headers.append("set-cookie", cookie);
   headers.set("cache-control", "no-store");
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
