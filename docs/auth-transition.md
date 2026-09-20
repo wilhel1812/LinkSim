@@ -93,6 +93,16 @@ provider-unlink route. Passkey authentication does not replace Turnstile on
 GitHub registration and does not establish that a user is human. Preview and
 production authentication remain unchanged.
 
+The passkey experience follows Passkey Central's Principles and Required
+Patterns within LinkSim's existing sign-in popover and Profile settings. The
+settings surface explains device unlock, credential-manager storage, syncing,
+cross-device QR flows, compatibility and GitHub recovery, and announces each
+credential operation before and after it completes. LinkSim deliberately uses
+a dedicated Passkey action beside GitHub because it has no username field for
+conditional WebAuthn autofill. GitHub replaces password or email-OTP fallback
+examples because LinkSim intentionally operates without passwords or
+transactional email.
+
 The staging GitHub OAuth application uses
 `https://staging.linksim.link/api/auth/callback/github`. The `staging` GitHub
 environment must provide `BETTER_AUTH_SECRET`,

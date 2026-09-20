@@ -63,7 +63,7 @@ export function AuthSignInPopover({
       tier="raised"
       triggerRef={triggerRef}
     >
-      <div aria-busy={busy || undefined} aria-label="Sign in or sign up" className="auth-sign-in-popover-content" ref={focusContent} role="dialog">
+      <div aria-busy={busyMethod === "github" || undefined} aria-label="Sign in or sign up" className="auth-sign-in-popover-content" ref={focusContent} role="dialog">
         <ul className="ui-settings-popover-list">
           <li className="ui-settings-popover-row">
             <button
@@ -104,8 +104,14 @@ export function AuthSignInPopover({
               </span>
             </button>
           </li>
-          <li className="ui-settings-popover-row auth-sign-in-note">
-            New accounts start with GitHub.
+          <li
+            aria-live={busyMethod === "passkey" ? "polite" : undefined}
+            className="ui-settings-popover-row auth-sign-in-note"
+            role={busyMethod === "passkey" ? "status" : undefined}
+          >
+            {busyMethod === "passkey"
+              ? "Follow your browser or device prompt to use your passkey."
+              : "New accounts start with GitHub. Passkey works after you add one in Settings."}
           </li>
         </ul>
       </div>

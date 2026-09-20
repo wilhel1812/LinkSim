@@ -116,8 +116,17 @@ export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOpera
   )) {
     return "Passkey sign-in was cancelled or no matching passkey is available. Try again, or sign in with GitHub.";
   }
+  if (operation === "add" && (
+    code === "ERROR_CEREMONY_ABORTED"
+    || /(?:notallowederror|cancelled|canceled|timed out)/iu.test(message)
+  )) {
+    return "Passkey creation was cancelled. No passkey was added. Try again when ready.";
+  }
   if (operation === "sign-in" && /(?:webauthn|passkeys? (?:are|is) not supported)/iu.test(message)) {
     return "This browser or device could not use passkeys. Try a current browser with screen lock enabled, or sign in with GitHub.";
+  }
+  if (operation === "add" && /(?:webauthn|passkeys? (?:are|is) not supported)/iu.test(message)) {
+    return "This browser or device could not create a passkey. Try a current browser with screen lock enabled.";
   }
   if (operation === "sign-in") {
     return "LinkSim could not sign in with the passkey. Try again, or sign in with GitHub.";

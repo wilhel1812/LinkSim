@@ -543,6 +543,7 @@ describe("AppShell deeplink cold-load flow", () => {
       fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
+      expect(document.body.textContent).toContain("Passkey accepted. Finishing sign-in…");
       await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length >= 2);
       expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe("/?workspace=local#panel");
     } finally {

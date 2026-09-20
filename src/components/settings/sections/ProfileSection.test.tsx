@@ -20,6 +20,8 @@ vi.mock("../../../lib/betterAuthPilot", () => ({
   getPasskeyUiErrorMessage: (error: Error, operation: string) =>
     operation === "remove" && error.message === "Session is not fresh"
       ? "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes."
+      : operation === "add" && error.message === "Auth cancelled"
+        ? "Passkey creation was cancelled. No passkey was added. Try again when ready."
       : "Actionable passkey error",
 }));
 
@@ -67,7 +69,14 @@ describe("Profile passkey management", () => {
     expect(await screen.findByText("MacBook")).toBeInTheDocument();
     expect(screen.getByText("Unnamed passkey")).toBeInTheDocument();
     expect(screen.queryByText("secret-credential-id")).not.toBeInTheDocument();
-    expect(screen.getByText(/GitHub remains your recovery method/i)).toBeInTheDocument();
+    expect(screen.getByText(/fingerprint, face, PIN, or screen lock/i)).toBeInTheDocument();
+    expect(screen.getByText(/saved by your device or password manager/i)).toBeInTheDocument();
+    expect(screen.getByText(/another device may show a QR code/i)).toBeInTheDocument();
+    expect(screen.getByText(/GitHub remains your .*recovery method/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Learn more about passkeys" })).toHaveAttribute(
+      "href",
+      "https://www.passkeycentral.org/introduction-to-passkeys/",
+    );
   });
 
   it("adds, renames, and removes credentials then refreshes the list", async () => {
@@ -76,14 +85,18 @@ describe("Profile passkey management", () => {
 
     fireEvent.change(screen.getByLabelText("New passkey name"), { target: { value: "Phone" } });
     fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Follow your device or password manager prompt to create the passkey.");
     await waitFor(() => expect(passkeys.add).toHaveBeenCalledWith("Phone"));
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Passkey added.");
 
     fireEvent.change(screen.getByLabelText("Rename MacBook"), { target: { value: "Laptop" } });
     fireEvent.click(screen.getByRole("button", { name: "Save MacBook name" }));
     await waitFor(() => expect(passkeys.update).toHaveBeenCalledWith("secret-credential-id", "Laptop"));
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Passkey renamed.");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove MacBook" }));
     await waitFor(() => expect(passkeys.remove).toHaveBeenCalledWith("secret-credential-id"));
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Passkey removed.");
     expect(passkeys.list.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
 
@@ -96,5 +109,17 @@ describe("Profile passkey management", () => {
       "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes.",
     );
     expect(passkeys.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains a cancelled creation ceremony without claiming a passkey was added", async () => {
+    passkeys.add.mockRejectedValue(new Error("Auth cancelled"));
+    render(<ProfileSection me={me} onMeUpdated={vi.fn()} passkeysEnabled />);
+    await screen.findByText("MacBook");
+    fireEvent.change(screen.getByLabelText("New passkey name"), { target: { value: "Phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Passkey creation was cancelled. No passkey was added. Try again when ready.",
+    );
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toBeEmptyDOMElement();
   });
 });

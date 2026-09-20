@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { KeyRound } from "lucide-react";
 import { fetchMe, updateMyProfile, type CloudUser, type CloudUserProfilePatch } from "../../../lib/cloudUser";
 import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
@@ -36,6 +37,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
   const [newPasskeyName, setNewPasskeyName] = useState("");
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyStatus, setPasskeyStatus] = useState("");
 
   const refreshPasskeys = useCallback(async () => {
     const next = await listBetterAuthPasskeys();
@@ -48,6 +50,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
       setPasskeys([]);
       setPasskeyNames({});
       setPasskeyError(null);
+      setPasskeyStatus("");
       return;
     }
     let cancelled = false;
@@ -68,14 +71,22 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
   const runPasskeyMutation = useCallback(async (
     operation: Exclude<PasskeyOperation, "sign-in" | "load">,
     mutation: () => Promise<void>,
+    pendingMessage: string,
+    successMessage: string,
   ) => {
     if (passkeyBusy) return;
     setPasskeyBusy(true);
     setPasskeyError(null);
+    setPasskeyStatus(pendingMessage);
     try {
+      if (operation === "add") {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      }
       await mutation();
       await refreshPasskeys();
+      setPasskeyStatus(successMessage);
     } catch (error) {
+      setPasskeyStatus("");
       setPasskeyError(getPasskeyUiErrorMessage(error, operation));
     } finally {
       setPasskeyBusy(false);
@@ -166,6 +177,115 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
         </p>
       </header>
 
+      {passkeysEnabled ? (
+        <section className="passkey-manager" aria-labelledby="settings-passkeys-heading">
+          <header className="settings-section-header">
+            <div className="passkey-heading">
+              <KeyRound aria-hidden="true" size={22} strokeWidth={1.8} />
+              <h2 id="settings-passkeys-heading">Passkeys</h2>
+            </div>
+            <div className="passkey-guidance field-help">
+              <p>Use a fingerprint, face, PIN, or screen lock to sign in without a password.</p>
+              <p>
+                Your passkey is saved by your device or password manager and may sync to your other devices.
+                Signing in from another device may show a QR code. GitHub remains your account-creation and recovery method.
+              </p>
+              <p>
+                Adding, renaming, or removing a passkey requires a recent sign-in. Availability depends on your browser,
+                device, screen lock, and password manager. <a href="https://www.passkeycentral.org/introduction-to-passkeys/" rel="noreferrer" target="_blank">Learn more about passkeys</a>.
+              </p>
+            </div>
+          </header>
+
+          <div className="passkey-create-row">
+            <label className="sr-only" htmlFor="new-passkey-name">New passkey name</label>
+            <input
+              id="new-passkey-name"
+              aria-label="New passkey name"
+              autoComplete="off"
+              maxLength={80}
+              onChange={(event) => setNewPasskeyName(event.target.value)}
+              placeholder="Passkey name, e.g. MacBook"
+              type="text"
+              value={newPasskeyName}
+            />
+            <button
+              className="btn-ghost"
+              disabled={passkeyBusy || !newPasskeyName.trim()}
+              onClick={() => void runPasskeyMutation("add", async () => {
+                await addBetterAuthPasskey(newPasskeyName.trim());
+                setNewPasskeyName("");
+              }, "Follow your device or password manager prompt to create the passkey.", "Passkey added.")}
+              type="button"
+            >
+              Add passkey
+            </button>
+          </div>
+
+          {passkeys.length ? (
+            <ul className="passkey-list">
+              {passkeys.map((passkey, index) => {
+                const label = passkey.name?.trim() || "Unnamed passkey";
+                const inputId = `passkey-name-${index}`;
+                return (
+                  <li className="passkey-row" key={passkey.id}>
+                    <div className="passkey-row-copy">
+                      <strong><KeyRound aria-hidden="true" size={16} strokeWidth={1.8} />{label}</strong>
+                      {passkey.createdAt ? <span className="field-help">Added {formatDate(String(passkey.createdAt))}</span> : null}
+                    </div>
+                    <div className="passkey-row-actions">
+                      <label className="sr-only" htmlFor={inputId}>Rename {label}</label>
+                      <input
+                        id={inputId}
+                        aria-label={`Rename ${label}`}
+                        autoComplete="off"
+                        maxLength={80}
+                        onChange={(event) => setPasskeyNames((current) => ({
+                          ...current,
+                          [passkey.id]: event.target.value,
+                        }))}
+                        type="text"
+                        value={passkeyNames[passkey.id] ?? ""}
+                      />
+                      <button
+                        aria-label={`Save ${label} name`}
+                        className="btn-ghost"
+                        disabled={passkeyBusy || !(passkeyNames[passkey.id] ?? "").trim()}
+                        onClick={() => void runPasskeyMutation("rename", () => renameBetterAuthPasskey(
+                          passkey.id,
+                          (passkeyNames[passkey.id] ?? "").trim(),
+                        ), "Renaming passkey…", "Passkey renamed.")}
+                        type="button"
+                      >
+                        Save name
+                      </button>
+                      <button
+                        aria-label={`Remove ${label}`}
+                        className="btn-ghost btn-danger"
+                        disabled={passkeyBusy}
+                        onClick={() => void runPasskeyMutation(
+                          "remove",
+                          () => removeBetterAuthPasskey(passkey.id),
+                          "Removing passkey…",
+                          "Passkey removed.",
+                        )}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="field-help">No passkeys registered.</p>
+          )}
+          <p aria-label="Passkey operation status" aria-live="polite" className="field-help passkey-operation-status" role="status">{passkeyStatus}</p>
+          {passkeyError ? <p className="field-help field-help-error" role="alert">{passkeyError}</p> : null}
+        </section>
+      ) : null}
+
       <div className="settings-profile-grid">
         <div className="settings-profile-avatar">
           <AvatarDropZone name={displayName} avatarUrl={me.avatarUrl} onUpdated={(user) => applyUpdate(user, { avatarUrl: user.avatarUrl })} />
@@ -252,98 +372,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
         </div>
       </div>
 
-      {passkeysEnabled ? (
-        <section className="passkey-manager" aria-labelledby="settings-passkeys-heading">
-          <header className="settings-section-header">
-            <h2 id="settings-passkeys-heading">Passkeys</h2>
-            <p className="field-help">
-              Use passkeys for passwordless sign-in. GitHub remains your recovery method.
-              Adding, renaming, or removing a passkey requires a recent sign-in.
-            </p>
-          </header>
 
-          <div className="passkey-create-row">
-            <label className="sr-only" htmlFor="new-passkey-name">New passkey name</label>
-            <input
-              id="new-passkey-name"
-              aria-label="New passkey name"
-              autoComplete="off"
-              maxLength={80}
-              onChange={(event) => setNewPasskeyName(event.target.value)}
-              placeholder="Passkey name, e.g. MacBook"
-              type="text"
-              value={newPasskeyName}
-            />
-            <button
-              className="btn-ghost"
-              disabled={passkeyBusy || !newPasskeyName.trim()}
-              onClick={() => void runPasskeyMutation("add", async () => {
-                await addBetterAuthPasskey(newPasskeyName.trim());
-                setNewPasskeyName("");
-              })}
-              type="button"
-            >
-              Add passkey
-            </button>
-          </div>
-
-          {passkeys.length ? (
-            <ul className="passkey-list">
-              {passkeys.map((passkey, index) => {
-                const label = passkey.name?.trim() || "Unnamed passkey";
-                const inputId = `passkey-name-${index}`;
-                return (
-                  <li className="passkey-row" key={passkey.id}>
-                    <div className="passkey-row-copy">
-                      <strong>{label}</strong>
-                      {passkey.createdAt ? <span className="field-help">Added {formatDate(String(passkey.createdAt))}</span> : null}
-                    </div>
-                    <div className="passkey-row-actions">
-                      <label className="sr-only" htmlFor={inputId}>Rename {label}</label>
-                      <input
-                        id={inputId}
-                        aria-label={`Rename ${label}`}
-                        autoComplete="off"
-                        maxLength={80}
-                        onChange={(event) => setPasskeyNames((current) => ({
-                          ...current,
-                          [passkey.id]: event.target.value,
-                        }))}
-                        type="text"
-                        value={passkeyNames[passkey.id] ?? ""}
-                      />
-                      <button
-                        aria-label={`Save ${label} name`}
-                        className="btn-ghost"
-                        disabled={passkeyBusy || !(passkeyNames[passkey.id] ?? "").trim()}
-                        onClick={() => void runPasskeyMutation("rename", () => renameBetterAuthPasskey(
-                          passkey.id,
-                          (passkeyNames[passkey.id] ?? "").trim(),
-                        ))}
-                        type="button"
-                      >
-                        Save name
-                      </button>
-                      <button
-                        aria-label={`Remove ${label}`}
-                        className="btn-ghost btn-danger"
-                        disabled={passkeyBusy}
-                        onClick={() => void runPasskeyMutation("remove", () => removeBetterAuthPasskey(passkey.id))}
-                        type="button"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="field-help">No passkeys registered.</p>
-          )}
-          {passkeyError ? <p className="field-help field-help-error" role="alert">{passkeyError}</p> : null}
-        </section>
-      ) : null}
 
       {onSignOut ? (
         <div className="settings-section-footer">

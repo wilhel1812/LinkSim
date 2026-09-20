@@ -33,7 +33,7 @@ describe("AuthSignInPopover", () => {
       expect(popover.querySelector(".ui-settings-popover-list")).toBeInTheDocument();
       expect(screen.queryByText("Sign in or sign up")).not.toBeInTheDocument();
       expect(screen.queryByText("Choose a sign-in method.")).not.toBeInTheDocument();
-      expect(screen.getByText("New accounts start with GitHub.")).toBeInTheDocument();
+      expect(screen.getByText("New accounts start with GitHub. Passkey works after you add one in Settings.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "GitHub" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Passkey" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
@@ -67,6 +67,22 @@ describe("AuthSignInPopover", () => {
       expect(challenge.closest(".auth-sign-in-challenge-row")).toHaveClass("is-active");
       expect(screen.getByRole("button", { name: "Opening GitHub…" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "Passkey" })).toBeDisabled();
+    } finally {
+      view.unmount();
+      view.trigger.remove();
+    }
+  });
+
+  it("prepares users for the browser or device prompt while passkey sign-in is active", async () => {
+    const view = renderPopover({ busyMethod: "passkey" });
+    try {
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent(
+        "Follow your browser or device prompt to use your passkey.",
+      );
+      expect(status.closest('[aria-busy="true"]')).toBeNull();
+      expect(screen.getByRole("button", { name: "Using passkey…" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "GitHub" })).toBeDisabled();
     } finally {
       view.unmount();
       view.trigger.remove();

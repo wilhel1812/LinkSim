@@ -672,6 +672,11 @@ export function AppShell() {
     try {
       const result = await signInWithPasskeyPilot();
       if (result === "signed-in") {
+        pushNotification({
+          id: "passkey-sign-in-accepted",
+          message: "Passkey accepted. Finishing sign-in…",
+          tone: "success",
+        });
         setAuthSignInAnchor(null);
         runAccessCheckRef.current("retry");
       }
