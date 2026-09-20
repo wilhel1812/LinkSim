@@ -16,6 +16,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   consumeAuthCallbackError,
+  getGithubSignInUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   signInWithGithubPilot,
@@ -53,6 +54,7 @@ import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
+import { AuthSignInPopover, type AuthSignInMethod } from "./AuthSignInPopover";
 
 initializeMigrations();
 
@@ -263,6 +265,9 @@ export function AppShell() {
   const [presetImportBusy, setPresetImportBusy] = useState(false);
   const [presetImportStatus, setPresetImportStatus] = useState("");
   const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
+  const [authSignInAnchor, setAuthSignInAnchor] = useState<HTMLElement | null>(null);
+  const [authSignInBusyMethod, setAuthSignInBusyMethod] = useState<AuthSignInMethod | null>(null);
+  const authSignInTriggerRef = useMemo(() => ({ current: authSignInAnchor }), [authSignInAnchor]);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [shareDirectoryBusy, setShareDirectoryBusy] = useState(false);
@@ -614,34 +619,49 @@ export function AppShell() {
     }
   }, []);
 
-  const handleUserSignInRequested = useCallback(async () => {
+  const handleUserSignInRequested = useCallback((trigger: HTMLElement) => {
     clearAuthRetryTimer();
     if (betterAuthPilotEnabled) {
-      try {
-        await signInWithGithubPilot(window.location);
-      } catch (error) {
-        pushNotification({
-          id: "github-sign-in-failed",
-          message: getUiErrorMessage(error),
-          tone: "error",
-        });
-      }
+      setAuthSignInAnchor((current) => current === trigger ? null : trigger);
       return;
     }
     window.location.href = buildAuthStartPath(window.location);
-  }, [betterAuthPilotEnabled, clearAuthRetryTimer, pushNotification]);
+  }, [betterAuthPilotEnabled, clearAuthRetryTimer]);
+
+  const handleGithubSignInRequested = useCallback(async () => {
+    clearAuthRetryTimer();
+    setAuthSignInBusyMethod("github");
+    try {
+      const result = await signInWithGithubPilot(window.location);
+      if (result === "started") setAuthSignInAnchor(null);
+    } catch (error) {
+      pushNotification({
+        id: "github-sign-in-failed",
+        message: getGithubSignInUiErrorMessage(error),
+        tone: "error",
+      });
+    } finally {
+      setAuthSignInBusyMethod(null);
+    }
+  }, [clearAuthRetryTimer, pushNotification]);
 
   const handlePasskeySignInRequested = useCallback(async () => {
     clearAuthRetryTimer();
+    setAuthSignInBusyMethod("passkey");
     try {
       const result = await signInWithPasskeyPilot();
-      if (result === "signed-in") runAccessCheckRef.current("retry");
+      if (result === "signed-in") {
+        setAuthSignInAnchor(null);
+        runAccessCheckRef.current("retry");
+      }
     } catch (error) {
       pushNotification({
         id: "passkey-sign-in-failed",
         message: getPasskeyUiErrorMessage(error, "sign-in"),
         tone: "error",
       });
+    } finally {
+      setAuthSignInBusyMethod(null);
     }
   }, [clearAuthRetryTimer, pushNotification]);
 
@@ -2127,7 +2147,6 @@ export function AppShell() {
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
-            onPasskeySignInRequested={betterAuthPilotEnabled ? handlePasskeySignInRequested : undefined}
             onSignInRequested={handleUserSignInRequested}
             showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
             readOnly={!canPersistWorkspace}
@@ -2349,7 +2368,6 @@ export function AppShell() {
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
-                onPasskeySignInRequested={betterAuthPilotEnabled ? handlePasskeySignInRequested : undefined}
                 onSignInRequested={handleUserSignInRequested}
                 showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
                 readOnly={!canPersistWorkspace}
@@ -2415,6 +2433,14 @@ export function AppShell() {
           ) : null}
         </section>
       ) : null}
+      <AuthSignInPopover
+        busyMethod={authSignInBusyMethod}
+        onClose={() => setAuthSignInAnchor(null)}
+        onGithub={() => void handleGithubSignInRequested()}
+        onPasskey={() => void handlePasskeySignInRequested()}
+        open={betterAuthPilotEnabled && authSignInAnchor !== null}
+        triggerRef={authSignInTriggerRef}
+      />
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill ui-surface-pill">
           <BasemapAttributionLinks credits={renderedBasemapAttribution?.credits ?? getBasemapAttributionCredits(resolvedBasemap)} />
@@ -2461,7 +2487,7 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       {presetImport ? (
-        <ModalOverlay aria-label="Import radio preset" onClose={clearPresetImport} tier="raised">
+        <ModalOverlay aria-label="Import radio preset" onClose={clearPresetImport} suspended={authSignInAnchor !== null} tier="raised">
           <div className="library-manager-card radio-preset-import-card">
             <div className="library-manager-header">
               <h2>Import Radio Preset</h2>
@@ -2507,7 +2533,7 @@ export function AppShell() {
                     </dl>
                   </div>
                   {!currentUser ? (
-                    <ActionButton onClick={handleUserSignInRequested} type="button">Sign in to save</ActionButton>
+                    <ActionButton onClick={(event) => handleUserSignInRequested(event.currentTarget)} type="button">Sign in to save</ActionButton>
                   ) : (
                     <>
                       {conflict ? (

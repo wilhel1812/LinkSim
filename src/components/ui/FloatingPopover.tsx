@@ -4,6 +4,7 @@ import { Surface } from "./Surface";
 import type { CSSProperties, ReactNode } from "react";
 
 type FloatingPopoverPlacement = "trigger" | "centered";
+type FloatingPopoverTier = "base" | "raised";
 
 type FloatingPopoverPosition = {
   left: number;
@@ -38,6 +39,7 @@ type FloatingPopoverProps = {
   estimatedWidth?: number;
   pointerTail?: boolean;
   pointerTone?: "accent" | "selection" | "temporary";
+  tier?: FloatingPopoverTier;
 };
 
 export function FloatingPopover({
@@ -53,6 +55,7 @@ export function FloatingPopover({
   estimatedWidth = 360,
   pointerTail = false,
   pointerTone = "accent",
+  tier = "base",
 }: FloatingPopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<FloatingPopoverPosition | null>(null);
@@ -152,6 +155,7 @@ export function FloatingPopover({
       style={{
         left: position.left,
         top: position.top,
+        zIndex: tier === "raised" ? 8200 : undefined,
         ...style,
       }}
     >

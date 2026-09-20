@@ -7,6 +7,7 @@ import {
   createPasskeyManagement,
   createGithubPilotSignIn,
   getTurnstileToken,
+  getGithubSignInUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   PasskeyPilotError,
@@ -159,6 +160,15 @@ describe("Better Auth pilot client", () => {
     );
     expect(getPasskeyUiErrorMessage(new TypeError("Failed to fetch"), "load")).toBe(
       "LinkSim could not load your passkeys. Reload the page and try again.",
+    );
+  });
+
+  it("sanitizes GitHub initiation failures and always gives a recovery action", () => {
+    expect(getGithubSignInUiErrorMessage(new TypeError("Load failed"))).toBe(
+      "GitHub sign-in could not reach LinkSim. Check your connection, reload the page, and try again.",
+    );
+    expect(getGithubSignInUiErrorMessage(new Error("database connection string leaked"))).toBe(
+      "GitHub sign-in could not start. Try again. If the problem continues, reload the page.",
     );
   });
 

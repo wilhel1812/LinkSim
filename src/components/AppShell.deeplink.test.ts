@@ -133,6 +133,7 @@ vi.mock("../lib/betterAuthPilot", () => ({
   getPasskeyUiErrorMessage: (error: Error) => error.message === "Load failed"
     ? "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub."
     : "Passkey sign-in failed. Try again, or sign in with GitHub.",
+  getGithubSignInUiErrorMessage: () => "GitHub sign-in could not start. Try again. If the problem continues, reload the page.",
 }));
 
 vi.mock("../store/appStore", () => ({
@@ -141,12 +142,9 @@ vi.mock("../store/appStore", () => ({
 
 vi.mock("./MapView", () => ({ MapView: () => null }));
 vi.mock("./Sidebar", () => ({
-  Sidebar: ({ onPasskeySignInRequested, onSignInRequested, showSignInForAccessPilot }: { onPasskeySignInRequested?: () => void; onSignInRequested?: () => void; showSignInForAccessPilot?: boolean }) =>
+  Sidebar: ({ onSignInRequested, showSignInForAccessPilot }: { onSignInRequested?: (trigger: HTMLElement) => void; showSignInForAccessPilot?: boolean }) =>
     showSignInForAccessPilot
-      ? React.createElement(React.Fragment, null,
-          React.createElement("button", { onClick: onSignInRequested }, "Pilot sign in"),
-          React.createElement("button", { onClick: onPasskeySignInRequested }, "Passkey sign in"),
-        )
+      ? React.createElement("button", { onClick: (event: React.MouseEvent<HTMLButtonElement>) => onSignInRequested?.(event.currentTarget) }, "Pilot sign in")
       : null,
 }));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
@@ -329,7 +327,7 @@ describe("AppShell deeplink cold-load flow", () => {
     );
   });
 
-  it("offers Better Auth login while retaining an Access-backed workspace", async () => {
+  it("offers explicit GitHub and passkey choices while retaining an Access-backed workspace", async () => {
     hoisted.betterAuthPilotEnabled = true;
     window.history.replaceState(null, "", "/");
     hoisted.fetchAuthStatus.mockResolvedValue({
@@ -343,6 +341,11 @@ describe("AppShell deeplink cold-load flow", () => {
       const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       expect(button).toBeTruthy();
       fireEvent.click(button as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
+      const github = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Continue with GitHub");
+      fireEvent.click(github as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location);
       expect(hoisted.fetchMe).toHaveBeenCalled();
@@ -366,8 +369,11 @@ describe("AppShell deeplink cold-load flow", () => {
 
     const view = await renderAppShell();
     try {
-      const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Passkey sign in");
-      fireEvent.click(button as HTMLButtonElement);
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      const passkey = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Use a passkey");
+      fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
       await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length >= 2);
@@ -389,12 +395,43 @@ describe("AppShell deeplink cold-load flow", () => {
 
     const view = await renderAppShell();
     try {
-      const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Passkey sign in");
-      fireEvent.click(button as HTMLButtonElement);
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      const passkey = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Use a passkey");
+      fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(document.body.textContent).toContain(
         "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub.",
       );
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps the chooser open and explains a GitHub initiation failure", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.signInWithGithubPilot.mockRejectedValueOnce(new Error("database connection string leaked"));
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = await renderAppShell();
+    try {
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      const github = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Continue with GitHub");
+      fireEvent.click(github as HTMLButtonElement);
+      await flushMicrotasks();
+
+      expect(document.body.textContent).toContain(
+        "GitHub sign-in could not start. Try again. If the problem continues, reload the page.",
+      );
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
     } finally {
       unmountAppShell(view);
     }

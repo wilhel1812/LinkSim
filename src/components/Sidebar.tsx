@@ -35,8 +35,7 @@ const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolea
 type SidebarProps = {
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
-  onSignInRequested?: () => void;
-  onPasskeySignInRequested?: () => void;
+  onSignInRequested?: (trigger: HTMLElement) => void;
   showSignInForAccessPilot?: boolean;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
@@ -52,7 +51,6 @@ export function Sidebar({
   onOpenHelp,
   onOpenSettings,
   onSignInRequested,
-  onPasskeySignInRequested,
   showSignInForAccessPilot = false,
   hideLibraryBrowsing = false,
   readOnly = false,
@@ -417,7 +415,7 @@ export function Sidebar({
   };
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
-      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onPasskeySignInRequested={onPasskeySignInRequested} onSignInRequested={onSignInRequested} showSignInForAccessPilot={showSignInForAccessPilot} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} showSignInForAccessPilot={showSignInForAccessPilot} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
