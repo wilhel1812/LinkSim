@@ -5,6 +5,7 @@ const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api
 const TURNSTILE_ACTION = "github-login";
 const TURNSTILE_LOAD_TIMEOUT_MS = 15_000;
 const TURNSTILE_INTERACTION_TIMEOUT_MS = 120_000;
+const GITHUB_AUTH_RETURN_PARAM = "auth-return";
 
 type PilotEnvironment = {
   VITE_BETTER_AUTH_PILOT?: string;
@@ -14,6 +15,7 @@ type PilotEnvironment = {
 type TurnstileWidgetOptions = {
   sitekey: string;
   action: string;
+  size: "flexible";
   callback: (token: string) => void;
   "error-callback": () => boolean;
   "expired-callback": () => void;
@@ -143,6 +145,26 @@ export const buildAuthReturnPath = (location: Pick<Location, "pathname" | "searc
   return returnPath.startsWith("/") && !returnPath.startsWith("//") ? returnPath : "/";
 };
 
+export const buildGithubAuthReturnPath = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+): string => {
+  const returnPath = buildAuthReturnPath(location);
+  const url = new URL(returnPath, "https://linksim.invalid");
+  url.searchParams.set(GITHUB_AUTH_RETURN_PARAM, "github");
+  return `${url.pathname}${url.search}${url.hash}`;
+};
+
+export const consumeGithubAuthReturn = (
+  location: Pick<Location, "href" | "origin">,
+  history: Pick<History, "replaceState">,
+): boolean => {
+  const url = new URL(location.href, location.origin);
+  if (url.searchParams.get(GITHUB_AUTH_RETURN_PARAM) !== "github") return false;
+  url.searchParams.delete(GITHUB_AUTH_RETURN_PARAM);
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return true;
+};
+
 export const consumeAuthCallbackError = (
   location: Pick<Location, "href" | "origin">,
   history: Pick<History, "replaceState">,
@@ -208,6 +230,7 @@ export const getTurnstileToken = async (
       widget = api.render(container, {
         sitekey,
         action: TURNSTILE_ACTION,
+        size: "flexible",
         callback: (token) => token ? resolve(token) : reject(new Error("Anti-bot check returned no token.")),
         "error-callback": () => {
           reject(new Error("Anti-bot check failed. Try again."));
@@ -254,18 +277,25 @@ export const createGithubPilotSignIn = (dependencies: {
   createContainer?: () => HTMLElement;
 }) => {
   let busy = false;
-  return async (location: Pick<Location, "pathname" | "search" | "hash">): Promise<"started" | "busy"> => {
+  return async (
+    location: Pick<Location, "pathname" | "search" | "hash">,
+    challengeContainer?: HTMLElement,
+  ): Promise<"started" | "busy"> => {
     if (busy) return "busy";
     busy = true;
-    const container = (dependencies.createContainer ?? (() => document.createElement("div")))();
+    const ownsContainer = !challengeContainer;
+    const container = challengeContainer
+      ?? (dependencies.createContainer ?? (() => document.createElement("div")))();
     container.dataset.sitekey = dependencies.siteKey;
     container.setAttribute("aria-label", "Anti-bot check");
-    container.style.position = "fixed";
-    container.style.left = "50%";
-    container.style.top = "50%";
-    container.style.transform = "translate(-50%, -50%)";
-    container.style.zIndex = "10000";
-    document.body.append(container);
+    if (ownsContainer) {
+      container.style.position = "fixed";
+      container.style.left = "50%";
+      container.style.top = "50%";
+      container.style.transform = "translate(-50%, -50%)";
+      container.style.zIndex = "10000";
+      document.body.append(container);
+    }
     try {
       const token = await (dependencies.getToken ?? getTurnstileToken)(container);
       const returnPath = buildAuthReturnPath(location);
@@ -273,7 +303,7 @@ export const createGithubPilotSignIn = (dependencies: {
       const data = checked(await social(
         {
           provider: "github",
-          callbackURL: returnPath,
+          callbackURL: buildGithubAuthReturnPath(location),
           errorCallbackURL: returnPath,
           disableRedirect: true,
         },
@@ -286,7 +316,7 @@ export const createGithubPilotSignIn = (dependencies: {
       (dependencies.navigate ?? ((url) => window.location.assign(url)))(authorizationUrl);
       return "started";
     } finally {
-      container.remove();
+      if (ownsContainer) container.remove();
       busy = false;
     }
   };
@@ -296,8 +326,10 @@ const pilotSignIn = createGithubPilotSignIn({
   siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? "",
 });
 
-export const signInWithGithubPilot = (location: Pick<Location, "pathname" | "search" | "hash">) =>
-  pilotSignIn(location);
+export const signInWithGithubPilot = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  challengeContainer?: HTMLElement,
+) => pilotSignIn(location, challengeContainer);
 
 export const createPasskeyPilotSignIn = (dependencies: { passkey?: PasskeySignIn } = {}) => {
   let busy = false;

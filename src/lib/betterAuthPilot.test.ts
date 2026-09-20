@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAuthReturnPath,
+  buildGithubAuthReturnPath,
+  consumeGithubAuthReturn,
   consumeAuthCallbackError,
   createPasskeyPilotSignIn,
   createPasskeyManagement,
@@ -30,6 +32,22 @@ describe("Better Auth pilot client", () => {
     expect(buildAuthReturnPath({ pathname: "//example.test/steal", search: "", hash: "" })).toBe("/");
   });
 
+  it("marks and consumes a GitHub callback return without dropping route state", () => {
+    expect(buildGithubAuthReturnPath(window.location)).toBe(
+      "/wilhelm/Svalbard/Pyramiden?layer=terrain&auth-return=github#profile",
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/wilhelm/Svalbard/Pyramiden?layer=terrain&auth-return=github#profile",
+    );
+    expect(consumeGithubAuthReturn(window.location, window.history)).toBe(true);
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
+    );
+    expect(consumeGithubAuthReturn(window.location, window.history)).toBe(false);
+  });
+
   it("removes callback error parameters without dropping the rest of the URL", () => {
     window.history.replaceState(null, "", "/wilhelm/Svalbard?layer=terrain&error=access_denied&error_description=nope#profile");
     expect(consumeAuthCallbackError(window.location, window.history)).toBe(true);
@@ -55,6 +73,7 @@ describe("Better Auth pilot client", () => {
     await expect(getTurnstileToken(first, { load })).resolves.toBe("token-1");
     await expect(getTurnstileToken(second, { load })).resolves.toBe("token-2");
     expect(render).toHaveBeenCalledTimes(2);
+    expect(render).toHaveBeenCalledWith(first, expect.objectContaining({ size: "flexible" }));
     expect(remove).toHaveBeenCalledTimes(2);
   });
 
@@ -83,7 +102,7 @@ describe("Better Auth pilot client", () => {
     expect(social).toHaveBeenCalledWith(
       {
         provider: "github",
-        callbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
+        callbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain&auth-return=github#profile",
         errorCallbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
         disableRedirect: true,
       },
@@ -96,6 +115,29 @@ describe("Better Auth pilot client", () => {
     await expect(second).resolves.toBe("started");
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a caller-owned challenge container without moving or removing it", async () => {
+    const host = document.createElement("section");
+    const container = document.createElement("div");
+    host.append(container);
+    document.body.append(host);
+    const getToken = vi.fn(async () => "fresh-token");
+    const signIn = createGithubPilotSignIn({
+      siteKey: "site-key",
+      getToken,
+      social: vi.fn(async () => ({
+        data: { url: "https://github.com/login/oauth/authorize?client_id=test" },
+        error: null,
+      })),
+      navigate: vi.fn(),
+    });
+
+    await expect(signIn(window.location, container)).resolves.toBe("started");
+    expect(getToken).toHaveBeenCalledWith(container);
+    expect(container.parentElement).toBe(host);
+    expect(container.style.position).toBe("");
+    expect(container).toHaveAttribute("aria-label", "Anti-bot check");
   });
 
   it("rejects a missing or unexpected provider redirect", async () => {

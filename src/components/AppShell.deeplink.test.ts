@@ -78,6 +78,7 @@ const hoisted = vi.hoisted(() => {
     signInWithPasskeyPilot,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
+    githubAuthReturn: false,
     runtimeEnvironment: "production",
     state,
     useAppStore,
@@ -127,6 +128,7 @@ vi.mock("../lib/environment", () => ({
 
 vi.mock("../lib/betterAuthPilot", () => ({
   consumeAuthCallbackError: vi.fn(() => hoisted.authCallbackError),
+  consumeGithubAuthReturn: vi.fn(() => hoisted.githubAuthReturn),
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
   signInWithGithubPilot: hoisted.signInWithGithubPilot,
   signInWithPasskeyPilot: hoisted.signInWithPasskeyPilot,
@@ -247,6 +249,7 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.runtimeEnvironment = "production";
     hoisted.betterAuthPilotEnabled = false;
     hoisted.authCallbackError = false;
+    hoisted.githubAuthReturn = false;
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
     installLocalStorageMock();
@@ -344,13 +347,79 @@ describe("AppShell deeplink cold-load flow", () => {
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
-      const github = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Continue with GitHub");
+      const github = document.querySelector('button[aria-label="Continue with GitHub"]');
       fireEvent.click(github as HTMLButtonElement);
       await flushMicrotasks();
-      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location);
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(
+        window.location,
+        expect.any(HTMLElement),
+      );
       expect(hoisted.fetchMe).toHaveBeenCalled();
     } finally {
       unmountAppShell(view);
+    }
+  });
+
+  it("keeps the embedded challenge mounted when the trigger is clicked during GitHub sign-in", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+    let finishSignIn!: (result: "started") => void;
+    hoisted.signInWithGithubPilot.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSignIn = resolve;
+    }));
+
+    const view = await renderAppShell();
+    try {
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      fireEvent.click(document.querySelector('button[aria-label="Continue with GitHub"]') as HTMLButtonElement);
+      await flushMicrotasks();
+      const challenge = document.querySelector<HTMLElement>('[aria-label="Anti-bot check"]');
+      expect(challenge).toBeTruthy();
+
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toContainElement(challenge);
+
+      finishSignIn("started");
+      await flushMicrotasks();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("confirms a returned GitHub session before settling on Access", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    window.history.replaceState(null, "", "/?workspace=local#panel");
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    }).mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
+      await advanceTimers(250);
+      await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length >= 2);
+      expect(document.body.textContent).not.toContain("Pilot sign in");
+      expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+        "/?workspace=local#panel",
+      );
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
     }
   });
 
@@ -372,7 +441,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const passkey = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Use a passkey");
+      const passkey = document.querySelector('button[aria-label="Use a passkey"]');
       fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
@@ -398,7 +467,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const passkey = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Use a passkey");
+      const passkey = document.querySelector('button[aria-label="Use a passkey"]');
       fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(document.body.textContent).toContain(
@@ -424,7 +493,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const github = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Continue with GitHub");
+      const github = document.querySelector('button[aria-label="Continue with GitHub"]');
       fireEvent.click(github as HTMLButtonElement);
       await flushMicrotasks();
 

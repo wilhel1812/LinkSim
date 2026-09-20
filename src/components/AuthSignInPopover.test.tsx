@@ -30,10 +30,12 @@ describe("AuthSignInPopover", () => {
     try {
       const popover = await screen.findByRole("dialog", { name: "Sign in or sign up" });
       expect(popover.closest(".ui-surface-pill")).toHaveClass("auth-sign-in-popover");
+      expect(popover.querySelector(".ui-settings-popover-list")).toBeInTheDocument();
       expect(screen.getByText(/Use GitHub to create an account or recover access/i)).toBeInTheDocument();
       expect(screen.getByText(/Use a passkey only if you added one previously/i)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Continue with GitHub" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Use a passkey" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     } finally {
       view.unmount();
       view.trigger.remove();
@@ -45,7 +47,9 @@ describe("AuthSignInPopover", () => {
     try {
       await screen.findByRole("dialog", { name: "Sign in or sign up" });
       await userEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-      expect(view.props.onGithub).toHaveBeenCalledOnce();
+      expect(view.props.onGithub).toHaveBeenCalledWith(
+        screen.getByLabelText("Anti-bot check"),
+      );
       expect(view.props.onPasskey).not.toHaveBeenCalled();
     } finally {
       view.unmount();
@@ -53,12 +57,15 @@ describe("AuthSignInPopover", () => {
     }
   });
 
-  it("identifies the busy operation and prevents duplicate choices", async () => {
-    const view = renderPopover({ busyMethod: "passkey" });
+  it("shows the anti-bot check inside the popover during GitHub sign-in", async () => {
+    const view = renderPopover({ busyMethod: "github" });
     try {
-      await waitFor(() => expect(screen.getByRole("button", { name: "Using passkey…" })).toBeDisabled());
-      expect(screen.getByRole("button", { name: "Continue with GitHub" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      const dialog = await screen.findByRole("dialog", { name: "Sign in or sign up" });
+      const challenge = screen.getByLabelText("Anti-bot check");
+      expect(dialog).toContainElement(challenge);
+      expect(challenge.closest(".auth-sign-in-challenge-row")).toHaveClass("is-active");
+      expect(screen.getByRole("button", { name: "Opening GitHub…" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Use a passkey" })).toBeDisabled();
     } finally {
       view.unmount();
       view.trigger.remove();

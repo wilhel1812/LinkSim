@@ -3342,22 +3342,66 @@ button {
 }
 
 .auth-sign-in-popover {
-  width: min(360px, calc(100vw - 16px));
+  width: min(328px, calc(100vw - 16px));
+  padding: 6px 0;
 }
 
 .auth-sign-in-popover-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-sign-in-popover-intro {
   display: grid;
-  gap: 12px;
+  gap: 2px;
+  padding: 6px 12px 10px;
 }
 
-.auth-sign-in-popover-content h2,
-.auth-sign-in-popover-content p {
-  margin: 0;
+.auth-sign-in-popover-intro strong {
+  font-size: 0.82rem;
 }
 
-.auth-sign-in-popover-content > button,
-.auth-sign-in-popover-content > div > button {
-  width: 100%;
+.auth-sign-in-popover-intro span,
+.auth-sign-in-option-description {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.auth-sign-in-option {
+  min-height: 54px;
+}
+
+.auth-sign-in-option-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.auth-sign-in-option-description {
+  text-wrap: balance;
+}
+
+.auth-sign-in-option:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.auth-sign-in-challenge-row {
+  display: none;
+  min-height: 70px;
+  padding: 6px 0;
+}
+
+.auth-sign-in-challenge-row.is-active {
+  display: grid;
+  place-items: center;
+}
+
+.auth-sign-in-challenge {
+  min-height: 65px;
+  width: 300px;
+  max-width: 100%;
 }
 
 .ui-settings-popover-list {

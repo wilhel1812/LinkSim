@@ -16,6 +16,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   consumeAuthCallbackError,
+  consumeGithubAuthReturn,
   getGithubSignInUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
@@ -63,6 +64,7 @@ const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 const ACCESS_FETCH_TIMEOUT_MS = 8_000;
 const AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
+const GITHUB_AUTH_RETURN_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
 const ACCESS_CHECKING_NOTICE_ID = "access-checking";
 const AUTH_DEGRADED_NOTICE_ID = "auth-degraded";
 const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
@@ -311,6 +313,8 @@ export function AppShell() {
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
   const authRetryTimerRef = useRef<number | null>(null);
+  const githubAuthReturnPendingRef = useRef(false);
+  const githubAuthReturnRetryAttemptRef = useRef(0);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -364,6 +368,10 @@ export function AppShell() {
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (!betterAuthPilotEnabled) return;
+    githubAuthReturnPendingRef.current = consumeGithubAuthReturn(window.location, window.history);
+  }, [betterAuthPilotEnabled]);
   useEffect(() => {
     if (!betterAuthPilotEnabled || !consumeAuthCallbackError(window.location, window.history)) return;
     pushNotification({
@@ -620,19 +628,20 @@ export function AppShell() {
   }, []);
 
   const handleUserSignInRequested = useCallback((trigger: HTMLElement) => {
+    if (authSignInBusyMethod) return;
     clearAuthRetryTimer();
     if (betterAuthPilotEnabled) {
       setAuthSignInAnchor((current) => current === trigger ? null : trigger);
       return;
     }
     window.location.href = buildAuthStartPath(window.location);
-  }, [betterAuthPilotEnabled, clearAuthRetryTimer]);
+  }, [authSignInBusyMethod, betterAuthPilotEnabled, clearAuthRetryTimer]);
 
-  const handleGithubSignInRequested = useCallback(async () => {
+  const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement) => {
     clearAuthRetryTimer();
     setAuthSignInBusyMethod("github");
     try {
-      const result = await signInWithGithubPilot(window.location);
+      const result = await signInWithGithubPilot(window.location, challengeContainer);
       if (result === "started") setAuthSignInAnchor(null);
     } catch (error) {
       pushNotification({
@@ -925,6 +934,30 @@ export function AppShell() {
             const authStatus = await fetchAuthStatus();
             if (!isCurrentRun()) return;
             setAuthSource(authStatus.authSource);
+            if (githubAuthReturnPendingRef.current && authStatus.authSource !== "better-auth") {
+              const attempt = githubAuthReturnRetryAttemptRef.current;
+              if (attempt < GITHUB_AUTH_RETURN_RETRY_DELAYS_MS.length) {
+                const delayMs = GITHUB_AUTH_RETURN_RETRY_DELAYS_MS[attempt];
+                githubAuthReturnRetryAttemptRef.current = attempt + 1;
+                window.clearTimeout(timeoutId);
+                authCheckInFlightRef.current = false;
+                authRetryTimerRef.current = window.setTimeout(() => {
+                  authRetryTimerRef.current = null;
+                  runAccessCheckRef.current("retry");
+                }, delayMs);
+                return;
+              }
+              githubAuthReturnPendingRef.current = false;
+              githubAuthReturnRetryAttemptRef.current = 0;
+              pushNotification({
+                id: "github-session-not-confirmed",
+                message: "GitHub sign-in completed, but LinkSim could not confirm the new session. Reload the page and try signing in again.",
+                tone: "error",
+              });
+            } else if (authStatus.authSource === "better-auth") {
+              githubAuthReturnPendingRef.current = false;
+              githubAuthReturnRetryAttemptRef.current = 0;
+            }
             const bootstrapState = resolveAuthBootstrapState({
               authState: authStatus.authState,
               hadAuthenticatedSession: hadAuthenticatedSessionRef.current,
@@ -997,6 +1030,7 @@ export function AppShell() {
       settleReadonlySession,
       setAuthState,
       setCurrentUser,
+      pushNotification,
     ],
   );
 
@@ -2436,7 +2470,7 @@ export function AppShell() {
       <AuthSignInPopover
         busyMethod={authSignInBusyMethod}
         onClose={() => setAuthSignInAnchor(null)}
-        onGithub={() => void handleGithubSignInRequested()}
+        onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
         onPasskey={() => void handlePasskeySignInRequested()}
         open={betterAuthPilotEnabled && authSignInAnchor !== null}
         triggerRef={authSignInTriggerRef}

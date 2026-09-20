@@ -1,5 +1,6 @@
-import { useCallback, useEffect, type RefObject } from "react";
-import { ActionButton } from "./ActionButton";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { KeyRound } from "lucide-react";
+import { siGithub } from "simple-icons";
 import { FloatingPopover } from "./ui/FloatingPopover";
 
 export type AuthSignInMethod = "github" | "passkey";
@@ -7,7 +8,7 @@ export type AuthSignInMethod = "github" | "passkey";
 type AuthSignInPopoverProps = {
   busyMethod: AuthSignInMethod | null;
   onClose: () => void;
-  onGithub: () => void;
+  onGithub: (challengeContainer: HTMLElement) => void;
   onPasskey: () => void;
   open: boolean;
   triggerRef: RefObject<HTMLElement | null>;
@@ -49,12 +50,13 @@ export function AuthSignInPopover({
   }, [open, triggerRef]);
 
   const busy = busyMethod !== null;
+  const challengeRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <FloatingPopover
       className="auth-sign-in-popover"
-      estimatedHeight={260}
-      estimatedWidth={360}
+      estimatedHeight={280}
+      estimatedWidth={328}
       onClose={busy ? () => undefined : onClose}
       open={open}
       pointerTail
@@ -62,22 +64,61 @@ export function AuthSignInPopover({
       triggerRef={triggerRef}
     >
       <div aria-busy={busy || undefined} aria-label="Sign in or sign up" className="auth-sign-in-popover-content" ref={focusContent} role="dialog">
-        <div>
-          <h2>Sign in or sign up</h2>
-          <p className="field-help">Use GitHub to create an account or recover access.</p>
+        <div className="auth-sign-in-popover-intro">
+          <strong>Sign in or sign up</strong>
+          <span>Choose a sign-in method.</span>
         </div>
-        <ActionButton disabled={busy} onClick={onGithub} type="button">
-          {busyMethod === "github" ? "Opening GitHub…" : "Continue with GitHub"}
-        </ActionButton>
-        <div>
-          <p className="field-help">Use a passkey only if you added one previously.</p>
-          <ActionButton disabled={busy} onClick={onPasskey} type="button" variant="ghost">
-            {busyMethod === "passkey" ? "Using passkey…" : "Use a passkey"}
-          </ActionButton>
-        </div>
-        <ActionButton disabled={busy} onClick={onClose} type="button" variant="ghost">
-          Cancel
-        </ActionButton>
+        <ul className="ui-settings-popover-list">
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label={busyMethod === "github" ? "Opening GitHub…" : "Continue with GitHub"}
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={() => {
+                if (challengeRef.current) onGithub(challengeRef.current);
+              }}
+              type="button"
+            >
+              <span className="auth-sign-in-option-copy">
+                <span className="ui-settings-toggle-label">
+                  {busyMethod === "github" ? "Opening GitHub…" : "Continue with GitHub"}
+                </span>
+                <span className="auth-sign-in-option-description">
+                  Use GitHub to create an account or recover access.
+                </span>
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <svg aria-hidden="true" height="18" viewBox="0 0 24 24" width="18">
+                  <path d={siGithub.path} fill="currentColor" />
+                </svg>
+              </span>
+            </button>
+          </li>
+          <li className={`ui-settings-popover-row auth-sign-in-challenge-row ${busyMethod === "github" ? "is-active" : ""}`.trim()}>
+            <div className="auth-sign-in-challenge" ref={challengeRef} aria-label="Anti-bot check" />
+          </li>
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label={busyMethod === "passkey" ? "Using passkey…" : "Use a passkey"}
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={onPasskey}
+              type="button"
+            >
+              <span className="auth-sign-in-option-copy">
+                <span className="ui-settings-toggle-label">
+                  {busyMethod === "passkey" ? "Using passkey…" : "Use a passkey"}
+                </span>
+                <span className="auth-sign-in-option-description">
+                  Use a passkey only if you added one previously.
+                </span>
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <KeyRound aria-hidden="true" size={18} strokeWidth={1.8} />
+              </span>
+            </button>
+          </li>
+        </ul>
       </div>
     </FloatingPopover>
   );
