@@ -1,4 +1,4 @@
-import { hasExactRequestOrigin, isExposedAuthRoute, requiresMutationOrigin } from "../../_lib/apiRoutePolicy";
+import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../_lib/apiRoutePolicy";
 import type { Env } from "../../_lib/types";
 
 const FORWARDED_HEADERS = [
@@ -40,7 +40,7 @@ const forwardedRequest = async (request: Request): Promise<Request> => {
 };
 
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
-  if (!isExposedAuthRoute(request)) return empty(404);
+  if (!isAuthGatewayRoute(request)) return empty(404);
   if (requiresMutationOrigin(request) && !hasExactRequestOrigin(request)) return empty(403);
   if (!env.AUTH) return empty(503);
 

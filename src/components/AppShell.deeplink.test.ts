@@ -10,6 +10,7 @@ const hoisted = vi.hoisted(() => {
   const fetchPublicSimulationLibrary = vi.fn();
   const loadSimulationPreset = vi.fn();
   const signInWithGithubPilot = vi.fn();
+  const signInWithPasskeyPilot = vi.fn();
 
   const state: Record<string, unknown> = {
     srtmTiles: [{ id: "tile-1" }],
@@ -74,6 +75,7 @@ const hoisted = vi.hoisted(() => {
     fetchPublicSimulationLibrary,
     loadSimulationPreset,
     signInWithGithubPilot,
+    signInWithPasskeyPilot,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
     runtimeEnvironment: "production",
@@ -127,6 +129,7 @@ vi.mock("../lib/betterAuthPilot", () => ({
   consumeAuthCallbackError: vi.fn(() => hoisted.authCallbackError),
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
   signInWithGithubPilot: hoisted.signInWithGithubPilot,
+  signInWithPasskeyPilot: hoisted.signInWithPasskeyPilot,
 }));
 
 vi.mock("../store/appStore", () => ({
@@ -135,9 +138,12 @@ vi.mock("../store/appStore", () => ({
 
 vi.mock("./MapView", () => ({ MapView: () => null }));
 vi.mock("./Sidebar", () => ({
-  Sidebar: ({ onSignInRequested, showSignInForAccessPilot }: { onSignInRequested?: () => void; showSignInForAccessPilot?: boolean }) =>
+  Sidebar: ({ onPasskeySignInRequested, onSignInRequested, showSignInForAccessPilot }: { onPasskeySignInRequested?: () => void; onSignInRequested?: () => void; showSignInForAccessPilot?: boolean }) =>
     showSignInForAccessPilot
-      ? React.createElement("button", { onClick: onSignInRequested }, "Pilot sign in")
+      ? React.createElement(React.Fragment, null,
+          React.createElement("button", { onClick: onSignInRequested }, "Pilot sign in"),
+          React.createElement("button", { onClick: onPasskeySignInRequested }, "Passkey sign in"),
+        )
       : null,
 }));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
@@ -241,6 +247,7 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.betterAuthPilotEnabled = false;
     hoisted.authCallbackError = false;
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
+    hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
     installLocalStorageMock();
     vi.stubGlobal("React", React);
     Object.assign(hoisted.state, {
@@ -336,6 +343,32 @@ describe("AppShell deeplink cold-load flow", () => {
       await flushMicrotasks();
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location);
       expect(hoisted.fetchMe).toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("signs in with a passkey without navigating away from the current workspace", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    window.history.replaceState(null, "", "/?workspace=local#panel");
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    }).mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+
+    const view = await renderAppShell();
+    try {
+      const button = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Passkey sign in");
+      fireEvent.click(button as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
+      await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length >= 2);
+      expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe("/?workspace=local#panel");
     } finally {
       unmountAppShell(view);
     }

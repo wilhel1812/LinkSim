@@ -205,7 +205,14 @@ export function SettingsPanel({ initialSection, onClose, suspended = false, onSi
     }
     switch (activeSection) {
       case "profile":
-        return <ProfileSection me={me} onMeUpdated={handleMeUpdated} onSignOut={handleSignOut} />;
+        return (
+          <ProfileSection
+            me={me}
+            onMeUpdated={handleMeUpdated}
+            onSignOut={handleSignOut}
+            passkeysEnabled={isBetterAuthPilotEnabled() && authSource === "better-auth"}
+          />
+        );
       case "preferences":
         return <PreferencesSection me={me} onMeUpdated={handleMeUpdated} />;
       case "admin":

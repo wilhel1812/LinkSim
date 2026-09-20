@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAuthReturnPath,
   consumeAuthCallbackError,
+  createPasskeyPilotSignIn,
+  createPasskeyManagement,
   createGithubPilotSignIn,
   getTurnstileToken,
   isBetterAuthPilotEnabled,
@@ -121,5 +123,57 @@ describe("Better Auth pilot client", () => {
 
     await expect(signIn(window.location)).rejects.toThrow("rejected");
     expect(document.querySelector('[aria-label="Anti-bot check"]')).toBeNull();
+  });
+
+  it("suppresses duplicate passkey sign-in and returns control without navigation", async () => {
+    let release!: (value: { data: { user: { id: string } }; error: null }) => void;
+    const passkey = vi.fn(() => new Promise<{ data: { user: { id: string } }; error: null }>((resolve) => { release = resolve; }));
+    const signIn = createPasskeyPilotSignIn({ passkey });
+
+    const first = signIn();
+    await expect(signIn()).resolves.toBe("busy");
+    release({ data: { user: { id: "auth-1" } }, error: null });
+    await expect(first).resolves.toBe("signed-in");
+    expect(window.location.pathname).toBe("/wilhelm/Svalbard/Pyramiden");
+  });
+
+  it("preserves the library passkey error code for safe GitHub fallback decisions", async () => {
+    const signIn = createPasskeyPilotSignIn({
+      passkey: vi.fn(async () => ({
+        data: null,
+        error: { code: "ERROR_CEREMONY_ABORTED", message: "Auth cancelled", status: 400 },
+      })),
+    });
+    await expect(signIn()).rejects.toMatchObject({
+      name: "PasskeyPilotError",
+      code: "ERROR_CEREMONY_ABORTED",
+      status: 400,
+    });
+  });
+
+  it("lists and mutates only the selected passkey through library actions", async () => {
+    const actions = {
+      listUserPasskeys: vi.fn(async () => ({
+        data: [{
+          id: "key-1",
+          name: "Laptop",
+          createdAt: new Date(0),
+          publicKey: "must-not-reach-ui",
+          credentialID: "must-not-reach-ui",
+        }],
+        error: null,
+      })),
+      addPasskey: vi.fn(async () => ({ data: {}, error: null })),
+      updatePasskey: vi.fn(async () => ({ data: {}, error: null })),
+      deletePasskey: vi.fn(async () => ({ data: {}, error: null })),
+    };
+    const management = createPasskeyManagement(actions as never);
+    await expect(management.list()).resolves.toEqual([{ id: "key-1", name: "Laptop", createdAt: new Date(0) }]);
+    await management.add(" Phone ");
+    await management.rename("key-1", " Laptop 2 ");
+    await management.remove("key-1");
+    expect(actions.addPasskey).toHaveBeenCalledWith({ name: "Phone" });
+    expect(actions.updatePasskey).toHaveBeenCalledWith({ id: "key-1", name: "Laptop 2" });
+    expect(actions.deletePasskey).toHaveBeenCalledWith({ id: "key-1" });
   });
 });

@@ -83,6 +83,17 @@ closed. The fixed staging claim deadline is
 registration remains available. The existing browser pilot flag remains during
 the Access transition, but the runtime no longer has per-user pilot secrets.
 
+Issue #1151 adds the compatibility-proven Better Auth passkey plugin to the
+same private staging runtime. Passkeys are bound to `staging.linksim.link` and
+stored in the existing `auth_passkey` table. Users may enroll, name, rename and
+remove multiple passkeys from the existing Profile settings surface and sign in
+from the existing account toolbar. Enrollment, rename and removal require a
+session created within the configured five-minute freshness window. GitHub
+remains linked and available for bootstrap and recovery; this phase exposes no
+provider-unlink route. Passkey authentication does not replace Turnstile on
+GitHub registration and does not establish that a user is human. Preview and
+production authentication remain unchanged.
+
 The staging GitHub OAuth application uses
 `https://staging.linksim.link/api/auth/callback/github`. The `staging` GitHub
 environment must provide `BETTER_AUTH_SECRET`,

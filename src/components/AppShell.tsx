@@ -18,6 +18,7 @@ import {
   consumeAuthCallbackError,
   isBetterAuthPilotEnabled,
   signInWithGithubPilot,
+  signInWithPasskeyPilot,
 } from "../lib/betterAuthPilot";
 import { parseRadioPresetShareHash, type RadioPresetShareParseResult } from "../lib/radioPresetShare";
 import { normalizeUserSimulationDefaultsPreference } from "../lib/simulationDefaults";
@@ -628,6 +629,20 @@ export function AppShell() {
     }
     window.location.href = buildAuthStartPath(window.location);
   }, [betterAuthPilotEnabled, clearAuthRetryTimer, pushNotification]);
+
+  const handlePasskeySignInRequested = useCallback(async () => {
+    clearAuthRetryTimer();
+    try {
+      const result = await signInWithPasskeyPilot();
+      if (result === "signed-in") runAccessCheckRef.current("retry");
+    } catch (error) {
+      pushNotification({
+        id: "passkey-sign-in-failed",
+        message: getUiErrorMessage(error),
+        tone: "error",
+      });
+    }
+  }, [clearAuthRetryTimer, pushNotification]);
 
   const clearPresetImport = useCallback(() => {
     setPresetImport(null);
@@ -2111,6 +2126,7 @@ export function AppShell() {
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
+            onPasskeySignInRequested={betterAuthPilotEnabled ? handlePasskeySignInRequested : undefined}
             onSignInRequested={handleUserSignInRequested}
             showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
             readOnly={!canPersistWorkspace}
@@ -2332,6 +2348,7 @@ export function AppShell() {
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
+                onPasskeySignInRequested={betterAuthPilotEnabled ? handlePasskeySignInRequested : undefined}
                 onSignInRequested={handleUserSignInRequested}
                 showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
                 readOnly={!canPersistWorkspace}

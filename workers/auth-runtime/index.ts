@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 
 import { makeAuthSessionLog, type AuthSessionResultCategory } from "./logging";
 import { authRuntimeOptions, type AuthRuntimeEnv } from "./options";
-import { hasExactRequestOrigin, isExposedAuthRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
+import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
 
 const SESSION_HEADERS = [
   "cookie",
@@ -65,7 +65,7 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
   }
 
   async fetch(request: Request) {
-    if (!isExposedAuthRoute(request)) return new Response(null, { status: 404 });
+    if (!isAuthGatewayRoute(request)) return new Response(null, { status: 404 });
     if (requiresMutationOrigin(request) && !hasExactRequestOrigin(request)) {
       return new Response(null, { status: 403 });
     }

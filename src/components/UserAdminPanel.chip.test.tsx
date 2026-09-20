@@ -140,6 +140,19 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     expect(screen.getAllByRole("button", { name: /open user settings/i })).toHaveLength(1);
   });
 
+  it("reuses the existing toolbar for an accessible passkey sign-in action", async () => {
+    const onPasskeySignInRequested = vi.fn();
+    render(<UserAdminPanel
+      onPasskeySignInRequested={onPasskeySignInRequested}
+      showSignInForAccessPilot
+    />);
+
+    const button = screen.getByRole("button", { name: "Sign in with a passkey" });
+    expect(button).toHaveAttribute("title", "Sign in with a passkey");
+    await userEvent.click(button);
+    expect(onPasskeySignInRequested).toHaveBeenCalledOnce();
+  });
+
   it("does not fetch the protected profile while auth is still checking", () => {
     mockStoreState.authState = "checking";
     mockStoreState.currentUser = null;

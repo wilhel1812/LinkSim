@@ -15,8 +15,8 @@ vi.mock("../../lib/betterAuthPilot", () => ({
 
 // Stub sub-sections so SettingsPanel tests focus on panel-level behaviour.
 vi.mock("./sections/ProfileSection", () => ({
-  ProfileSection: ({ onSignOut }: { onSignOut?: () => void }) => (
-    <div data-testid="profile-section">
+  ProfileSection: ({ onSignOut, passkeysEnabled }: { onSignOut?: () => void; passkeysEnabled?: boolean }) => (
+    <div data-passkeys-enabled={String(passkeysEnabled)} data-testid="profile-section">
       Profile Section
       {onSignOut ? <button onClick={onSignOut}>Sign out</button> : null}
     </div>
@@ -106,6 +106,16 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
     expect(screen.getByTestId("profile-section")).toBeInTheDocument();
     expect(screen.queryByTestId("preferences-section")).not.toBeInTheDocument();
+  });
+
+  it("enables passkey management only for an authoritative Better Auth session", () => {
+    render(<SettingsPanel authSource="better-auth" initialSection={null} onClose={vi.fn()} />);
+    expect(screen.getByTestId("profile-section")).toHaveAttribute("data-passkeys-enabled", "true");
+  });
+
+  it.each(["access", "dev", null] as const)("keeps passkey management disabled for %s", (authSource) => {
+    render(<SettingsPanel authSource={authSource} initialSection={null} onClose={vi.fn()} />);
+    expect(screen.getByTestId("profile-section")).toHaveAttribute("data-passkeys-enabled", "false");
   });
 
   it("shows the Preferences section when initialSection = 'preferences'", () => {

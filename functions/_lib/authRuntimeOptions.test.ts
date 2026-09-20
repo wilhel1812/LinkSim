@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { authRuntimeOptions, type AuthRuntimeEnv } from "../../workers/auth-runtime/options";
+import {
+  FRESH_PASSKEY_MUTATION_PATHS,
+  authRuntimeOptions,
+  type AuthRuntimeEnv,
+} from "../../workers/auth-runtime/options";
 
 const envWithSecret = (secret: string): AuthRuntimeEnv => ({
   DB: {} as D1Database,
@@ -71,6 +75,17 @@ describe("auth runtime options", () => {
       expectedAction: "github-login",
       allowedHostnames: ["staging.linksim.link"],
     });
+    const passkey = options.plugins?.find((plugin) => plugin.id === "passkey");
+    expect(passkey?.options).toMatchObject({
+      rpID: "staging.linksim.link",
+      rpName: "LinkSim",
+      origin: "https://staging.linksim.link",
+      schema: { passkey: { modelName: "auth_passkey" } },
+    });
+    expect(FRESH_PASSKEY_MUTATION_PATHS).toEqual(new Set([
+      "/passkey/delete-passkey",
+      "/passkey/update-passkey",
+    ]));
 
     const github = options.socialProviders?.github as {
       requireEmailVerification?: boolean;
