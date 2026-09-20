@@ -45,11 +45,18 @@ test('disposable Worker rejects missing or incorrect probe credentials before to
   }
 });
 
-test('checked-in fixture schema matches the pinned library generator', async () => {
+test('checked-in fixture schema matches the pinned generator plus provider uniqueness', async () => {
   const database = new DatabaseSync(':memory:');
   try {
     const migration = await getMigrations(probeOptions({ ...env, DB: database }));
-    assert.equal(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'), await migration.compileMigrations());
+    const generated = await migration.compileMigrations();
+    const accountIndex = 'create index "probe_account_userId_idx" on "probe_account" ("userId");\n';
+    const expected = generated.replace(
+      accountIndex,
+      `${accountIndex}\ncreate unique index "probe_account_provider_account_idx" on "probe_account" ("providerId", "accountId");\n`,
+    );
+    assert.notEqual(expected, generated);
+    assert.equal(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'), `${expected}\n`);
   } finally { database.close(); }
 });
 
@@ -102,14 +109,15 @@ test('OAuth initiation requires Turnstile and cross-origin mutation is rejected'
   } finally { db.close(); }
 });
 
-test('provider lookup index avoids scans without imposing new identity constraints', () => {
+test('provider lookup index avoids scans and enforces provider identity uniqueness', () => {
   const db=new DatabaseSync(':memory:');
   try {
     db.exec(readFileSync('schema.sql','utf8'));
     const indexes=readFileSync('indexes.sql','utf8');
     db.exec(indexes);db.exec(indexes);
     const plan=db.prepare('EXPLAIN QUERY PLAN SELECT * FROM probe_account WHERE providerId = ? AND accountId = ? LIMIT 2').all('github','88513');
-    assert.ok(plan.some(row=>row.detail.includes('probe_account_provider_subject_idx')));
-    assert.equal(db.prepare("PRAGMA index_list('probe_account')").all().find(row=>row.name==='probe_account_provider_subject_idx').unique,0);
+    assert.ok(plan.some(row=>row.detail.includes('probe_account_provider_account_idx')));
+    assert.equal(db.prepare("PRAGMA index_list('probe_account')").all().find(row=>row.name==='probe_account_provider_account_idx').unique,1);
+    assert.equal(db.prepare("PRAGMA index_list('probe_account')").all().some(row=>row.name==='probe_account_provider_subject_idx'),false);
   } finally {db.close();}
 });

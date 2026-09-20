@@ -14,6 +14,13 @@ describe("Better Auth Pages gateway", () => {
     ["POST", "/api/auth/sign-in/social"],
     ["GET", "/api/auth/callback/github?code=x&state=y"],
     ["POST", "/api/auth/sign-out"],
+    ["GET", "/api/auth/passkey/generate-authenticate-options"],
+    ["POST", "/api/auth/passkey/verify-authentication"],
+    ["GET", "/api/auth/passkey/generate-register-options"],
+    ["POST", "/api/auth/passkey/verify-registration"],
+    ["GET", "/api/auth/passkey/list-user-passkeys"],
+    ["POST", "/api/auth/passkey/update-passkey"],
+    ["POST", "/api/auth/passkey/delete-passkey"],
   ])("forwards the allowed route %s %s", async (method, path) => {
     const runtime = vi.fn(async () => new Response(null, {
       status: 302,

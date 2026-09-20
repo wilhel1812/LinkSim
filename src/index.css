@@ -6295,6 +6295,61 @@ html.panorama-gesture-lock body {
   gap: 18px;
 }
 
+.passkey-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.passkey-create-row,
+.passkey-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.passkey-create-row > input,
+.passkey-row-actions > input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.passkey-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.passkey-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(260px, 1.3fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.passkey-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .passkey-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-admin-embed {
   border-top: 1px solid var(--border);
   padding-top: 16px;

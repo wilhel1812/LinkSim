@@ -1,5 +1,7 @@
 import type { BetterAuthOptions } from "better-auth";
+import { createAuthMiddleware, freshSessionMiddleware } from "better-auth/api";
 import { captcha } from "better-auth/plugins";
+import { passkey } from "@better-auth/passkey";
 
 import { provisionAuthIdentity, resolveCurrentAuthIdentity } from "../../functions/_lib/authIdentityMap";
 
@@ -16,6 +18,11 @@ export type AuthRuntimeEnv = {
 
 const required = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
+
+export const FRESH_PASSKEY_MUTATION_PATHS = new Set([
+  "/passkey/delete-passkey",
+  "/passkey/update-passkey",
+]);
 
 export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
   let url: URL;
@@ -134,12 +141,27 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         },
       },
     },
-    plugins: [captcha({
-      provider: "cloudflare-turnstile",
-      secretKey: env.TURNSTILE_SECRET_KEY,
-      endpoints: ["/sign-in/social"],
-      expectedAction: "github-login",
-      allowedHostnames: [url.hostname],
-    })],
+    hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (FRESH_PASSKEY_MUTATION_PATHS.has(context.path)) {
+          await freshSessionMiddleware(context);
+        }
+      }),
+    },
+    plugins: [
+      passkey({
+        rpID: url.hostname,
+        rpName: "LinkSim",
+        origin,
+        schema: { passkey: { modelName: "auth_passkey" } },
+      }),
+      captcha({
+        provider: "cloudflare-turnstile",
+        secretKey: env.TURNSTILE_SECRET_KEY,
+        endpoints: ["/sign-in/social"],
+        expectedAction: "github-login",
+        allowedHostnames: [url.hostname],
+      }),
+    ],
   };
 };

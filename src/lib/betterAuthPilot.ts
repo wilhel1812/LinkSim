@@ -1,4 +1,5 @@
 import { createAuthClient } from "better-auth/client";
+import { passkeyClient, type Passkey } from "@better-auth/passkey/client";
 
 const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 const TURNSTILE_ACTION = "github-login";
@@ -38,14 +39,43 @@ type SocialSignIn = (
   error?: { message?: string } | null;
 }>;
 
+type AuthResponse<T> = {
+  data?: T | null;
+  error?: { code?: string; message?: string; status?: number } | null;
+};
+
+type PasskeySignIn = () => Promise<AuthResponse<{ user: { id: string } }>>;
+type PasskeyActions = {
+  listUserPasskeys: () => Promise<AuthResponse<Passkey[]>>;
+  addPasskey: (input: { name: string }) => Promise<AuthResponse<unknown>>;
+  updatePasskey: (input: { id: string; name: string }) => Promise<AuthResponse<unknown>>;
+  deletePasskey: (input: { id: string }) => Promise<AuthResponse<unknown>>;
+};
+
+export type BetterAuthPasskey = Pick<Passkey, "id" | "name" | "createdAt">;
+
+export class PasskeyPilotError extends Error {
+  readonly name = "PasskeyPilotError";
+  readonly code: string | undefined;
+  readonly status: number | undefined;
+
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+}
+
 let turnstileLoading: Promise<TurnstileApi> | undefined;
-let authClient: ReturnType<typeof createAuthClient> | undefined;
+const createPilotAuthClient = () => createAuthClient({
+  baseURL: window.location.origin,
+  plugins: [passkeyClient()],
+  fetchOptions: { timeout: 20_000, retry: 0 },
+});
+let authClient: ReturnType<typeof createPilotAuthClient> | undefined;
 
 const getAuthClient = () => {
-  authClient ??= createAuthClient({
-    baseURL: window.location.origin,
-    fetchOptions: { timeout: 20_000, retry: 0 },
-  });
+  authClient ??= createPilotAuthClient();
   return authClient;
 };
 
@@ -137,9 +167,15 @@ export const getTurnstileToken = async (
   }
 };
 
-const checked = <T>(response: { data?: T; error?: { message?: string } | null }): T | undefined => {
-  if (response.error) throw new Error(response.error.message || "Authentication request failed");
-  return response.data;
+const checked = <T>(response: AuthResponse<T>): T | undefined => {
+  if (response.error) {
+    throw new PasskeyPilotError(
+      response.error.message || "Authentication request failed",
+      response.error.code,
+      response.error.status,
+    );
+  }
+  return response.data ?? undefined;
 };
 
 const githubAuthorizationUrl = (value: unknown): string | undefined => {
@@ -206,6 +242,52 @@ const pilotSignIn = createGithubPilotSignIn({
 
 export const signInWithGithubPilot = (location: Pick<Location, "pathname" | "search" | "hash">) =>
   pilotSignIn(location);
+
+export const createPasskeyPilotSignIn = (dependencies: { passkey?: PasskeySignIn } = {}) => {
+  let busy = false;
+  return async (): Promise<"signed-in" | "busy"> => {
+    if (busy) return "busy";
+    busy = true;
+    try {
+      const passkey = dependencies.passkey ?? (() => getAuthClient().signIn.passkey());
+      const result = checked(await passkey());
+      if (!result?.user?.id) throw new PasskeyPilotError("Passkey sign-in failed.");
+      return "signed-in";
+    } finally {
+      busy = false;
+    }
+  };
+};
+
+const pilotPasskeySignIn = createPasskeyPilotSignIn();
+
+export const signInWithPasskeyPilot = () => pilotPasskeySignIn();
+
+export const createPasskeyManagement = (passkey: PasskeyActions) => ({
+  async list(): Promise<BetterAuthPasskey[]> {
+    return (checked(await passkey.listUserPasskeys()) ?? []).map(({ id, name, createdAt }) => ({
+      id,
+      name,
+      createdAt,
+    }));
+  },
+  async add(name: string): Promise<void> {
+    checked(await passkey.addPasskey({ name: name.trim() }));
+  },
+  async rename(id: string, name: string): Promise<void> {
+    checked(await passkey.updatePasskey({ id, name: name.trim() }));
+  },
+  async remove(id: string): Promise<void> {
+    checked(await passkey.deletePasskey({ id }));
+  },
+});
+
+const passkeyManagement = () => createPasskeyManagement(getAuthClient().passkey);
+
+export const listBetterAuthPasskeys = () => passkeyManagement().list();
+export const addBetterAuthPasskey = (name: string) => passkeyManagement().add(name);
+export const renameBetterAuthPasskey = (id: string, name: string) => passkeyManagement().rename(id, name);
+export const removeBetterAuthPasskey = (id: string) => passkeyManagement().remove(id);
 
 export const signOutBetterAuthPilot = async (): Promise<void> => {
   checked(await getAuthClient().signOut());

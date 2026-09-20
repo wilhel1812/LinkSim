@@ -139,6 +139,9 @@ try {
   const staleRegistration = await mf.dispatchFetch(origin+'/api/auth/passkey/generate-register-options',{headers:credentials[5].headers});
   assert.equal(staleRegistration.status,403,'enrollment requires a fresh session');
   await staleRegistration.arrayBuffer();
+  const staleRename = await post('/api/auth/passkey/update-passkey',{id:'not-a-credential',name:'Stale rename'},{cookie:credentials[5].headers.get('cookie')});
+  assert.equal(staleRename.status,403,'rename requires a fresh session');
+  await staleRename.arrayBuffer();
   const staleRemoval = await post('/api/auth/passkey/delete-passkey',{id:'not-a-credential'},{cookie:credentials[5].headers.get('cookie')});
   assert.equal(staleRemoval.status,403,'removal requires a fresh session');
   await staleRemoval.arrayBuffer();
