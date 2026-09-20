@@ -14,11 +14,14 @@ describe("staging auth Durable Object transport", () => {
     const runtimePath = join(directory, "runtime.js");
     const productionGateway = readFileSync("functions/api/auth/[[path]].ts", "utf8");
     expect(productionGateway).toContain('.getByName("auth").fetch(');
+    expect(productionGateway).toContain('redirect: "manual"');
     expect(productionGateway).not.toContain(".handleAuth(");
     writeFileSync(gatewayPath, `
       export default {
         async fetch(request, env) {
-          const response = await env.AUTH.getByName("auth").fetch(request);
+          const response = await env.AUTH.getByName("auth").fetch(new Request(request, {
+            redirect: "manual",
+          }));
           return new Response(response.body, {
             status: response.status,
             headers: response.headers,

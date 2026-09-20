@@ -35,6 +35,7 @@ const forwardedRequest = async (request: Request): Promise<Request> => {
     method: request.method,
     headers,
     body: requiresMutationOrigin(request) ? await request.arrayBuffer() : undefined,
+    redirect: "manual",
   });
 };
 

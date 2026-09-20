@@ -37,6 +37,7 @@ describe("Better Auth Pages gateway", () => {
     expect(response.headers.get("set-cookie")).toContain("better-auth.session");
     expect(response.headers.get("cache-control")).toBe("no-store");
     const forwarded = runtime.mock.calls[0][0];
+    expect(forwarded.redirect).toBe("manual");
     expect(forwarded.headers.get("authorization")).toBeNull();
     expect(forwarded.headers.get("x-captcha-response")).toBe(method === "POST" ? "turnstile-token" : null);
   });
