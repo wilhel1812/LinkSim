@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PUBLIC_POLICY_ID = "32915afb-f399-4c5c-90ea-e5bf0f377b7c";
+const PUBLIC_API_POLICY_ID = "d0a1003c-ce29-4f14-a635-58463e82020b";
 const AUTHENTICATED_POLICY_ID = "fd96072d-843b-4320-811a-281767b011ee";
 const ACCOUNT_ID = "85c57e0c4da3a747a09212dc5b090f52";
 
@@ -29,9 +30,15 @@ export const ACCESS_BOUNDARIES = Object.freeze({
         mutable: false,
       },
       {
-        key: "authApi",
-        domain: "staging.linksim.link/api/auth/*",
-        policyId: PUBLIC_POLICY_ID,
+        key: "publicApi",
+        domain: "staging.linksim.link/api/v1/calculate*",
+        destinationUris: [
+          "staging.linksim.link/api/v1/calculate*",
+          "staging.linksim.link/copernicus/*",
+          "staging.linksim.link/api/public-simulation*",
+          "staging.linksim.link/api/auth/*",
+        ],
+        policyId: PUBLIC_API_POLICY_ID,
         decision: "bypass",
         mutable: false,
       },
@@ -90,6 +97,10 @@ export const ACCESS_BOUNDARIES = Object.freeze({
 
 const normalizePolicyIds = (policies) =>
   [...new Set((policies ?? []).map((policy) => String(policy.id ?? "").trim()).filter(Boolean))]
+    .sort();
+
+const normalizeDestinationUris = (destinations) =>
+  [...new Set((destinations ?? []).map((destination) => String(destination.uri ?? "").trim()).filter(Boolean))]
     .sort();
 
 const sameValues = (left, right) =>
@@ -201,6 +212,14 @@ export const planAccessBoundary = (applications, boundary) => {
 
     if (expected.audience) {
       assert(application.aud === expected.audience, `Unexpected Access audience for ${expected.domain}.`);
+    }
+    if (expected.destinationUris) {
+      const actualDestinationUris = normalizeDestinationUris(application.destinations);
+      const expectedDestinationUris = [...expected.destinationUris].sort();
+      assert(
+        sameValues(actualDestinationUris, expectedDestinationUris),
+        `Access destination drift for ${expected.domain}: expected ${expectedDestinationUris.join(",")}; received ${actualDestinationUris.join(",") || "none"}.`,
+      );
     }
     resolved.set(expected.key, application);
   }

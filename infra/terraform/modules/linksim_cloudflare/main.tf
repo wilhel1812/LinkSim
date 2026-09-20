@@ -151,10 +151,11 @@ resource "cloudflare_dns_record" "records" {
 resource "cloudflare_zero_trust_access_application" "app" {
   for_each = var.access_applications
 
-  account_id = var.account_id
-  name       = each.value.name
-  domain     = each.value.domain
-  type       = each.value.type
+  account_id   = var.account_id
+  name         = each.value.name
+  domain       = each.value.domain
+  destinations = each.value.destinations
+  type         = each.value.type
 
   policies = [
     for binding in each.value.policy_bindings : {

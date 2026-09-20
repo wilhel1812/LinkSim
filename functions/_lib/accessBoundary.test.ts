@@ -11,6 +11,7 @@ import {
 } from "../../scripts/access-boundary.mjs";
 
 const PUBLIC_POLICY_ID = "32915afb-f399-4c5c-90ea-e5bf0f377b7c";
+const PUBLIC_API_POLICY_ID = "d0a1003c-ce29-4f14-a635-58463e82020b";
 const AUTH_POLICY_ID = "fd96072d-843b-4320-811a-281767b011ee";
 
 const makeApp = ({
@@ -20,6 +21,7 @@ const makeApp = ({
   aud,
   policyId,
   decision,
+  destinations,
 }: {
   id: string;
   name: string;
@@ -27,6 +29,7 @@ const makeApp = ({
   aud: string;
   policyId: string;
   decision: "allow" | "bypass";
+  destinations?: Array<{ type: "public"; uri: string }>;
 }) => ({
   id,
   name,
@@ -35,6 +38,7 @@ const makeApp = ({
   aud,
   session_duration: "24h",
   policies: [{ id: policyId, name: `${decision} policy`, decision, precedence: 1 }],
+  destinations,
 });
 
 const stagingApps = () => [
@@ -47,12 +51,18 @@ const stagingApps = () => [
     decision: "bypass",
   }),
   makeApp({
-    id: "auth-api",
-    name: "LinkSim Staging Better Auth Routes",
-    domain: "staging.linksim.link/api/auth/*",
-    aud: "auth-api-aud",
-    policyId: PUBLIC_POLICY_ID,
+    id: "public-api",
+    name: "LinkSim Staging Public API Exceptions",
+    domain: "staging.linksim.link/api/v1/calculate*",
+    aud: "public-api-aud",
+    policyId: PUBLIC_API_POLICY_ID,
     decision: "bypass",
+    destinations: [
+      { type: "public", uri: "staging.linksim.link/api/v1/calculate*" },
+      { type: "public", uri: "staging.linksim.link/copernicus/*" },
+      { type: "public", uri: "staging.linksim.link/api/public-simulation*" },
+      { type: "public", uri: "staging.linksim.link/api/auth/*" },
+    ],
   }),
   makeApp({
     id: "api",
@@ -119,6 +129,12 @@ describe("Cloudflare Access boundary reconciliation", () => {
     expect(() =>
       planAccessBoundary([...stagingApps(), stagingApps()[1]], ACCESS_BOUNDARIES.staging),
     ).toThrow("exactly one");
+  });
+
+  it("fails closed when the existing public API application does not expose the exact Better Auth namespace", () => {
+    const apps = stagingApps();
+    apps[1] = { ...apps[1], destinations: apps[1].destinations?.slice(0, 3) };
+    expect(() => planAccessBoundary(apps, ACCESS_BOUNDARIES.staging)).toThrow("Access destination drift");
   });
 
   it("preserves supported application settings while changing only policy bindings", () => {
