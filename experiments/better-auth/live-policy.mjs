@@ -6,6 +6,7 @@ export const routes = new Map([
   ['/api/auth/passkey/generate-authenticate-options', 'GET'],
   ['/api/auth/passkey/verify-authentication', 'POST'],
   ['/api/auth/passkey/list-user-passkeys', 'GET'],
+  ['/api/auth/passkey/update-passkey', 'POST'],
   ['/api/auth/passkey/delete-passkey', 'POST'],
 ]);
 

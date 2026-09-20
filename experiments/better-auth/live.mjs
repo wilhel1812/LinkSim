@@ -22,7 +22,9 @@ export function liveOptions(env) {
       },
     } },
     hooks: { before: createAuthMiddleware(async ctx => {
-      if (ctx.path === '/passkey/delete-passkey') await freshSessionMiddleware(ctx);
+      if (['/passkey/delete-passkey', '/passkey/update-passkey'].includes(ctx.path)) {
+        await freshSessionMiddleware(ctx);
+      }
     }) },
   };
 }

@@ -80,6 +80,13 @@ export async function verifyLocalPasskeys({mf,db,origin,credential,otherCredenti
     assert.equal((await validAgain.json()).user.id,credential.user.id);
     const otherSession=await mf.dispatchFetch(origin+'/probe/session/reused',{headers:otherCredential.headers});
     assert.equal(otherSession.status,200,'the other user has a valid session');await otherSession.arrayBuffer();
+    const forbiddenRename=await request('update-passkey',{cookie:otherCredential.headers.get('cookie'),body:{id:key.id,name:'Wrong owner'}});
+    assert.equal(forbiddenRename.status,401,'library ownership check rejects another authenticated user rename');
+    await forbiddenRename.arrayBuffer();
+    assert.equal((await db.prepare('SELECT name FROM probe_passkey WHERE id = ?').bind(key.id).first()).name,'Local virtual credential');
+    const renamed=await request('update-passkey',{cookie:sessionCookie,body:{id:key.id,name:'Renamed local credential'}});
+    assert.equal(renamed.status,200);await renamed.arrayBuffer();
+    assert.equal((await db.prepare('SELECT name FROM probe_passkey WHERE id = ?').bind(key.id).first()).name,'Renamed local credential');
     const forbiddenRemoval=await request('delete-passkey',{cookie:otherCredential.headers.get('cookie'),body:{id:key.id}});
     assert.equal(forbiddenRemoval.status,401,'library ownership check rejects another authenticated user');
     await forbiddenRemoval.arrayBuffer();
@@ -87,6 +94,6 @@ export async function verifyLocalPasskeys({mf,db,origin,credential,otherCredenti
     assert.equal(removed.status,200);await removed.arrayBuffer();
     const afterRemoval=await begin();await reject(afterRemoval,await assertCredential(afterRemoval.options));
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM probe_passkey WHERE userId = ?').bind(credential.user.id).first()).n,0);
-    return {registration:'passed',login:'passed',registrationReplay:'passed',assertionReplay:'passed',challengeMismatch:'passed',originMismatch:'passed',rpMismatch:'passed',invalidSignature:'passed',removedCredential:'passed',crossUserRemoval:'passed'};
+    return {registration:'passed',login:'passed',registrationReplay:'passed',assertionReplay:'passed',challengeMismatch:'passed',originMismatch:'passed',rpMismatch:'passed',invalidSignature:'passed',rename:'passed',crossUserRename:'passed',removedCredential:'passed',crossUserRemoval:'passed'};
   } finally {await browser.close();}
 }
