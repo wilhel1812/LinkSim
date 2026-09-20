@@ -17,6 +17,8 @@ type SettingsPanelProps = {
   /** Active section resolved from the URL; null → default to "profile". */
   initialSection: SettingsSectionId | null;
   onClose: () => void;
+  /** Complete the shell-level transition after Better Auth has revoked the session. */
+  onSignedOut: () => void;
   /** Disable panel-level focus and keyboard handling while a raised child modal is active. */
   suspended?: boolean;
   onSignOutError?: (message: string) => void;
@@ -38,7 +40,7 @@ const useIsNarrow = () => {
   return isNarrow;
 };
 
-export function SettingsPanel({ initialSection, onClose, suspended = false, onSignOutError, authSource = null }: SettingsPanelProps) {
+export function SettingsPanel({ initialSection, onClose, onSignedOut, suspended = false, onSignOutError, authSource = null }: SettingsPanelProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
@@ -129,11 +131,16 @@ export function SettingsPanel({ initialSection, onClose, suspended = false, onSi
 
   const handleSignOut = useCallback(async () => {
     try {
-      if (isBetterAuthPilotEnabled()) {
+      const betterAuthEnabled = isBetterAuthPilotEnabled();
+      if (betterAuthEnabled) {
         if (authSource === null) {
           throw new Error("Sign-in status is still loading. Try again.");
         }
-        if (authSource === "better-auth") await signOutBetterAuthPilot();
+        if (authSource === "better-auth") {
+          await signOutBetterAuthPilot();
+          onSignedOut();
+          return;
+        }
       }
       clearAuthenticatedSessionMarker();
       meRef.current = null;
@@ -144,7 +151,7 @@ export function SettingsPanel({ initialSection, onClose, suspended = false, onSi
     } catch (error) {
       onSignOutError?.(getUiErrorMessage(error));
     }
-  }, [authSource, onSignOutError, setAuthState, setCurrentUser]);
+  }, [authSource, onSignOutError, onSignedOut, setAuthState, setCurrentUser]);
 
   const navItems = useMemo<SettingsNavItem<SettingsSectionId>[]>(() => {
     const items: SettingsNavItem<SettingsSectionId>[] = [

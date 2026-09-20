@@ -9,8 +9,10 @@ const hoisted = vi.hoisted(() => {
   const fetchCloudLibrary = vi.fn();
   const fetchPublicSimulationLibrary = vi.fn();
   const loadSimulationPreset = vi.fn();
+  const loadDemoScenario = vi.fn();
   const signInWithGithubPilot = vi.fn();
   const signInWithPasskeyPilot = vi.fn();
+  const signOutBetterAuthPilot = vi.fn();
   const requestGithubAuthRecoveryReload = vi.fn(() => true);
 
   const state: Record<string, unknown> = {
@@ -46,7 +48,7 @@ const hoisted = vi.hoisted(() => {
     siteLibrary: [],
     sites: [],
     selectedSiteIds: [],
-    loadDemoScenario: () => {},
+    loadDemoScenario,
     initializeCloudSync: () => {},
     performCloudSyncPush: async () => {},
     setCurrentUser: () => {},
@@ -75,8 +77,10 @@ const hoisted = vi.hoisted(() => {
     fetchCloudLibrary,
     fetchPublicSimulationLibrary,
     loadSimulationPreset,
+    loadDemoScenario,
     signInWithGithubPilot,
     signInWithPasskeyPilot,
+    signOutBetterAuthPilot,
     requestGithubAuthRecoveryReload,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
@@ -138,6 +142,11 @@ vi.mock("../lib/betterAuthPilot", () => ({
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
   signInWithGithubPilot: hoisted.signInWithGithubPilot,
   signInWithPasskeyPilot: hoisted.signInWithPasskeyPilot,
+  signOutBetterAuthPilot: hoisted.signOutBetterAuthPilot,
+  listBetterAuthPasskeys: vi.fn(async () => []),
+  addBetterAuthPasskey: vi.fn(async () => {}),
+  renameBetterAuthPasskey: vi.fn(async () => {}),
+  removeBetterAuthPasskey: vi.fn(async () => {}),
   getPasskeyUiErrorMessage: (error: Error) => error.message === "Load failed"
     ? "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub."
     : "Passkey sign-in failed. Try again, or sign in with GitHub.",
@@ -260,6 +269,8 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
+    hoisted.signOutBetterAuthPilot.mockResolvedValue(undefined);
+    hoisted.loadDemoScenario.mockReset();
     installLocalStorageMock();
     vi.stubGlobal("React", React);
     Object.assign(hoisted.state, {
@@ -271,6 +282,8 @@ describe("AppShell deeplink cold-load flow", () => {
       links: [],
       currentUser: null,
       authState: "checking",
+      setCurrentUser: () => {},
+      setAuthState: () => {},
       isInitializing: false,
       libraryRequest: null,
     });
@@ -559,6 +572,59 @@ describe("AppShell deeplink cold-load flow", () => {
         "Passkey sign-in could not reach LinkSim. Reload the page and try again, or sign in with GitHub.",
       );
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("enters anonymous mode without a cloud-save warning after explicit Better Auth sign-out", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    const user = {
+      id: "user-1",
+      username: "Owner",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+      accountState: "approved",
+      avatarUrl: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      bio: "",
+    };
+    Object.assign(hoisted.state, {
+      currentUser: user,
+      authState: "signed_in",
+      setCurrentUser: (next: unknown) => {
+        hoisted.state.currentUser = next;
+      },
+      setAuthState: (next: unknown) => {
+        hoisted.state.authState = next;
+      },
+    });
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    hoisted.fetchMe.mockResolvedValue(user);
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    window.history.replaceState(null, "", "/settings/profile");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => Array.from(document.querySelectorAll("button"))
+        .some((entry) => entry.textContent === "Sign out"));
+      const signOut = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Sign out");
+      fireEvent.click(signOut as HTMLButtonElement);
+      await waitForCondition(() => hoisted.signOutBetterAuthPilot.mock.calls.length === 1);
+      await flushMicrotasks();
+
+      expect(hoisted.state.authState).toBe("signed_out");
+      expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull();
+      expect(document.body.textContent).not.toContain("Cloud save is unavailable");
+      expect(hoisted.loadDemoScenario).not.toHaveBeenCalled();
+      expect(window.location.pathname).toBe("/");
     } finally {
       unmountAppShell(view);
     }

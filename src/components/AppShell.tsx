@@ -5,6 +5,7 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
+  clearAuthenticatedSessionMarker,
   hasAuthenticatedSessionMarker,
   markAuthenticatedSession,
   resolveAuthBootstrapState,
@@ -312,6 +313,7 @@ export function AppShell() {
   const mapExpandToggleTimerRef = useRef<number | null>(null);
   const hadAuthenticatedSessionRef = useRef(hasAuthenticatedSessionMarker());
   const authCheckInFlightRef = useRef(false);
+  const preserveWorkspaceOnAnonymousEntryRef = useRef(false);
   const authRecoveryActiveRef = useRef(false);
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
@@ -790,6 +792,26 @@ export function AppShell() {
     [clearAuthRetryTimer, setAuthState, setCurrentUser],
   );
 
+  const completeExplicitSignOut = useCallback(() => {
+    authCheckGenerationRef.current += 1;
+    authCheckInFlightRef.current = false;
+    clearAuthRetryTimer();
+    authRecoveryActiveRef.current = false;
+    authRecoveryDisabledRef.current = true;
+    authRetryQuickAttemptRef.current = 0;
+    hadAuthenticatedSessionRef.current = false;
+    preserveWorkspaceOnAnonymousEntryRef.current = true;
+    clearAuthenticatedSessionMarker();
+    setAccessDiagnosticMessage(null);
+    removeNotificationImmediately(AUTH_DEGRADED_NOTICE_ID);
+    setCurrentUser(null);
+    setAuthSource(null);
+    setActiveUserId("");
+    setAuthState("signed_out");
+    setAccessState("readonly");
+    closeSettings();
+  }, [clearAuthRetryTimer, closeSettings, removeNotificationImmediately, setAuthState, setCurrentUser]);
+
   const applyRecoveredProfile = useCallback(
     (profile: CloudUser, reason: "initial" | "retry" | "online") => {
       clearAuthRetryTimer();
@@ -1100,7 +1122,9 @@ export function AppShell() {
   useEffect(() => {
     const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
     if (!isAnonNoDeepLink) return;
-    if (sites.length === 0) {
+    const preserveWorkspace = preserveWorkspaceOnAnonymousEntryRef.current;
+    preserveWorkspaceOnAnonymousEntryRef.current = false;
+    if (!preserveWorkspace && sites.length === 0) {
       loadDemoScenario();
     }
     publishAppNotice({
@@ -2533,6 +2557,7 @@ export function AppShell() {
               authSource={authSource}
               initialSection={settingsRoute.section}
               onClose={closeSettings}
+              onSignedOut={completeExplicitSignOut}
               onSignOutError={(message) => pushNotification({ id: "sign-out-failed", message, tone: "error" })}
               suspended={Boolean(presetImport)}
             />

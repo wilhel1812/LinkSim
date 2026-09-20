@@ -21,7 +21,7 @@ module "stack" {
   pages_env_vars_secret     = var.pages_env_vars_secret
   pages_production_env_vars_plain = {
     HISTORY_SCOPE       = "staging"
-    AUTH_SESSION_SOURCE = "transition"
+    AUTH_SESSION_SOURCE = "better-auth"
   }
   pages_production_durable_object_namespaces = var.pages_production_durable_object_namespaces
   pages_access_audience_keys                 = var.pages_access_audience_keys

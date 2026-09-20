@@ -97,6 +97,12 @@ Goal: attach existing live resources to Terraform state without changing behavio
   to `app["primary"]` without replacement.
 - Verify with `terraform plan` until diff is zero or only expected/documented drift.
 
+The stable-staging application API bypass is currently reconciled by
+`scripts/access-boundary.mjs` against fixed application IDs. The existing
+`public_api_exceptions` application is not yet present in remote Terraform state;
+issue #1155 tracks its permission-gated import. Do not treat the checked-in
+Terraform intent as proof that Access state adoption is complete.
+
 ### Step B: Management (controlled updates)
 
 Goal: enable routine Terraform-driven updates after baseline is proven.

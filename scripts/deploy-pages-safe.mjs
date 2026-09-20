@@ -398,7 +398,7 @@ async function preflight(targetName, target) {
   const expectedDurableObjectBindings = target.expected.authRuntime ? [target.expected.authRuntime] : [];
   assert(JSON.stringify(durableObjectBindings) === JSON.stringify(expectedDurableObjectBindings),
     `Preflight failed: unexpected Durable Object bindings for ${targetName}.`);
-  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === (targetName === "staging" ? "transition" : ""),
+  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === (targetName === "staging" ? "better-auth" : ""),
     `Preflight failed: unexpected AUTH_SESSION_SOURCE for ${targetName}.`);
 
   await verifyRemoteSchema(targetName, databaseName);

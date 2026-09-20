@@ -51,9 +51,12 @@ access_applications = {
     ]
   }
   authenticated_api = {
-    name   = "LinkSim Staging Authenticated API"
-    domain = "staging.linksim.link/api/*"
-    type   = "self_hosted"
+    name   = "LinkSim Staging Legacy Migration API"
+    domain = "staging.linksim.link/api/auth/legacy-access/*"
+    destinations = [
+      { type = "public", uri = "staging.linksim.link/api/auth/legacy-access/*" },
+    ]
+    type = "self_hosted"
     policy_bindings = [
       {
         id         = "fd96072d-843b-4320-811a-281767b011ee"
@@ -62,13 +65,11 @@ access_applications = {
     ]
   }
   public_api_exceptions = {
-    name   = "LinkSim Staging Public API Exceptions"
-    domain = "staging.linksim.link/api/v1/calculate*"
+    name   = "LinkSim Staging Application API"
+    domain = "staging.linksim.link/api/*"
     destinations = [
-      { type = "public", uri = "staging.linksim.link/api/v1/calculate*" },
+      { type = "public", uri = "staging.linksim.link/api/*" },
       { type = "public", uri = "staging.linksim.link/copernicus/*" },
-      { type = "public", uri = "staging.linksim.link/api/public-simulation*" },
-      { type = "public", uri = "staging.linksim.link/api/auth/*" },
     ]
     type = "self_hosted"
     policy_bindings = [

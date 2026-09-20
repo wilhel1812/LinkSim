@@ -31,8 +31,11 @@ const applicationBlock = (config: string, key: string): string => {
 };
 
 describe("authenticated Pages preview Terraform intent", () => {
-  it("keeps only APIs and wildcard previews authenticated on staging", () => {
+  it("keeps only the legacy migration path and wildcard previews on Access in staging", () => {
     expect(applicationBlock(staging, "authenticated_api")).toContain(
+      'domain = "staging.linksim.link/api/auth/legacy-access/*"',
+    );
+    expect(applicationBlock(staging, "public_api_exceptions")).toContain(
       'domain = "staging.linksim.link/api/*"',
     );
     expect(applicationBlock(staging, "pages_root")).toContain('domain = "linksim-staging.pages.dev"');
@@ -122,7 +125,7 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(deployScript).toContain('wrangler.staging-preview.toml');
     expect(deployScript).toContain('configPath: wranglerStagingPreview');
     expect(staging).toContain('history_r2_bucket_name');
-    expect(stagingTerraformMain).toMatch(/pages_production_env_vars_plain\s*=\s*\{[\s\S]*HISTORY_SCOPE\s*=\s*"staging"[\s\S]*AUTH_SESSION_SOURCE\s*=\s*"transition"[\s\S]*\}/);
+    expect(stagingTerraformMain).toMatch(/pages_production_env_vars_plain\s*=\s*\{[\s\S]*HISTORY_SCOPE\s*=\s*"staging"[\s\S]*AUTH_SESSION_SOURCE\s*=\s*"better-auth"[\s\S]*\}/);
     const sharedStagingVars = staging.split("pages_env_vars_plain = {")[1]?.split("}\n")[0] ?? "";
     expect(sharedStagingVars).not.toContain("AUTH_SESSION_SOURCE");
     expect(production).not.toContain('history_r2_bucket_name');
@@ -130,14 +133,14 @@ describe("authenticated Pages preview Terraform intent", () => {
       .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
       .replace(/\n\[\[durable_objects\.bindings\]\]\nname = "AUTH"\nclass_name = "AuthRuntime"\nscript_name = "linksim-auth-runtime-staging"\n/, "")
       .replace('\nHISTORY_SCOPE = "staging"', "")
-      .replace('\nAUTH_SESSION_SOURCE = "transition"', ""));
+      .replace('\nAUTH_SESSION_SOURCE = "better-auth"', ""));
   });
 
   it("binds the private auth Durable Object only to stable staging", () => {
     expect(stagingWrangler).toContain('name = "AUTH"');
     expect(stagingWrangler).toContain('class_name = "AuthRuntime"');
     expect(stagingWrangler).toContain('script_name = "linksim-auth-runtime-staging"');
-    expect(stagingWrangler).toContain('AUTH_SESSION_SOURCE = "transition"');
+    expect(stagingWrangler).toContain('AUTH_SESSION_SOURCE = "better-auth"');
     expect(deployScript).toContain("parseDurableObjectBindings");
     expect(deployScript).toContain("unexpected Durable Object bindings");
     expect(previewWrangler).not.toContain('name = "AUTH"');
@@ -168,8 +171,12 @@ describe("authenticated Pages preview Terraform intent", () => {
       "TURNSTILE_SITE_KEY",
       "TURNSTILE_SECRET_KEY",
     ];
+    const boundaryPrecheck = deployWorkflow.indexOf("Verify staging Access boundary before deploy");
     const runtime = deployWorkflow.indexOf("wrangler deploy --config workers/auth-runtime/wrangler.staging.toml");
     const pages = deployWorkflow.indexOf("npm run deploy:staging");
+    const boundaryPostcheck = deployWorkflow.indexOf("Re-verify staging Access boundary after deploy");
+    expect(boundaryPrecheck).toBeGreaterThan(0);
+    expect(boundaryPrecheck).toBeLessThan(runtime);
     expect(runtime).toBeGreaterThan(0);
     for (const secretName of secretNames) {
       const secret = deployWorkflow.indexOf(`secret put ${secretName}`);
@@ -183,6 +190,7 @@ describe("authenticated Pages preview Terraform intent", () => {
       expect(secret).toBeLessThan(runtime);
     }
     expect(pages).toBeGreaterThan(runtime);
+    expect(boundaryPostcheck).toBeGreaterThan(pages);
     expect(deployWorkflow).toContain('test "${#BETTER_AUTH_SECRET}" -ge 32');
     expect(deployWorkflow).toContain('VITE_BETTER_AUTH_PILOT: "true"');
     expect(deployWorkflow).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");

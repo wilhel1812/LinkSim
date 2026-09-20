@@ -38,13 +38,14 @@ once for each protected application request. The request reuses that result in
 existing handlers; application account state and permissions remain authoritative
 in D1.
 
-`AUTH_SESSION_SOURCE=transition` means a valid Better Auth session must resolve
-through the durable auth-user/LinkSim-user mapping and cannot fall back to an
-Access identity when that mapping is invalid. Requests with no Better Auth
-session, or a temporarily unavailable auth runtime, may use a fully verified
-Access identity while Access still protects staging `/api/*`. The future
-`better-auth` mode fails closed instead. Production and arbitrary preview hosts
-have no auth-runtime binding in this batch.
+Stable staging now uses `AUTH_SESSION_SOURCE=better-auth`. Cloudflare Access
+bypasses the ordinary `/api/*` application boundary so LinkSim can validate the
+Better Auth session and return its own `401` for anonymous protected requests.
+The existing Access application and audience remain reserved for the more
+specific `/api/auth/legacy-access/*` path, where the future dual-login migration
+flow can obtain a fresh legacy proof. Cloudflare applies the more-specific path
+application before the broader API bypass. Production and arbitrary preview
+hosts have no auth-runtime binding and remain on Access.
 
 Issue #1144 added a single-account GitHub pilot on stable staging. Pages exposes
 only Better Auth's social-login initiation, GitHub callback, and logout routes;
@@ -55,11 +56,9 @@ email claim or create a LinkSim account. Turnstile protects social-login
 initiation, Better Auth keeps its D1-backed rate limiter and CSRF/OAuth-state
 checks, and OAuth tokens are encrypted at rest.
 
-While Access remains the outer staging boundary, an Access-authenticated pilot
-user sees the existing sign-in chip and can establish the Better Auth session
-without losing the current workspace. Once Better Auth is authoritative for the
-request, the existing profile chip returns. Logout revokes Better Auth before
-using the existing Access logout path. The pilot flag, provider credentials,
+The existing sign-in chip establishes a Better Auth session without losing the
+current workspace, and the existing profile chip returns once that session maps
+to a current LinkSim account. Logout revokes Better Auth. The pilot flag, provider credentials,
 Turnstile widget, identity pair, Durable Object and cookies are stable-staging
 only; arbitrary previews and production remain unchanged.
 
@@ -173,8 +172,20 @@ privileged accounts, obtain production cutover approval, and remove broad Access
 only after application boundary checks pass. Record exact SHAs and cutover time.
 Review the first full day and first week before closing capacity acceptance.
 
-Rollback preserves mappings and credentials: disable registrations/claims and
-use the tested transition deployment. Access alone cannot serve new users or
+For the stable-staging boundary cutover, reconcile Access before merging the
+deployment commit: run `node scripts/access-boundary.mjs plan staging`, confirm
+that only the two fixed staging API application IDs are listed, then run
+`node scripts/access-boundary.mjs apply staging` with an Access-scoped token.
+If the account token cannot mutate Access, make the same two reviewed changes in
+the dashboard in the script's safe order and run the anonymous HTTP check. The
+deployment workflow checks the desired boundary before making any runtime or
+Pages change and checks it again after deployment.
+
+Rollback preserves mappings and credentials: disable registrations/claims,
+restore the legacy `/api/*` Access application with
+`node scripts/access-boundary.mjs rollback staging`, then deploy the tested
+transition-mode commit. Reversing that order can expose a deployment that still
+accepts Access identities without the outer Access boundary. Access alone cannot serve new users or
 remove its seat limit; provide a read-only fallback preserving local work. After
 90 days disable automatic claims and dual-login migration, then retire obsolete
 Access verification/reconciliation after verification, retaining audit history.
