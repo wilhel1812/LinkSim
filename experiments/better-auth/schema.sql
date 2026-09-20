@@ -14,6 +14,8 @@ create index "probe_session_userId_idx" on "probe_session" ("userId");
 
 create index "probe_account_userId_idx" on "probe_account" ("userId");
 
+create unique index "probe_account_provider_account_idx" on "probe_account" ("providerId", "accountId");
+
 create index "probe_verification_identifier_idx" on "probe_verification" ("identifier");
 
 create index "probe_passkey_userId_idx" on "probe_passkey" ("userId");

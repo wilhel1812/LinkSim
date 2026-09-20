@@ -10,8 +10,7 @@ const envWithSecret = (secret: string): AuthRuntimeEnv => ({
   GITHUB_CLIENT_SECRET: "github-secret",
   TURNSTILE_SITE_KEY: "turnstile-site",
   TURNSTILE_SECRET_KEY: "turnstile-secret",
-  AUTH_PILOT_GITHUB_ACCOUNT_ID: "1234567",
-  AUTH_PILOT_LINKSIM_USER_ID: "linksim-user",
+  AUTH_LEGACY_CLAIM_DEADLINE: "2026-12-19T23:59:59.999Z",
 });
 
 describe("auth runtime options", () => {
@@ -38,8 +37,7 @@ describe("auth runtime options", () => {
     "GITHUB_CLIENT_SECRET",
     "TURNSTILE_SITE_KEY",
     "TURNSTILE_SECRET_KEY",
-    "AUTH_PILOT_GITHUB_ACCOUNT_ID",
-    "AUTH_PILOT_LINKSIM_USER_ID",
+    "AUTH_LEGACY_CLAIM_DEADLINE",
   ] as const)("fails closed when %s is absent", (name) => {
     expect(() => authRuntimeOptions({
       ...envWithSecret("x".repeat(32)),
@@ -75,42 +73,43 @@ describe("auth runtime options", () => {
     });
 
     const github = options.socialProviders?.github as {
-      mapProfileToUser?: (profile: { id: number }) => Promise<unknown> | unknown;
+      requireEmailVerification?: boolean;
+      overrideUserInfoOnSignIn?: boolean;
+      mapProfileToUser?: (profile: { id: number; email?: string | null }) => Promise<unknown> | unknown;
     };
-    await expect(github.mapProfileToUser?.({ id: 7654321 })).rejects.toThrow(
-      "GitHub identity is not permitted",
-    );
-    await expect(github.mapProfileToUser?.({ id: 1234567 })).resolves.toEqual({});
+    expect(github.requireEmailVerification).toBe(true);
+    expect(github.overrideUserInfoOnSignIn).toBe(true);
+    await expect(github.mapProfileToUser?.({ id: 7654321 })).rejects.toThrow("GitHub identity is ineligible");
+    await expect(github.mapProfileToUser?.({ id: 1234567, email: " User@Example.ORG " }))
+      .resolves.toEqual({ email: "user@example.org" });
   });
 
-  it("rejects session creation unless the exact GitHub account has the exact current mapping", async () => {
-    const statements: string[] = [];
-    const db = {
-      prepare(sql: string) {
-        statements.push(sql);
-        return {
-          bind: (...values: unknown[]) => ({
-            first: async () => {
-              if (sql.includes("FROM auth_account")) {
-                return values[0] === "auth-user" ? { accountId: "1234567" } : null;
-              }
-              if (sql.includes("INSERT INTO auth_identity_map")) {
-                return { auth_user_id: "auth-user", linksim_user_id: "linksim-user" };
-              }
-              if (sql.includes("JOIN auth_user")) {
-                return { auth_user_id: "auth-user", linksim_user_id: "linksim-user" };
-              }
-              return null;
-            },
-            all: async () => ({ results: [] }),
-          }),
-        };
-      },
-    } as unknown as D1Database;
-    const options = authRuntimeOptions({ ...envWithSecret("x".repeat(32)), DB: db });
-    const before = options.databaseHooks?.session?.create?.before;
-    expect(await before?.({ userId: "auth-user" } as never, null)).not.toBe(false);
-    expect(await before?.({ userId: "other-user" } as never, null)).toBe(false);
-    expect(statements.some((sql) => sql.includes("INSERT INTO auth_identity_map"))).toBe(true);
+  it("accepts any numeric GitHub provider account and rejects other providers", async () => {
+    const options = authRuntimeOptions(envWithSecret("x".repeat(32)));
+    const before = options.databaseHooks?.account?.create?.before;
+    expect(await before?.({ providerId: "github", accountId: "7654321" } as never, null)).not.toBe(false);
+    expect(await before?.({ providerId: "gitlab", accountId: "7654321" } as never, null)).toBe(false);
+    expect(await before?.({ providerId: "github", accountId: "invalid" } as never, null)).toBe(false);
+  });
+
+  it("validates fresh verified GitHub OAuth user information", async () => {
+    const options = authRuntimeOptions(envWithSecret("x".repeat(32)));
+    const validate = options.user?.validateUserInfo;
+    const source = { action: "sign-in", method: "oauth", oauth: { providerId: "github", profile: {} } } as never;
+    expect(await validate?.({ user: { email: " User@Example.ORG ", emailVerified: true }, source }, {} as never))
+      .toBeUndefined();
+    expect(await validate?.({ user: { email: "user@example.org", emailVerified: false }, source }, {} as never))
+      .toEqual({ error: "github_identity_ineligible" });
+    expect(await validate?.({
+      user: { email: "user@example.org", emailVerified: true },
+      source: { action: "sign-in", method: "oauth", oauth: { providerId: "gitlab", profile: {} } } as never,
+    }, {} as never)).toEqual({ error: "github_identity_ineligible" });
+  });
+
+  it.each(["invalid", "2026-12-19"])("rejects a non-canonical claim deadline: %s", (deadline) => {
+    expect(() => authRuntimeOptions({
+      ...envWithSecret("x".repeat(32)),
+      AUTH_LEGACY_CLAIM_DEADLINE: deadline,
+    })).toThrow("Better Auth runtime configuration is incomplete");
   });
 });

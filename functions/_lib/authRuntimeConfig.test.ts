@@ -16,6 +16,8 @@ describe("staging auth runtime isolation", () => {
     expect(config).toContain('database_id = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"');
     expect(config).not.toContain("d669aac0-37ea-4c68-9b27-ece888e1966a");
     expect(config).toContain("[observability]\nenabled = true");
+    expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"');
+    expect(config).not.toContain("AUTH_PILOT_");
   });
 
   it("keeps auth runtime telemetry bounded and free of identity or request data", () => {

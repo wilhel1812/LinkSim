@@ -1,10 +1,7 @@
 import type { BetterAuthOptions } from "better-auth";
 import { captcha } from "better-auth/plugins";
 
-import {
-  attachAuthIdentity,
-  resolveCurrentAuthIdentity,
-} from "../../functions/_lib/authIdentityMap";
+import { provisionAuthIdentity, resolveCurrentAuthIdentity } from "../../functions/_lib/authIdentityMap";
 
 export type AuthRuntimeEnv = {
   DB: D1Database;
@@ -14,8 +11,7 @@ export type AuthRuntimeEnv = {
   GITHUB_CLIENT_SECRET: string;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
-  AUTH_PILOT_GITHUB_ACCOUNT_ID: string;
-  AUTH_PILOT_LINKSIM_USER_ID: string;
+  AUTH_LEGACY_CLAIM_DEADLINE: string;
 };
 
 const required = (value: unknown): value is string =>
@@ -29,6 +25,7 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
     throw new Error("Better Auth runtime configuration is incomplete");
   }
   const origin = url.origin;
+  const deadline = new Date(env.AUTH_LEGACY_CLAIM_DEADLINE ?? "");
   if (
     origin !== env.AUTH_ORIGIN
     || url.protocol !== "https:"
@@ -38,8 +35,8 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
     || !required(env.GITHUB_CLIENT_SECRET)
     || !required(env.TURNSTILE_SITE_KEY)
     || !required(env.TURNSTILE_SECRET_KEY)
-    || !/^\d+$/.test(env.AUTH_PILOT_GITHUB_ACCOUNT_ID ?? "")
-    || !required(env.AUTH_PILOT_LINKSIM_USER_ID)
+    || Number.isNaN(deadline.getTime())
+    || deadline.toISOString() !== env.AUTH_LEGACY_CLAIM_DEADLINE
   ) {
     throw new Error("Better Auth runtime configuration is incomplete");
   }
@@ -56,15 +53,29 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
       github: {
         clientId: env.GITHUB_CLIENT_ID,
         clientSecret: env.GITHUB_CLIENT_SECRET,
+        requireEmailVerification: true,
+        overrideUserInfoOnSignIn: true,
         async mapProfileToUser(profile) {
-          if (String(profile.id) !== env.AUTH_PILOT_GITHUB_ACCOUNT_ID) {
-            throw new Error("GitHub identity is not permitted");
+          const email = profile.email?.trim().toLowerCase();
+          if (!/^\d+$/.test(String(profile.id)) || !email?.includes("@")) {
+            throw new Error("GitHub identity is ineligible");
           }
-          return {};
+          return { email };
         },
       },
     },
-    user: { modelName: "auth_user" },
+    user: {
+      modelName: "auth_user",
+      validateUserInfo: ({ user, source }) => {
+        const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+        if (
+          source.method !== "oauth"
+          || source.oauth?.providerId !== "github"
+          || user.emailVerified !== true
+          || !email.includes("@")
+        ) return { error: "github_identity_ineligible" };
+      },
+    },
     account: {
       modelName: "auth_account",
       encryptOAuthTokens: true,
@@ -99,7 +110,7 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         create: {
           before: async (account) => (
             account.providerId === "github"
-            && account.accountId === env.AUTH_PILOT_GITHUB_ACCOUNT_ID
+            && /^\d+$/.test(account.accountId)
           ),
         },
       },
@@ -107,23 +118,14 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         create: {
           before: async (session) => {
             try {
-              const account = await env.DB.prepare(`
-                SELECT accountId
-                FROM auth_account
-                WHERE userId = ? AND providerId = 'github'
-                LIMIT 1
-              `).bind(session.userId).first<{ accountId: string }>();
-              if (account?.accountId !== env.AUTH_PILOT_GITHUB_ACCOUNT_ID) return false;
-
-              await attachAuthIdentity(
-                env.DB,
-                session.userId,
-                env.AUTH_PILOT_LINKSIM_USER_ID,
-              );
+              const provisioned = await provisionAuthIdentity(env.DB, {
+                authUserId: session.userId,
+                legacyClaimDeadline: env.AUTH_LEGACY_CLAIM_DEADLINE,
+              });
               const mapping = await resolveCurrentAuthIdentity(env.DB, session.userId);
               if (
                 mapping?.authUserId !== session.userId
-                || mapping.linksimUserId !== env.AUTH_PILOT_LINKSIM_USER_ID
+                || mapping.linksimUserId !== provisioned.linksimUserId
               ) return false;
             } catch {
               return false;
