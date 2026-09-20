@@ -6359,10 +6359,6 @@ html.panorama-gesture-lock body {
   margin: 0;
 }
 
-.passkey-operation-status:empty {
-  display: none;
-}
-
 .passkey-create-row,
 .passkey-row-actions {
   display: flex;

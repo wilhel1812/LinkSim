@@ -281,7 +281,14 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
           ) : (
             <p className="field-help">No passkeys registered.</p>
           )}
-          <p aria-label="Passkey operation status" aria-live="polite" className="field-help passkey-operation-status" role="status">{passkeyStatus}</p>
+          <p
+            aria-label="Passkey operation status"
+            aria-live="polite"
+            className={`field-help passkey-operation-status${passkeyStatus ? "" : " sr-only"}`}
+            role="status"
+          >
+            {passkeyStatus}
+          </p>
           {passkeyError ? <p className="field-help field-help-error" role="alert">{passkeyError}</p> : null}
         </section>
       ) : null}

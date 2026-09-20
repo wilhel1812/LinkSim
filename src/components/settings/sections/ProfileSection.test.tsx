@@ -77,6 +77,7 @@ describe("Profile passkey management", () => {
       "href",
       "https://www.passkeycentral.org/introduction-to-passkeys/",
     );
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveClass("sr-only");
   });
 
   it("adds, renames, and removes credentials then refreshes the list", async () => {
@@ -85,7 +86,9 @@ describe("Profile passkey management", () => {
 
     fireEvent.change(screen.getByLabelText("New passkey name"), { target: { value: "Phone" } });
     fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
-    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Follow your device or password manager prompt to create the passkey.");
+    expect(screen.getByRole("status", { name: "Passkey operation status" }))
+      .toHaveTextContent("Follow your device or password manager prompt to create the passkey.");
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).not.toHaveClass("sr-only");
     await waitFor(() => expect(passkeys.add).toHaveBeenCalledWith("Phone"));
     expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveTextContent("Passkey added.");
 
@@ -121,5 +124,6 @@ describe("Profile passkey management", () => {
       "Passkey creation was cancelled. No passkey was added. Try again when ready.",
     );
     expect(screen.getByRole("status", { name: "Passkey operation status" })).toBeEmptyDOMElement();
+    expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveClass("sr-only");
   });
 });
