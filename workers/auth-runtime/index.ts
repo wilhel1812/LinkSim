@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth";
 import { makeAuthSessionLog, type AuthSessionResultCategory } from "./logging";
 import { authRuntimeOptions, type AuthRuntimeEnv } from "./options";
 import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
+import { getSetCookieHeaders } from "../../functions/_lib/http";
 
 const SESSION_HEADERS = [
   "cookie",
@@ -15,14 +16,6 @@ const SESSION_HEADERS = [
 ] as const;
 
 const AUTH_HEADERS = [...SESSION_HEADERS, "x-captcha-response"] as const;
-
-const responseCookies = (headers: Headers): string[] => {
-  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] };
-  const cookies = withGetSetCookie.getSetCookie?.();
-  if (cookies) return cookies;
-  const combined = headers.get("set-cookie");
-  return combined ? [combined] : [];
-};
 
 export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
   private readonly auth;
@@ -55,9 +48,9 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
         ? {
             status,
             authUserId: session.response.user.id,
-            setCookies: responseCookies(session.headers),
+            setCookies: getSetCookieHeaders(session.headers),
           }
-        : { status, setCookies: responseCookies(session.headers) };
+        : { status, setCookies: getSetCookieHeaders(session.headers) };
     } catch {
       console.info(JSON.stringify(makeAuthSessionLog(500, "error", Date.now() - started)));
       return { status: 500, setCookies: [] };

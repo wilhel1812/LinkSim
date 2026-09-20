@@ -85,6 +85,29 @@ describe("Better Auth Pages gateway", () => {
     ]);
   });
 
+  it("rebuilds separately exposed Worker cookies instead of forwarding a folded field", async () => {
+    const first = "oauth-state=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly";
+    const second = "better-auth.session_token=session; Path=/; Secure; HttpOnly; SameSite=Lax";
+    const headers = new Headers({
+      location: "https://staging.linksim.link/return",
+      "set-cookie": `${first}, ${second}`,
+    }) as Headers & { getAll?: (name: string) => string[] };
+    Object.defineProperty(headers, "getSetCookie", { value: undefined });
+    headers.getAll = (name) => name.toLowerCase() === "set-cookie" ? [first, second] : [];
+
+    const response = await call(new Request(
+      "https://staging.linksim.link/api/auth/callback/github?code=x&state=y",
+    ), async () => ({
+      body: null,
+      status: 302,
+      statusText: "",
+      headers,
+    }) as Response);
+
+    const responseHeaders = response.headers as Headers & { getSetCookie?: () => string[] };
+    expect(responseHeaders.getSetCookie?.()).toEqual([first, second]);
+  });
+
   it("returns 503 when the private runtime is missing or unavailable", async () => {
     expect((await call(new Request("https://staging.linksim.link/api/auth/callback/github"))).status)
       .toBe(503);
