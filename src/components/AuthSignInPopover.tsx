@@ -105,9 +105,9 @@ export function AuthSignInPopover({
             </button>
           </li>
           <li
-            aria-live={busyMethod === "passkey" ? "polite" : undefined}
+            aria-live="polite"
             className="ui-settings-popover-row auth-sign-in-note"
-            role={busyMethod === "passkey" ? "status" : undefined}
+            role="status"
           >
             {busyMethod === "passkey"
               ? "Follow your browser or device prompt to use your passkey."

@@ -33,7 +33,9 @@ describe("AuthSignInPopover", () => {
       expect(popover.querySelector(".ui-settings-popover-list")).toBeInTheDocument();
       expect(screen.queryByText("Sign in or sign up")).not.toBeInTheDocument();
       expect(screen.queryByText("Choose a sign-in method.")).not.toBeInTheDocument();
-      expect(screen.getByText("New accounts start with GitHub. Passkey works after you add one in Settings.")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "New accounts start with GitHub. Passkey works after you add one in Settings.",
+      );
       expect(screen.getByRole("button", { name: "GitHub" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Passkey" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
