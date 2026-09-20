@@ -876,6 +876,21 @@ export const executeVerifiedIdentityEnsure = async (
   await env.DB.batch([
     env.DB
       .prepare(
+        `INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
+         SELECT meta.singleton, meta.version, meta.applied_at
+         FROM identity_lifecycle_meta AS meta
+         WHERE meta.singleton = 1
+           AND EXISTS (
+             SELECT 1
+             FROM verified_identity_claims AS claim
+             JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = claim.current_user_id
+             WHERE claim.normalized_email = ? AND claim.status = 'active'
+               AND claim.current_user_id <> ?
+           )`,
+      )
+      .bind(normalizedEmail, userId),
+    env.DB
+      .prepare(
         `INSERT INTO verified_identity_claims
           (normalized_email, current_user_id, status, created_at, updated_at, blocked_at, blocked_by_user_id)
          SELECT ?, ?, 'active', ?, ?, NULL, NULL

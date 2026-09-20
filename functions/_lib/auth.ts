@@ -3,7 +3,7 @@ import {
   jwtVerify,
   type JWTPayload,
 } from "jose";
-import { resolveCurrentAuthIdentity } from "./authIdentityMap";
+import { resolveCurrentAuthIdentity, resolveMappedAuthIdentityByVerifiedEmail } from "./authIdentityMap";
 import {
   BETTER_AUTH_MAPPED_IDENTITY_CLAIM,
   type AuthContext,
@@ -374,6 +374,33 @@ const resolveBetterAuthContext = async (
   };
 };
 
+const resolveTransitionAccessContext = async (
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier,
+): Promise<AuthContext | null> => {
+  const access = await verifyAccessAuth(request, env, verifier);
+  if (!access || (access.source !== "jwt" && access.source !== "headers")) return access;
+  const rawEmail = access.verifiedIdpEmail ?? "";
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return access;
+  try {
+    const mapped = await resolveMappedAuthIdentityByVerifiedEmail(env.DB, email);
+    if (!mapped) return access;
+    return {
+      ...access,
+      userId: mapped.linksimUserId,
+      verifiedIdpEmail: email,
+      tokenPayload: {
+        ...access.tokenPayload,
+        [BETTER_AUTH_MAPPED_IDENTITY_CLAIM]: true,
+      },
+    };
+  } catch {
+    throw new AuthRuntimeUnavailableError();
+  }
+};
+
 const verifyConfiguredAuth = async (
   request: Request,
   env: Env,
@@ -389,7 +416,7 @@ const verifyConfiguredAuth = async (
   } catch (error) {
     if (source === "better-auth") throw error;
     emitAuthLog(env, { result: "fallback", source: "better-auth", reason: "runtime_unavailable" });
-    return verifyAccessAuth(request, env, verifier);
+    return resolveTransitionAccessContext(request, env, verifier);
   }
 
   if (betterAuth.kind === "authenticated") {
@@ -407,7 +434,7 @@ const verifyConfiguredAuth = async (
   if (data) data.authResponseCookies = betterAuth.setCookieHeaders;
   if (source === "better-auth") return null;
 
-  return verifyAccessAuth(request, env, verifier);
+  return resolveTransitionAccessContext(request, env, verifier);
 };
 
 export const authResponseCookies = (request: Request, data?: AuthRequestData): string[] =>

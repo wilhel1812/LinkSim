@@ -64,6 +64,31 @@ const seedCanonicalAccount = (database: SqliteD1) => {
 };
 
 describe("authoritative identity lifecycle", () => {
+  it("atomically rejects Access reconciliation away from a mapped claim", async () => {
+    const database = new SqliteD1();
+    seedCanonicalAccount(database);
+    database.db.exec(`INSERT INTO auth_identity_map
+      VALUES ('auth-1', 'old-subject', '2026-09-20T00:00:00.000Z');`);
+
+    await expect(executeVerifiedIdentityEnsure(envFor(database), {
+      userId: "access-new-subject",
+      email: "user@example.com",
+      defaultEmail: "user@example.com",
+      bootstrapAdmin: false,
+      now: "2026-09-20T01:00:00.000Z",
+    })).rejects.toThrow();
+
+    expect(database.db.prepare("SELECT current_user_id FROM verified_identity_claims WHERE normalized_email = 'user@example.com'").get())
+      .toEqual({ current_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT auth_user_id, linksim_user_id FROM auth_identity_map").get())
+      .toEqual({ auth_user_id: "auth-1", linksim_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM users WHERE id = 'access-new-subject'").get())
+      .toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT owner_user_id FROM sites WHERE id = 'site-1'").get())
+      .toEqual({ owner_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT owner_user_id FROM simulations WHERE id = 'sim-1'").get())
+      .toEqual({ owner_user_id: "old-subject" });
+  });
   it("does not overwrite concurrent basemap and radio-default profile patches", async () => {
     const basemapLast = new SqliteD1();
     seedCanonicalAccount(basemapLast);

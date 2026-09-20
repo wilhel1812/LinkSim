@@ -280,6 +280,26 @@ describe("Better Auth identity provisioning", () => {
     await expect(provision()).resolves.toMatchObject({ kind: "registration", created: true });
   });
 
+  it.each([
+    ["email verification", () => database.db.prepare("UPDATE auth_user SET emailVerified = 0 WHERE id = 'auth-1'").run()],
+    ["GitHub account", () => database.db.prepare("UPDATE auth_account SET accountId = 'invalid' WHERE userId = 'auth-1'").run()],
+    ["legacy evidence", () => database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('late-legacy', 'new@example.org', 'current', 'late-legacy', 1, ?, ?)`)
+      .run(BEFORE_DEADLINE, BEFORE_DEADLINE)],
+  ])("fails closed when %s changes immediately before a registration batch", async (_label, mutate) => {
+    addAuthIdentity({ email: "new@example.org" });
+    database.beforeBatch = mutate;
+    await expect(provision()).rejects.toMatchObject<AuthIdentityProvisionError>({ code: "PROVISION_FAILED" });
+    for (const table of ["users", "verified_identity_claims", "auth_identity_map", "user_identity_audit"]) {
+      expect(database.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+    }
+    const applicationStates = database.db.prepare(
+      "SELECT COUNT(*) AS count FROM identity_subject_states WHERE user_id != 'late-legacy'",
+    ).get();
+    expect(applicationStates).toEqual({ count: 0 });
+  });
+
   it("enforces one auth account for each provider subject", () => {
     addAuthIdentity();
     database.db.prepare(`INSERT INTO auth_user
