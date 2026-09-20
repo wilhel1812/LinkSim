@@ -16,6 +16,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   consumeAuthCallbackError,
+  getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   signInWithGithubPilot,
   signInWithPasskeyPilot,
@@ -638,7 +639,7 @@ export function AppShell() {
     } catch (error) {
       pushNotification({
         id: "passkey-sign-in-failed",
-        message: getUiErrorMessage(error),
+        message: getPasskeyUiErrorMessage(error, "sign-in"),
         tone: "error",
       });
     }

@@ -61,6 +61,23 @@ access_applications = {
       }
     ]
   }
+  public_api_exceptions = {
+    name   = "LinkSim Staging Public API Exceptions"
+    domain = "staging.linksim.link/api/v1/calculate*"
+    destinations = [
+      { type = "public", uri = "staging.linksim.link/api/v1/calculate*" },
+      { type = "public", uri = "staging.linksim.link/copernicus/*" },
+      { type = "public", uri = "staging.linksim.link/api/public-simulation*" },
+      { type = "public", uri = "staging.linksim.link/api/auth/*" },
+    ]
+    type = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "d0a1003c-ce29-4f14-a635-58463e82020b"
+        precedence = 1
+      }
+    ]
+  }
   pages_root = {
     name   = "LinkSim Staging Pages Root"
     domain = "linksim-staging.pages.dev"

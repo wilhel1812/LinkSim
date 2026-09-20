@@ -98,7 +98,11 @@ variable "access_applications" {
   type = map(object({
     name   = string
     domain = string
-    type   = optional(string, "self_hosted")
+    destinations = optional(list(object({
+      type = optional(string, "public")
+      uri  = string
+    })))
+    type = optional(string, "self_hosted")
     policy_bindings = optional(list(object({
       id         = string
       precedence = number
