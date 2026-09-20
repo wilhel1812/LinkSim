@@ -530,7 +530,7 @@ export const fetchAuthStatus = async (): Promise<AuthStatusResult> => {
     authenticated?: unknown;
     authState?: unknown;
     authSource?: unknown;
-  }>("/api/public-simulation?mode=auth", { method: "GET" });
+  }>("/api/public-simulation?mode=auth", { method: "GET", cache: "no-store" });
   return normalizeAuthStatus(data);
 };
 

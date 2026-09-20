@@ -25,16 +25,17 @@ const renderPopover = (overrides: Partial<React.ComponentProps<typeof AuthSignIn
 };
 
 describe("AuthSignInPopover", () => {
-  it("explains which method works for a first-time user", async () => {
+  it("uses compact settings rows and identifies GitHub as the registration path", async () => {
     const view = renderPopover();
     try {
       const popover = await screen.findByRole("dialog", { name: "Sign in or sign up" });
       expect(popover.closest(".ui-surface-pill")).toHaveClass("auth-sign-in-popover");
       expect(popover.querySelector(".ui-settings-popover-list")).toBeInTheDocument();
-      expect(screen.getByText(/Use GitHub to create an account or recover access/i)).toBeInTheDocument();
-      expect(screen.getByText(/Use a passkey only if you added one previously/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Continue with GitHub" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Use a passkey" })).toBeInTheDocument();
+      expect(screen.queryByText("Sign in or sign up")).not.toBeInTheDocument();
+      expect(screen.queryByText("Choose a sign-in method.")).not.toBeInTheDocument();
+      expect(screen.getByText("New accounts start with GitHub.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "GitHub" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Passkey" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     } finally {
       view.unmount();
@@ -46,7 +47,7 @@ describe("AuthSignInPopover", () => {
     const view = renderPopover();
     try {
       await screen.findByRole("dialog", { name: "Sign in or sign up" });
-      await userEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+      await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
       expect(view.props.onGithub).toHaveBeenCalledWith(
         screen.getByLabelText("Anti-bot check"),
       );
@@ -65,7 +66,7 @@ describe("AuthSignInPopover", () => {
       expect(dialog).toContainElement(challenge);
       expect(challenge.closest(".auth-sign-in-challenge-row")).toHaveClass("is-active");
       expect(screen.getByRole("button", { name: "Opening GitHub…" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Use a passkey" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Passkey" })).toBeDisabled();
     } finally {
       view.unmount();
       view.trigger.remove();
@@ -114,7 +115,7 @@ describe("AuthSignInPopover", () => {
     trigger.getBoundingClientRect = () => new DOMRect(100, 100, 180, 40);
     await userEvent.click(trigger);
 
-    const github = await screen.findByRole("button", { name: "Continue with GitHub" });
+    const github = await screen.findByRole("button", { name: "GitHub" });
     expect(screen.getByLabelText("Import radio preset", { selector: '[aria-hidden="true"]' })).toBeInTheDocument();
     await waitFor(() => expect(document.activeElement).toBe(github));
 
