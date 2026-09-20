@@ -158,7 +158,7 @@ export function SettingsPanel({ initialSection, onClose, onSignedOut, suspended 
       {
         id: "profile",
         label: "Profile",
-        description: "Name, email, bio, avatar",
+        description: "Name, profile, sign-in, passkeys",
         icon: settingsNavIcons.profile,
       },
       {

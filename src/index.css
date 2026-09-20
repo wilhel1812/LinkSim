@@ -6342,6 +6342,23 @@ html.panorama-gesture-lock body {
   padding-top: 20px;
 }
 
+.passkey-heading,
+.passkey-row-copy > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.passkey-guidance {
+  display: grid;
+  gap: 6px;
+}
+
+.passkey-guidance p,
+.passkey-operation-status {
+  margin: 0;
+}
+
 .passkey-create-row,
 .passkey-row-actions {
   display: flex;

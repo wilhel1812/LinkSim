@@ -241,6 +241,16 @@ describe("Better Auth pilot client", () => {
     );
   });
 
+  it("explains cancelled and unsupported passkey creation without implying success", () => {
+    expect(getPasskeyUiErrorMessage(
+      new PasskeyPilotError("Auth cancelled", "ERROR_CEREMONY_ABORTED", 400),
+      "add",
+    )).toBe("Passkey creation was cancelled. No passkey was added. Try again when ready.");
+    expect(getPasskeyUiErrorMessage(new Error("WebAuthn is not supported"), "add")).toBe(
+      "This browser or device could not create a passkey. Try a current browser with screen lock enabled.",
+    );
+  });
+
   it("keeps unknown passkey failures useful without exposing internal text", () => {
     expect(getPasskeyUiErrorMessage(new Error("database connection string leaked"), "add")).toBe(
       "LinkSim could not add the passkey. Try again. If the problem continues, sign out and sign in with GitHub.",
