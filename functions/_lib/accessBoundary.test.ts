@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ACCESS_BOUNDARIES,
-  buildApplicationPolicyUpdate,
+  STAGING_ACCESS_ROLLBACK_BOUNDARY,
+  applyAccessBoundary,
+  buildApplicationUpdate,
+  orderAccessActions,
   parseAccessRedirectAudience,
   planAccessBoundary,
+  selectBoundaryApplications,
   validateAcceptedAudiences,
   validatePreviewUrl,
   verifyPreviewBoundary,
+  verifyHttpAccessBoundary,
   verifyHttpBoundary,
 } from "../../scripts/access-boundary.mjs";
 
@@ -43,7 +48,7 @@ const makeApp = ({
 
 const stagingApps = () => [
   makeApp({
-    id: "shell",
+    id: "de019d23-db41-410d-8d33-b61bb2d86beb",
     name: "LinkSim Staging Public App Shell",
     domain: "staging.linksim.link",
     aud: "shell-aud",
@@ -51,7 +56,7 @@ const stagingApps = () => [
     decision: "bypass",
   }),
   makeApp({
-    id: "public-api",
+    id: "3b76dae4-589d-47bb-b69c-f6dcfabd7169",
     name: "LinkSim Staging Public API Exceptions",
     domain: "staging.linksim.link/api/v1/calculate*",
     aud: "public-api-aud",
@@ -65,7 +70,7 @@ const stagingApps = () => [
     ],
   }),
   makeApp({
-    id: "api",
+    id: "7db960b9-188b-4735-b84e-1ee672b60703",
     name: "LinkSim Staging Authenticated API",
     domain: "staging.linksim.link/api/*",
     aud: "e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
@@ -77,8 +82,8 @@ const stagingApps = () => [
     name: "LinkSim Staging Pages Root",
     domain: "linksim-staging.pages.dev",
     aud: "2a5d033ef624d21f08eeb36b75799b81a6fa00536f2341a2ef53301dc36bf19c",
-    policyId: AUTH_POLICY_ID,
-    decision: "allow",
+    policyId: PUBLIC_POLICY_ID,
+    decision: "bypass",
   }),
   makeApp({
     id: "preview",
@@ -91,15 +96,19 @@ const stagingApps = () => [
 ];
 
 describe("Cloudflare Access boundary reconciliation", () => {
-  it("plans only the staging Pages-root policy replacement", () => {
+  it("plans only the two staging API application updates", () => {
     const plan = planAccessBoundary(stagingApps(), ACCESS_BOUNDARIES.staging);
 
-    expect(plan.actions).toEqual([
+    expect(plan.actions.map(({ key, fromDomain, toDomain }) => ({ key, fromDomain, toDomain }))).toEqual([
       {
-        appId: "pages-root",
-        domain: "linksim-staging.pages.dev",
-        fromPolicyIds: [AUTH_POLICY_ID],
-        toPolicyId: PUBLIC_POLICY_ID,
+        key: "publicApi",
+        fromDomain: "staging.linksim.link/api/v1/calculate*",
+        toDomain: "staging.linksim.link/api/*",
+      },
+      {
+        key: "api",
+        fromDomain: "staging.linksim.link/api/*",
+        toDomain: "staging.linksim.link/api/auth/legacy-access/*",
       },
     ]);
     expect(plan.authenticatedAudiences).toEqual([
@@ -108,36 +117,122 @@ describe("Cloudflare Access boundary reconciliation", () => {
     ]);
   });
 
-  it("is idempotent once the Pages root uses the bypass policy", () => {
+  it("is idempotent once Better Auth is authoritative and plans the exact rollback", () => {
     const apps = stagingApps();
-    apps[3] = makeApp({
-      id: "pages-root",
-      name: "LinkSim Staging Pages Root",
-      domain: "linksim-staging.pages.dev",
-      aud: "2a5d033ef624d21f08eeb36b75799b81a6fa00536f2341a2ef53301dc36bf19c",
-      policyId: PUBLIC_POLICY_ID,
+    apps[1] = makeApp({
+      id: "3b76dae4-589d-47bb-b69c-f6dcfabd7169",
+      name: "LinkSim Staging Application API",
+      domain: "staging.linksim.link/api/*",
+      aud: "public-api-aud",
+      policyId: PUBLIC_API_POLICY_ID,
       decision: "bypass",
+      destinations: [
+        { type: "public", uri: "staging.linksim.link/api/*" },
+        { type: "public", uri: "staging.linksim.link/copernicus/*" },
+      ],
+    });
+    apps[2] = makeApp({
+      id: "7db960b9-188b-4735-b84e-1ee672b60703",
+      name: "LinkSim Staging Legacy Migration API",
+      domain: "staging.linksim.link/api/auth/legacy-access/*",
+      aud: "e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
+      policyId: AUTH_POLICY_ID,
+      decision: "allow",
+      destinations: [
+        { type: "public", uri: "staging.linksim.link/api/auth/legacy-access/*" },
+      ],
     });
 
     expect(planAccessBoundary(apps, ACCESS_BOUNDARIES.staging).actions).toEqual([]);
+    expect(planAccessBoundary(apps, STAGING_ACCESS_ROLLBACK_BOUNDARY).actions.map(({ key }) => key))
+      .toEqual(["publicApi", "api"]);
+  });
+
+  it("orders cutover and rollback mutations without opening the legacy proof path", () => {
+    const actions = [
+      { key: "publicApi" },
+      { key: "api" },
+    ];
+    expect(orderAccessActions(actions, false).map(({ key }) => key)).toEqual(["api", "publicApi"]);
+    expect(orderAccessActions(actions, true).map(({ key }) => key)).toEqual(["publicApi", "api"]);
   });
 
   it("fails closed instead of creating, deleting, or guessing applications", () => {
     expect(() => planAccessBoundary(stagingApps().slice(1), ACCESS_BOUNDARIES.staging)).toThrow(
-      "staging.linksim.link",
+      "de019d23-db41-410d-8d33-b61bb2d86beb",
     );
     expect(() =>
       planAccessBoundary([...stagingApps(), stagingApps()[1]], ACCESS_BOUNDARIES.staging),
     ).toThrow("exactly one");
+    expect(() => planAccessBoundary([
+      ...stagingApps(),
+      { ...stagingApps()[1], id: "unexpected-overlap" },
+    ], ACCESS_BOUNDARIES.staging)).toThrow("Unexpected overlapping Access application");
   });
 
-  it("fails closed when the existing public API application does not expose the exact Better Auth namespace", () => {
+  it("discovers and rejects narrower and wildcard applications that overlap staging", () => {
+    const narrower = {
+      ...stagingApps()[1],
+      id: "unexpected-narrower",
+      domain: "staging.linksim.link/api/library*",
+      destinations: [{ type: "public" as const, uri: "staging.linksim.link/api/library*" }],
+    };
+    const broader = {
+      ...stagingApps()[1],
+      id: "unexpected-broader",
+      domain: "*.linksim.link",
+      destinations: [{ type: "public" as const, uri: "*.linksim.link" }],
+    };
+    const selected = selectBoundaryApplications(
+      [...stagingApps(), narrower, broader],
+      ACCESS_BOUNDARIES.staging,
+    );
+    expect(selected.map(({ id }) => id)).toContain("unexpected-narrower");
+    expect(selected.map(({ id }) => id)).toContain("unexpected-broader");
+    expect(() => planAccessBoundary(selected, ACCESS_BOUNDARIES.staging))
+      .toThrow("Unexpected overlapping Access application");
+  });
+
+  it("re-plans the complete boundary before each mutation and refuses intervening drift", async () => {
+    const initial = stagingApps();
+    const afterFirstMutation = stagingApps();
+    afterFirstMutation[2] = makeApp({
+      id: "7db960b9-188b-4735-b84e-1ee672b60703",
+      name: "LinkSim Staging Legacy Migration API",
+      domain: "staging.linksim.link/api/auth/legacy-access/*",
+      aud: "e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
+      policyId: AUTH_POLICY_ID,
+      decision: "allow",
+      destinations: [{ type: "public", uri: "staging.linksim.link/api/auth/legacy-access/*" }],
+    });
+    afterFirstMutation[1] = {
+      ...afterFirstMutation[1],
+      destinations: [{ type: "public", uri: "staging.linksim.link/unreviewed/*" }],
+    };
+    const fetchApplications = vi.fn()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(afterFirstMutation);
+    const updateApplication = vi.fn().mockResolvedValue(undefined);
+
+    await expect(applyAccessBoundary(ACCESS_BOUNDARIES.staging, {
+      fetchApplications,
+      updateApplication,
+    })).rejects.toThrow("Access destination drift");
+    expect(updateApplication).toHaveBeenCalledOnce();
+    expect(fetchApplications).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails closed when a mutable application has unexpected destination drift", () => {
     const apps = stagingApps();
-    apps[1] = { ...apps[1], destinations: apps[1].destinations?.slice(0, 3) };
+    apps[1] = {
+      ...apps[1],
+      destinations: [{ type: "public", uri: "staging.linksim.link/unrelated/*" }],
+    };
     expect(() => planAccessBoundary(apps, ACCESS_BOUNDARIES.staging)).toThrow("Access destination drift");
   });
 
-  it("preserves supported application settings while changing only policy bindings", () => {
+  it("preserves supported settings while applying the reviewed application boundary", () => {
     const app = {
       ...stagingApps()[3],
       allowed_idps: ["github-idp"],
@@ -154,22 +249,27 @@ describe("Cloudflare Access boundary reconciliation", () => {
       updated_at: "ignored",
     };
 
-    expect(buildApplicationPolicyUpdate(app, PUBLIC_POLICY_ID)).toEqual({
-      name: "LinkSim Staging Pages Root",
-      domain: "linksim-staging.pages.dev",
+    expect(buildApplicationUpdate(app, {
+      name: "LinkSim Staging Legacy Migration API",
+      domain: "staging.linksim.link/api/auth/legacy-access/*",
+      destinationUris: ["staging.linksim.link/api/auth/legacy-access/*"],
+      policyId: AUTH_POLICY_ID,
+    })).toEqual({
+      name: "LinkSim Staging Legacy Migration API",
+      domain: "staging.linksim.link/api/auth/legacy-access/*",
       type: "self_hosted",
       session_duration: "24h",
       allowed_idps: ["github-idp"],
       auto_redirect_to_identity: true,
       app_launcher_visible: false,
       options_preflight_bypass: true,
-      destinations: [{ type: "public", uri: "linksim-staging.pages.dev" }],
+      destinations: [{ type: "public", uri: "staging.linksim.link/api/auth/legacy-access/*" }],
       custom_pages: ["deny-page-id"],
       purpose_justification_prompt: "Why do you need access?",
       purpose_justification_required: true,
       read_service_tokens_from_header: "Authorization",
       mfa_config: { mfa_disabled: false, session_duration: "12h" },
-      policies: [{ id: PUBLIC_POLICY_ID, precedence: 1 }],
+      policies: [{ id: AUTH_POLICY_ID, precedence: 1 }],
     });
   });
 
@@ -184,10 +284,11 @@ describe("Cloudflare Access boundary reconciliation", () => {
     ).toThrow("ACCESS_AUD");
   });
 
-  it("keeps Better Auth bootstrap public while protected APIs and credential management stay closed", async () => {
+  it("lets LinkSim reject anonymous APIs while the reserved migration path stays on Access", async () => {
     const responses = new Map([
       [ACCESS_BOUNDARIES.staging.rootUrl, new Response("shell", { status: 200 })],
-      [ACCESS_BOUNDARIES.staging.apiUrl, new Response(null, {
+      [ACCESS_BOUNDARIES.staging.apiUrl, Response.json({ error: "Unauthorized." }, { status: 401 })],
+      [ACCESS_BOUNDARIES.staging.legacyMigrationUrl, new Response(null, {
         status: 302,
         headers: {
           location: "https://team.cloudflareaccess.com/cdn-cgi/access/login/api?kid=e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
@@ -212,6 +313,7 @@ describe("Cloudflare Access boundary reconciliation", () => {
     )).resolves.toBeUndefined();
     expect(fetchBoundary).toHaveBeenCalledWith(ACCESS_BOUNDARIES.staging.authBootstrapUrl, { redirect: "manual" });
     expect(fetchBoundary).toHaveBeenCalledWith(ACCESS_BOUNDARIES.staging.authManagementUrl, { redirect: "manual" });
+    expect(fetchBoundary).toHaveBeenCalledWith(ACCESS_BOUNDARIES.staging.legacyMigrationUrl, { redirect: "manual" });
   });
 
   it("extracts the Access application audience from a login redirect", () => {
@@ -253,5 +355,83 @@ describe("Cloudflare Access boundary reconciliation", () => {
     await expect(
       verifyPreviewBoundary(previewUrl, ACCESS_BOUNDARIES.staging, fetchPublicPreview),
     ).rejects.toThrow("must redirect to Access");
+  });
+
+  it("checks staging Access routing without depending on auth runtime health", async () => {
+    const responses = new Map<string, Response>([
+      [ACCESS_BOUNDARIES.staging.originProbeUrl, new Response(JSON.stringify({
+        ok: true,
+        service: "linksim-api",
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })],
+      [ACCESS_BOUNDARIES.staging.legacyMigrationUrl, new Response(null, {
+        status: 302,
+        headers: {
+          location:
+            "https://team.cloudflareaccess.com/cdn-cgi/access/login/staging.linksim.link?kid=e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
+        },
+      })],
+    ]);
+    const fetchBoundary = vi.fn(async (input: string | URL) => {
+      const response = responses.get(String(input));
+      if (!response) throw new Error(`Unexpected URL: ${String(input)}`);
+      return response;
+    });
+
+    await expect(verifyHttpAccessBoundary(
+      ACCESS_BOUNDARIES.staging,
+      { fetchImpl: fetchBoundary },
+    )).resolves.toBeUndefined();
+    expect(fetchBoundary).not.toHaveBeenCalledWith(
+      ACCESS_BOUNDARIES.staging.apiUrl,
+      { redirect: "manual" },
+    );
+    expect(fetchBoundary).not.toHaveBeenCalledWith(
+      ACCESS_BOUNDARIES.staging.authBootstrapUrl,
+      { redirect: "manual" },
+    );
+    expect(fetchBoundary).not.toHaveBeenCalledWith(
+      ACCESS_BOUNDARIES.staging.authManagementUrl,
+      { redirect: "manual" },
+    );
+
+    responses.set(ACCESS_BOUNDARIES.staging.originProbeUrl, new Response("Access denied", {
+      status: 403,
+    }));
+    await expect(verifyHttpAccessBoundary(
+      ACCESS_BOUNDARIES.staging,
+      { fetchImpl: fetchBoundary },
+    )).rejects.toThrow("must reach the LinkSim origin health endpoint");
+  });
+
+  it("verifies the complete restored Access boundary after rollback", async () => {
+    const responses = new Map<string, Response>([
+      [STAGING_ACCESS_ROLLBACK_BOUNDARY.rootUrl, new Response("app", { status: 200 })],
+      [STAGING_ACCESS_ROLLBACK_BOUNDARY.apiUrl, new Response(null, {
+        status: 302,
+        headers: {
+          location:
+            "https://team.cloudflareaccess.com/cdn-cgi/access/login/staging.linksim.link?kid=e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131",
+        },
+      })],
+      [STAGING_ACCESS_ROLLBACK_BOUNDARY.pagesRootUrl, new Response(null, {
+        status: 308,
+        headers: { location: STAGING_ACCESS_ROLLBACK_BOUNDARY.pagesRootRedirect },
+      })],
+    ]);
+    const fetchBoundary = vi.fn(async (input: string | URL) => {
+      const response = responses.get(String(input));
+      if (!response) throw new Error(`Unexpected URL: ${String(input)}`);
+      return response;
+    });
+
+    await expect(verifyHttpBoundary(
+      STAGING_ACCESS_ROLLBACK_BOUNDARY,
+      { expectPagesRedirect: true, fetchImpl: fetchBoundary },
+    )).resolves.toBeUndefined();
+    expect(STAGING_ACCESS_ROLLBACK_BOUNDARY.legacyMigrationUrl).toBeUndefined();
+    expect(fetchBoundary).toHaveBeenCalledTimes(3);
   });
 });

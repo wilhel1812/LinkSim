@@ -149,13 +149,21 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob.indexOf(accessStep)).toBeLessThan(previewJob.indexOf(commentStep));
   });
 
-  it("verifies staging Access only after the guarded Pages deployment", () => {
+  it("verifies staging Access before and after the guarded Pages deployment", () => {
     const deployStep = "- name: Deploy staging with guardrails";
-    const accessStep = "- name: Verify staging Access boundary";
-    expect(stagingJob).toContain(accessStep);
+    const accessPrecheck = "- name: Verify staging Access boundary before deploy";
+    const accessPostcheck = "- name: Re-verify staging Access boundary after deploy";
+    expect(stagingJob).toContain(accessPrecheck);
+    expect(stagingJob).toContain(accessPostcheck);
+    expect(stagingJob).toContain("node scripts/access-boundary.mjs check-access staging");
     expect(stagingJob).toContain("node scripts/access-boundary.mjs check staging");
+    expect(stagingJob.indexOf("node scripts/access-boundary.mjs check-access staging"))
+      .toBeLessThan(stagingJob.indexOf(deployStep));
+    expect(stagingJob.indexOf("node scripts/access-boundary.mjs check staging"))
+      .toBeGreaterThan(stagingJob.indexOf(deployStep));
     expect(stagingJob).not.toContain("node scripts/access-boundary.mjs apply staging");
-    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessStep));
+    expect(stagingJob.indexOf(accessPrecheck)).toBeLessThan(stagingJob.indexOf(deployStep));
+    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessPostcheck));
   });
 
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {

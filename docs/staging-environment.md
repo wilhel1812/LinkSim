@@ -117,15 +117,16 @@ Run the refresh scripts only when explicitly needed, then merge a staging PR and
 
 - Refresh is one-way: production -> staging
 - Do not point staging bindings at production resources
-- Keep staging authenticated APIs and branch previews behind Access. The custom
-  app shell is intentionally public so guest behavior and sign-up can be tested.
+- Keep staging branch previews and the legacy migration proof path behind
+  Access. Stable staging APIs reach LinkSim's Better Auth guard. The custom app
+  shell is intentionally public so guest behavior and sign-up can be tested.
 - Unsanitized D1 refreshes are disabled; no production authentication data may enter staging.
 
 ## URLs
 
 | Environment | URL | Access |
 |------------|-----|--------|
-| Staging (test) | https://staging.linksim.link | Public shell; Access on `/api/*` |
+| Staging (test) | https://staging.linksim.link | Public shell; Better Auth on `/api/*`; Access on `/api/auth/legacy-access/*` |
 | Pull request preview | Signed PR comment URL | Access-protected after rollout gate |
 | Production | https://linksim.link | ✅ Works with Access |
 
@@ -135,7 +136,7 @@ not call the shared-staging API cross-origin. Originless API clients remain
 supported, while production, staging, and preview browser origins cannot call
 one another.
 
-Stable staging currently runs the auth boundary in `transition` mode. A mapped
-Better Auth session is authoritative when present; requests without one retain
-the verified Access fallback. Preview and production deployments do not receive
-the Durable Object binding or transition variable.
+Stable staging runs the auth boundary in `better-auth` mode. A mapped Better
+Auth session is required for protected application APIs; the narrow legacy path
+retains Access for dual-login migration work. Preview and production deployments
+do not receive the Durable Object binding or Better Auth session-source variable.
