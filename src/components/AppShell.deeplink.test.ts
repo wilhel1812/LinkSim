@@ -11,6 +11,7 @@ const hoisted = vi.hoisted(() => {
   const loadSimulationPreset = vi.fn();
   const signInWithGithubPilot = vi.fn();
   const signInWithPasskeyPilot = vi.fn();
+  const requestGithubAuthRecoveryReload = vi.fn(() => true);
 
   const state: Record<string, unknown> = {
     srtmTiles: [{ id: "tile-1" }],
@@ -76,9 +77,11 @@ const hoisted = vi.hoisted(() => {
     loadSimulationPreset,
     signInWithGithubPilot,
     signInWithPasskeyPilot,
+    requestGithubAuthRecoveryReload,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
     githubAuthReturn: false,
+    githubAuthRecoveryReturn: false,
     runtimeEnvironment: "production",
     state,
     useAppStore,
@@ -129,6 +132,9 @@ vi.mock("../lib/environment", () => ({
 vi.mock("../lib/betterAuthPilot", () => ({
   consumeAuthCallbackError: vi.fn(() => hoisted.authCallbackError),
   consumeGithubAuthReturn: vi.fn(() => hoisted.githubAuthReturn),
+  consumeGithubAuthRecovery: vi.fn(() => hoisted.githubAuthRecoveryReturn),
+  clearGithubAuthRecovery: vi.fn(),
+  requestGithubAuthRecoveryReload: hoisted.requestGithubAuthRecoveryReload,
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
   signInWithGithubPilot: hoisted.signInWithGithubPilot,
   signInWithPasskeyPilot: hoisted.signInWithPasskeyPilot,
@@ -250,6 +256,8 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.betterAuthPilotEnabled = false;
     hoisted.authCallbackError = false;
     hoisted.githubAuthReturn = false;
+    hoisted.githubAuthRecoveryReturn = false;
+    hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
     installLocalStorageMock();
@@ -347,7 +355,7 @@ describe("AppShell deeplink cold-load flow", () => {
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
-      const github = document.querySelector('button[aria-label="Continue with GitHub"]');
+      const github = document.querySelector('button[aria-label="GitHub"]');
       fireEvent.click(github as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(
@@ -377,7 +385,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      fireEvent.click(document.querySelector('button[aria-label="Continue with GitHub"]') as HTMLButtonElement);
+      fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
       await flushMicrotasks();
       const challenge = document.querySelector<HTMLElement>('[aria-label="Anti-bot check"]');
       expect(challenge).toBeTruthy();
@@ -423,6 +431,83 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("retains GitHub return recovery through Strict Mode effect replay", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    const { consumeGithubAuthReturn } = await import("../lib/betterAuthPilot");
+    vi.mocked(consumeGithubAuthReturn)
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = render(
+      React.createElement(React.StrictMode, null, React.createElement(AppShell)),
+    );
+    await flushMicrotasks();
+    try {
+      const initialChecks = hoisted.fetchAuthStatus.mock.calls.length;
+      expect(initialChecks).toBeGreaterThan(0);
+      await advanceTimers(250);
+      expect(hoisted.fetchAuthStatus.mock.calls.length).toBeGreaterThan(initialChecks);
+    } finally {
+      vi.mocked(consumeGithubAuthReturn).mockImplementation(() => hoisted.githubAuthReturn);
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("reloads the returned page once when Safari cannot see the GitHub session", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = await renderAppShell();
+    try {
+      await advanceTimers(250);
+      await advanceTimers(750);
+      await advanceTimers(1_500);
+      await waitForCondition(() => hoisted.requestGithubAuthRecoveryReload.mock.calls.length === 1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
+      expect(document.body.textContent).not.toContain("could not confirm the new session");
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops after the recovery reload and explains that the browser did not retain the session", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthRecoveryReturn = true;
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = await renderAppShell();
+    try {
+      await advanceTimers(250);
+      await advanceTimers(750);
+      await advanceTimers(1_500);
+      await waitForCondition(() => document.body.textContent?.includes("browser did not retain the LinkSim session") === true);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
+      expect(hoisted.requestGithubAuthRecoveryReload).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
   it("signs in with a passkey without navigating away from the current workspace", async () => {
     hoisted.betterAuthPilotEnabled = true;
     window.history.replaceState(null, "", "/?workspace=local#panel");
@@ -441,7 +526,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const passkey = document.querySelector('button[aria-label="Use a passkey"]');
+      const passkey = document.querySelector('button[aria-label="Passkey"]');
       fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithPasskeyPilot).toHaveBeenCalledOnce();
@@ -467,7 +552,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const passkey = document.querySelector('button[aria-label="Use a passkey"]');
+      const passkey = document.querySelector('button[aria-label="Passkey"]');
       fireEvent.click(passkey as HTMLButtonElement);
       await flushMicrotasks();
       expect(document.body.textContent).toContain(
@@ -493,7 +578,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      const github = document.querySelector('button[aria-label="Continue with GitHub"]');
+      const github = document.querySelector('button[aria-label="GitHub"]');
       fireEvent.click(github as HTMLButtonElement);
       await flushMicrotasks();
 

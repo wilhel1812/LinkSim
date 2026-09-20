@@ -6,6 +6,7 @@ const TURNSTILE_ACTION = "github-login";
 const TURNSTILE_LOAD_TIMEOUT_MS = 15_000;
 const TURNSTILE_INTERACTION_TIMEOUT_MS = 120_000;
 const GITHUB_AUTH_RETURN_PARAM = "auth-return";
+const GITHUB_AUTH_RECOVERY_KEY = "linksim:github-auth-return-reload:v1";
 
 type PilotEnvironment = {
   VITE_BETTER_AUTH_PILOT?: string;
@@ -162,6 +163,39 @@ export const consumeGithubAuthReturn = (
   if (url.searchParams.get(GITHUB_AUTH_RETURN_PARAM) !== "github") return false;
   url.searchParams.delete(GITHUB_AUTH_RETURN_PARAM);
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return true;
+};
+
+export const clearGithubAuthRecovery = (storage: Pick<Storage, "removeItem"> = window.sessionStorage): void => {
+  try {
+    storage.removeItem(GITHUB_AUTH_RECOVERY_KEY);
+  } catch {
+    // Session storage can be unavailable in locked-down browsers.
+  }
+};
+
+export const consumeGithubAuthRecovery = (
+  storage: Pick<Storage, "getItem" | "removeItem"> = window.sessionStorage,
+): boolean => {
+  try {
+    if (storage.getItem(GITHUB_AUTH_RECOVERY_KEY) !== "pending") return false;
+    storage.removeItem(GITHUB_AUTH_RECOVERY_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const requestGithubAuthRecoveryReload = (
+  storage: Pick<Storage, "setItem"> = window.sessionStorage,
+  reload: () => void = () => window.location.reload(),
+): boolean => {
+  try {
+    storage.setItem(GITHUB_AUTH_RECOVERY_KEY, "pending");
+  } catch {
+    return false;
+  }
+  reload();
   return true;
 };
 

@@ -48,7 +48,7 @@ describe("cloudUser client", () => {
     await expect(fetchAuthStatus()).resolves.toEqual({ authenticated: false, authState: "guest", authSource: null });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/public-simulation?mode=auth",
-      expect.objectContaining({ method: "GET" }),
+      expect.objectContaining({ method: "GET", cache: "no-store" }),
     );
   });
 

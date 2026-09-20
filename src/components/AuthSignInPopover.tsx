@@ -64,14 +64,10 @@ export function AuthSignInPopover({
       triggerRef={triggerRef}
     >
       <div aria-busy={busy || undefined} aria-label="Sign in or sign up" className="auth-sign-in-popover-content" ref={focusContent} role="dialog">
-        <div className="auth-sign-in-popover-intro">
-          <strong>Sign in or sign up</strong>
-          <span>Choose a sign-in method.</span>
-        </div>
         <ul className="ui-settings-popover-list">
           <li className="ui-settings-popover-row">
             <button
-              aria-label={busyMethod === "github" ? "Opening GitHub…" : "Continue with GitHub"}
+              aria-label={busyMethod === "github" ? "Opening GitHub…" : "GitHub"}
               className="ui-settings-row-toggle auth-sign-in-option"
               disabled={busy}
               onClick={() => {
@@ -79,13 +75,8 @@ export function AuthSignInPopover({
               }}
               type="button"
             >
-              <span className="auth-sign-in-option-copy">
-                <span className="ui-settings-toggle-label">
-                  {busyMethod === "github" ? "Opening GitHub…" : "Continue with GitHub"}
-                </span>
-                <span className="auth-sign-in-option-description">
-                  Use GitHub to create an account or recover access.
-                </span>
+              <span className="ui-settings-toggle-label">
+                {busyMethod === "github" ? "Opening GitHub…" : "GitHub"}
               </span>
               <span className="ui-settings-toggle-icon">
                 <svg aria-hidden="true" height="18" viewBox="0 0 24 24" width="18">
@@ -99,24 +90,22 @@ export function AuthSignInPopover({
           </li>
           <li className="ui-settings-popover-row">
             <button
-              aria-label={busyMethod === "passkey" ? "Using passkey…" : "Use a passkey"}
+              aria-label={busyMethod === "passkey" ? "Using passkey…" : "Passkey"}
               className="ui-settings-row-toggle auth-sign-in-option"
               disabled={busy}
               onClick={onPasskey}
               type="button"
             >
-              <span className="auth-sign-in-option-copy">
-                <span className="ui-settings-toggle-label">
-                  {busyMethod === "passkey" ? "Using passkey…" : "Use a passkey"}
-                </span>
-                <span className="auth-sign-in-option-description">
-                  Use a passkey only if you added one previously.
-                </span>
+              <span className="ui-settings-toggle-label">
+                {busyMethod === "passkey" ? "Using passkey…" : "Passkey"}
               </span>
               <span className="ui-settings-toggle-icon">
                 <KeyRound aria-hidden="true" size={18} strokeWidth={1.8} />
               </span>
             </button>
+          </li>
+          <li className="ui-settings-popover-row auth-sign-in-note">
+            New accounts start with GitHub.
           </li>
         </ul>
       </div>

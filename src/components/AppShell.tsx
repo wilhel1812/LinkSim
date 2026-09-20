@@ -15,11 +15,14 @@ import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
+  clearGithubAuthRecovery,
   consumeAuthCallbackError,
+  consumeGithubAuthRecovery,
   consumeGithubAuthReturn,
   getGithubSignInUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
+  requestGithubAuthRecoveryReload,
   signInWithGithubPilot,
   signInWithPasskeyPilot,
 } from "../lib/betterAuthPilot";
@@ -313,7 +316,9 @@ export function AppShell() {
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
   const authRetryTimerRef = useRef<number | null>(null);
+  const githubAuthReturnInitializedRef = useRef(false);
   const githubAuthReturnPendingRef = useRef(false);
+  const githubAuthReturnReloadedRef = useRef(false);
   const githubAuthReturnRetryAttemptRef = useRef(0);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
@@ -369,8 +374,13 @@ export function AppShell() {
     });
   }, []);
   useEffect(() => {
-    if (!betterAuthPilotEnabled) return;
-    githubAuthReturnPendingRef.current = consumeGithubAuthReturn(window.location, window.history);
+    if (!betterAuthPilotEnabled || githubAuthReturnInitializedRef.current) return;
+    githubAuthReturnInitializedRef.current = true;
+    const returnedFromGithub = consumeGithubAuthReturn(window.location, window.history);
+    if (returnedFromGithub) clearGithubAuthRecovery();
+    const returnedFromRecoveryReload = !returnedFromGithub && consumeGithubAuthRecovery();
+    githubAuthReturnPendingRef.current = returnedFromGithub || returnedFromRecoveryReload;
+    githubAuthReturnReloadedRef.current = returnedFromRecoveryReload;
   }, [betterAuthPilotEnabled]);
   useEffect(() => {
     if (!betterAuthPilotEnabled || !consumeAuthCallbackError(window.location, window.history)) return;
@@ -947,15 +957,24 @@ export function AppShell() {
                 }, delayMs);
                 return;
               }
+              if (
+                !githubAuthReturnReloadedRef.current
+                && requestGithubAuthRecoveryReload()
+              ) {
+                window.clearTimeout(timeoutId);
+                authCheckInFlightRef.current = false;
+                return;
+              }
               githubAuthReturnPendingRef.current = false;
               githubAuthReturnRetryAttemptRef.current = 0;
               pushNotification({
                 id: "github-session-not-confirmed",
-                message: "GitHub sign-in completed, but LinkSim could not confirm the new session. Reload the page and try signing in again.",
+                message: "GitHub sign-in completed, but this browser did not retain the LinkSim session. Allow cookies for this site, then try GitHub again.",
                 tone: "error",
               });
             } else if (authStatus.authSource === "better-auth") {
               githubAuthReturnPendingRef.current = false;
+              githubAuthReturnReloadedRef.current = false;
               githubAuthReturnRetryAttemptRef.current = 0;
             }
             const bootstrapState = resolveAuthBootstrapState({

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAuthReturnPath,
   buildGithubAuthReturnPath,
+  clearGithubAuthRecovery,
+  consumeGithubAuthRecovery,
   consumeGithubAuthReturn,
   consumeAuthCallbackError,
   createPasskeyPilotSignIn,
@@ -13,6 +15,7 @@ import {
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   PasskeyPilotError,
+  requestGithubAuthRecoveryReload,
 } from "./betterAuthPilot";
 
 describe("Better Auth pilot client", () => {
@@ -46,6 +49,18 @@ describe("Better Auth pilot client", () => {
       "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
     );
     expect(consumeGithubAuthReturn(window.location, window.history)).toBe(false);
+  });
+
+  it("uses one session-scoped reload marker for GitHub callback recovery", () => {
+    const reload = vi.fn();
+    expect(requestGithubAuthRecoveryReload(window.sessionStorage, reload)).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(consumeGithubAuthRecovery(window.sessionStorage)).toBe(true);
+    expect(consumeGithubAuthRecovery(window.sessionStorage)).toBe(false);
+
+    expect(requestGithubAuthRecoveryReload(window.sessionStorage, reload)).toBe(true);
+    clearGithubAuthRecovery(window.sessionStorage);
+    expect(consumeGithubAuthRecovery(window.sessionStorage)).toBe(false);
   });
 
   it("removes callback error parameters without dropping the rest of the URL", () => {
