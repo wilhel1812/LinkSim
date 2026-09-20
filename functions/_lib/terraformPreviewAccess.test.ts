@@ -160,15 +160,13 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(productionTerraformMain).not.toContain("pages_production_durable_object_namespaces");
   });
 
-  it("configures the staging auth pilot before deploying its runtime and Pages application", () => {
+  it("configures staging authentication before deploying its runtime and Pages application", () => {
     const secretNames = [
       "BETTER_AUTH_SECRET",
       "GITHUB_CLIENT_ID",
       "GITHUB_CLIENT_SECRET",
       "TURNSTILE_SITE_KEY",
       "TURNSTILE_SECRET_KEY",
-      "AUTH_PILOT_GITHUB_ACCOUNT_ID",
-      "AUTH_PILOT_LINKSIM_USER_ID",
     ];
     const runtime = deployWorkflow.indexOf("wrangler deploy --config workers/auth-runtime/wrangler.staging.toml");
     const pages = deployWorkflow.indexOf("npm run deploy:staging");
@@ -189,6 +187,10 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(deployWorkflow).toContain('VITE_BETTER_AUTH_PILOT: "true"');
     expect(deployWorkflow).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
     expect(deployWorkflow).toContain("TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(deployWorkflow).not.toContain("AUTH_PILOT_GITHUB_ACCOUNT_ID");
+    expect(deployWorkflow).not.toContain("AUTH_PILOT_LINKSIM_USER_ID");
+    expect(read("workers/auth-runtime/wrangler.staging.toml"))
+      .toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"');
     expect(productionTerraformMain).not.toContain("AUTH_PILOT_GITHUB_ACCOUNT_ID");
   });
 });

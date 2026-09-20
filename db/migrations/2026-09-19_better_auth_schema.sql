@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS auth_identity_map (
 
 CREATE INDEX IF NOT EXISTS auth_session_userId_idx ON auth_session(userId);
 CREATE INDEX IF NOT EXISTS auth_account_userId_idx ON auth_account(userId);
+CREATE UNIQUE INDEX IF NOT EXISTS auth_account_provider_account_idx
+  ON auth_account(providerId, accountId);
 CREATE INDEX IF NOT EXISTS auth_verification_identifier_idx ON auth_verification(identifier);
 CREATE INDEX IF NOT EXISTS auth_passkey_userId_idx ON auth_passkey(userId);
 CREATE INDEX IF NOT EXISTS auth_passkey_credentialID_idx ON auth_passkey(credentialID);

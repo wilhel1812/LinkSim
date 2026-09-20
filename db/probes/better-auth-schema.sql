@@ -7,6 +7,7 @@ SELECT id, key, count, lastRequest FROM auth_rate_limit LIMIT 0;
 SELECT auth_user_id, linksim_user_id, created_at FROM auth_identity_map LIMIT 0;
 SELECT userId FROM auth_session INDEXED BY auth_session_userId_idx LIMIT 0;
 SELECT userId FROM auth_account INDEXED BY auth_account_userId_idx LIMIT 0;
+SELECT providerId, accountId FROM auth_account INDEXED BY auth_account_provider_account_idx LIMIT 0;
 SELECT identifier FROM auth_verification INDEXED BY auth_verification_identifier_idx LIMIT 0;
 SELECT userId FROM auth_passkey INDEXED BY auth_passkey_userId_idx LIMIT 0;
 SELECT credentialID FROM auth_passkey INDEXED BY auth_passkey_credentialID_idx LIMIT 0;

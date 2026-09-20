@@ -133,12 +133,12 @@ export class SqliteD1 {
     this.beforeBatch = null;
     this.db.exec("BEGIN");
     try {
-      for (const statement of statements) statement.runSync();
+      const results = statements.map(statement => statement.runSync());
       this.db.exec("COMMIT");
+      return results.map(result => ({ success: true, meta: { changes: Number(result.changes) } }));
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    return statements.map(() => ({ success: true }));
   }
 }

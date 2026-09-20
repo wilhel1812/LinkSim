@@ -322,6 +322,143 @@ describe("verifyAuth", () => {
     ]);
   });
 
+  it.each(["no-session", "runtime-unavailable"])(
+    "reuses a mapped LinkSim identity for an Access-only tab after %s fallback",
+    async (mode) => {
+      const request = new Request("https://staging.linksim.link/api/me", {
+        headers: {
+          "cf-access-jwt-assertion": accessJwt({
+            iss: "https://team.example",
+            sub: "access-subject",
+            email: " Mapped@Example.ORG ",
+            aud: ["staging-aud"],
+            exp: Math.floor(Date.now() / 1000) + 3600,
+          }),
+        },
+      });
+      const runtime = mode === "no-session"
+        ? { getByName: () => ({ checkSession: async () => ({ status: 401, setCookies: [] }) }) }
+        : { getByName: () => ({ checkSession: async () => { throw new Error("offline"); } }) };
+      const db = {
+        prepare: () => ({
+          bind: () => ({
+            first: async () => ({
+              current_user_id: "linksim-mapped",
+              claim_status: "active",
+              auth_user_id: "auth-1",
+              linksim_user_id: "linksim-mapped",
+              user_id: "linksim-mapped",
+              idp_email: "mapped@example.org",
+              idp_email_verified: 1,
+              deleted_id: null,
+              subject_status: "current",
+              subject_email: "mapped@example.org",
+              canonical_user_id: "linksim-mapped",
+              is_admin: 0,
+              is_moderator: 0,
+              is_approved: 1,
+            }),
+          }),
+        }),
+      } as unknown as D1Database;
+      const auth = await verifyAuth(request, makeEnv({
+        AUTH_SESSION_SOURCE: "transition",
+        AUTH: runtime,
+        DB: db,
+        ACCESS_AUD: "staging-aud",
+        ACCESS_TEAM_DOMAIN: "team.example",
+      }), undefined, decodeTestJwt);
+      expect(auth).toMatchObject({
+        userId: "linksim-mapped",
+        source: "jwt",
+        tokenPayload: { __linksim_better_auth_mapped: true },
+      });
+    },
+  );
+
+  it("fails closed when an Access email has an invalid mapped claim", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: {
+        "cf-access-jwt-assertion": accessJwt({
+          iss: "https://team.example",
+          sub: "access-subject",
+          email: "mapped@example.org",
+          aud: ["staging-aud"],
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      },
+    });
+    const db = {
+      prepare: () => ({ bind: () => ({ first: async () => ({
+        current_user_id: "linksim-mapped",
+        claim_status: "blocked",
+        auth_user_id: "auth-1",
+        linksim_user_id: "linksim-mapped",
+        user_id: "linksim-mapped",
+        idp_email: "mapped@example.org",
+        idp_email_verified: 1,
+        deleted_id: null,
+        subject_status: "current",
+        subject_email: "mapped@example.org",
+        canonical_user_id: "linksim-mapped",
+        is_admin: 0,
+        is_moderator: 0,
+        is_approved: 1,
+      }) }) }),
+    } as unknown as D1Database;
+    await expect(verifyAuth(request, makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: { getByName: () => ({ checkSession: async () => ({ status: 401, setCookies: [] }) }) },
+      DB: db,
+      ACCESS_AUD: "staging-aud",
+      ACCESS_TEAM_DOMAIN: "team.example",
+    }), undefined, decodeTestJwt)).rejects.toBeInstanceOf(AuthRuntimeUnavailableError);
+  });
+
+  it("preserves ordinary unmapped Access fallback behavior", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: {
+        "cf-access-jwt-assertion": accessJwt({
+          iss: "https://team.example",
+          sub: "access-subject",
+          email: "ordinary@example.org",
+          aud: ["staging-aud"],
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      },
+    });
+    const db = {
+      prepare: () => ({ bind: () => ({ first: async () => null }) }),
+    } as unknown as D1Database;
+    const auth = await verifyAuth(request, makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: { getByName: () => ({ checkSession: async () => ({ status: 401, setCookies: [] }) }) },
+      DB: db,
+      ACCESS_AUD: "staging-aud",
+      ACCESS_TEAM_DOMAIN: "team.example",
+    }), undefined, decodeTestJwt);
+    expect(auth).toMatchObject({ userId: "access-subject", source: "jwt" });
+    expect(auth?.tokenPayload).not.toHaveProperty("__linksim_better_auth_mapped");
+  });
+
+  it("never maps an unverified header-only email", async () => {
+    const request = new Request("https://staging.linksim.link/api/me", {
+      headers: {
+        "cf-access-authenticated-user-id": "access-subject",
+        "cf-access-authenticated-user-email": "mapped@example.org",
+      },
+    });
+    const db = {
+      prepare: () => { throw new Error("header email must not be queried"); },
+    } as unknown as D1Database;
+    const auth = await verifyAuth(request, makeEnv({
+      AUTH_SESSION_SOURCE: "transition",
+      AUTH: { getByName: () => ({ checkSession: async () => ({ status: 401, setCookies: [] }) }) },
+      DB: db,
+    }));
+    expect(auth).toMatchObject({ userId: "access-subject", source: "headers" });
+  });
+
   it("falls back on runtime failure only in transition mode and fails closed after cutover", async () => {
     const runtime = { getByName: () => ({ checkSession: async () => { throw new Error("offline"); } }) };
     const transitionRequest = new Request("https://staging.linksim.link/api/me", {

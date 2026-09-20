@@ -46,7 +46,7 @@ Access identity while Access still protects staging `/api/*`. The future
 `better-auth` mode fails closed instead. Production and arbitrary preview hosts
 have no auth-runtime binding in this batch.
 
-Issue #1144 adds a single-account GitHub pilot on stable staging. Pages exposes
+Issue #1144 added a single-account GitHub pilot on stable staging. Pages exposes
 only Better Auth's social-login initiation, GitHub callback, and logout routes;
 the session-check RPC remains private. The pilot requires an exact configured
 GitHub account ID and an exact existing LinkSim user ID. Session creation fails
@@ -64,17 +64,30 @@ Turnstile widget, identity pair, Durable Object and cookies are stable-staging
 only; arbitrary previews and production remain unchanged.
 
 The Durable Object still has no public fetch route and returns 404 by default.
-General registration, email claims, migration, passkeys, GitLab and account
-linking remain later batches. Better Auth may create an inert internal
+Privileged/unmatched dual-login migration, passkeys, GitLab and account linking
+remain later batches. Better Auth may create an inert internal
 user/account row before a mapping failure is known; such a failure creates no
 session or LinkSim mapping and a later valid retry remains idempotent.
+
+Issue #1149 replaces the server-side pilot identity pair with general staging
+GitHub registration and safe ordinary-account claims. Better Auth requires a
+fresh provider-verified email and refreshes provider user information at every
+OAuth sign-in. Session creation atomically provisions the LinkSim identity:
+exactly one eligible active ordinary legacy claim preserves its existing
+LinkSim ID and data; an email with authoritative proof that no legacy claim or
+subject exists receives a new independent LinkSim ID and immediate ordinary
+access. Blocked, deleted, superseded, privileged, pending, revoked,
+inconsistent, conflicting, missing-email and unverified-email identities fail
+closed. The fixed staging claim deadline is
+`2026-12-19T23:59:59.999Z`; after it, legacy claims fail while truly new
+registration remains available. The existing browser pilot flag remains during
+the Access transition, but the runtime no longer has per-user pilot secrets.
 
 The staging GitHub OAuth application uses
 `https://staging.linksim.link/api/auth/callback/github`. The `staging` GitHub
 environment must provide `BETTER_AUTH_SECRET`,
 `BETTER_AUTH_GITHUB_CLIENT_ID`, `BETTER_AUTH_GITHUB_CLIENT_SECRET`,
-`VITE_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`,
-`AUTH_PILOT_GITHUB_ACCOUNT_ID`, and `AUTH_PILOT_LINKSIM_USER_ID`. The deployment
+`VITE_TURNSTILE_SITE_KEY`, and `TURNSTILE_SECRET_KEY`. The deployment
 workflow validates these inputs, installs the corresponding runtime secrets
 before deploying the Durable Object, and enables the browser pilot only for
 stable staging.

@@ -64,6 +64,59 @@ const seedCanonicalAccount = (database: SqliteD1) => {
 };
 
 describe("authoritative identity lifecycle", () => {
+  it.each([undefined, "access"])(
+    "keeps legacy Access reconciliation schema-safe when auth source is %s",
+    async (authSource) => {
+      const database = new SqliteD1();
+      seedCanonicalAccount(database);
+      await expect(executeVerifiedIdentityEnsure({
+        ...envFor(database),
+        AUTH_SESSION_SOURCE: authSource,
+      }, {
+        userId: "legacy-access-subject",
+        email: "user@example.com",
+        defaultEmail: "user@example.com",
+        bootstrapAdmin: false,
+        now: "2026-09-20T00:30:00.000Z",
+      })).resolves.toBeUndefined();
+      expect(database.db.prepare("SELECT current_user_id FROM verified_identity_claims WHERE normalized_email = 'user@example.com'").get())
+        .toEqual({ current_user_id: "legacy-access-subject" });
+      expect(database.db.prepare("SELECT owner_user_id FROM sites WHERE id = 'site-1'").get())
+        .toEqual({ owner_user_id: "legacy-access-subject" });
+    },
+  );
+
+  it("atomically rejects Access reconciliation away from a mapped claim", async () => {
+    const database = new SqliteD1();
+    seedCanonicalAccount(database);
+    database.db.exec(`
+      CREATE TABLE auth_identity_map (
+        auth_user_id TEXT PRIMARY KEY, linksim_user_id TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL
+      );
+      INSERT INTO auth_identity_map
+      VALUES ('auth-1', 'old-subject', '2026-09-20T00:00:00.000Z');`);
+
+    await expect(executeVerifiedIdentityEnsure({
+      ...envFor(database), AUTH_SESSION_SOURCE: "transition",
+    }, {
+      userId: "access-new-subject",
+      email: "user@example.com",
+      defaultEmail: "user@example.com",
+      bootstrapAdmin: false,
+      now: "2026-09-20T01:00:00.000Z",
+    })).rejects.toThrow();
+
+    expect(database.db.prepare("SELECT current_user_id FROM verified_identity_claims WHERE normalized_email = 'user@example.com'").get())
+      .toEqual({ current_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT auth_user_id, linksim_user_id FROM auth_identity_map").get())
+      .toEqual({ auth_user_id: "auth-1", linksim_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM users WHERE id = 'access-new-subject'").get())
+      .toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT owner_user_id FROM sites WHERE id = 'site-1'").get())
+      .toEqual({ owner_user_id: "old-subject" });
+    expect(database.db.prepare("SELECT owner_user_id FROM simulations WHERE id = 'sim-1'").get())
+      .toEqual({ owner_user_id: "old-subject" });
+  });
   it("does not overwrite concurrent basemap and radio-default profile patches", async () => {
     const basemapLast = new SqliteD1();
     seedCanonicalAccount(basemapLast);
