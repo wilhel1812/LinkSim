@@ -26,9 +26,17 @@ type TurnstileApi = {
 
 type TurnstileWindow = Window & { turnstile?: TurnstileApi };
 type SocialSignIn = (
-  input: { provider: "github"; callbackURL: string; errorCallbackURL: string },
+  input: {
+    provider: "github";
+    callbackURL: string;
+    errorCallbackURL: string;
+    disableRedirect: true;
+  },
   options: { headers: { "x-captcha-response": string } },
-) => Promise<{ data?: unknown; error?: { message?: string } | null }>;
+) => Promise<{
+  data?: { url?: string | null } | null;
+  error?: { message?: string } | null;
+}>;
 
 let turnstileLoading: Promise<TurnstileApi> | undefined;
 let authClient: ReturnType<typeof createAuthClient> | undefined;
@@ -134,10 +142,23 @@ const checked = <T>(response: { data?: T; error?: { message?: string } | null })
   return response.data;
 };
 
+const githubAuthorizationUrl = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.origin === "https://github.com" && url.pathname === "/login/oauth/authorize"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const createGithubPilotSignIn = (dependencies: {
   siteKey: string;
   getToken?: typeof getTurnstileToken;
   social?: SocialSignIn;
+  navigate?: (url: string) => void;
   createContainer?: () => HTMLElement;
 }) => {
   let busy = false;
@@ -157,10 +178,20 @@ export const createGithubPilotSignIn = (dependencies: {
       const token = await (dependencies.getToken ?? getTurnstileToken)(container);
       const returnPath = buildAuthReturnPath(location);
       const social = dependencies.social ?? (getAuthClient().signIn.social as SocialSignIn);
-      checked(await social(
-        { provider: "github", callbackURL: returnPath, errorCallbackURL: returnPath },
+      const data = checked(await social(
+        {
+          provider: "github",
+          callbackURL: returnPath,
+          errorCallbackURL: returnPath,
+          disableRedirect: true,
+        },
         { headers: { "x-captcha-response": token } },
       ));
+      const authorizationUrl = githubAuthorizationUrl(data?.url);
+      if (!authorizationUrl) {
+        throw new Error("GitHub sign-in did not return a valid authorization URL.");
+      }
+      (dependencies.navigate ?? ((url) => window.location.assign(url)))(authorizationUrl);
       return "started";
     } finally {
       container.remove();

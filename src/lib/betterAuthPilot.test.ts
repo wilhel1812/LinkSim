@@ -56,11 +56,16 @@ describe("Better Auth pilot client", () => {
   it("suppresses duplicate initiation and requests a new token after completion", async () => {
     let releaseToken!: (token: string) => void;
     const getToken = vi.fn(() => new Promise<string>((resolve) => { releaseToken = resolve; }));
-    const social = vi.fn(async () => ({ data: { redirect: true }, error: null }));
+    const social = vi.fn(async () => ({
+      data: { url: "https://github.com/login/oauth/authorize?client_id=test" },
+      error: null,
+    }));
+    const navigate = vi.fn();
     const signIn = createGithubPilotSignIn({
       siteKey: "site-key",
       getToken,
       social,
+      navigate,
       createContainer: () => document.createElement("div"),
     });
 
@@ -71,14 +76,40 @@ describe("Better Auth pilot client", () => {
     releaseToken("fresh-1");
     await expect(first).resolves.toBe("started");
     expect(social).toHaveBeenCalledWith(
-      { provider: "github", callbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile", errorCallbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile" },
+      {
+        provider: "github",
+        callbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
+        errorCallbackURL: "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
+        disableRedirect: true,
+      },
       { headers: { "x-captcha-response": "fresh-1" } },
     );
+    expect(navigate).toHaveBeenCalledWith("https://github.com/login/oauth/authorize?client_id=test");
 
     const second = signIn(window.location);
     releaseToken("fresh-2");
     await expect(second).resolves.toBe("started");
     expect(getToken).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a missing or unexpected provider redirect", async () => {
+    const navigate = vi.fn();
+    const dependencies = {
+      siteKey: "site-key",
+      getToken: vi.fn(async () => "fresh-token"),
+      navigate,
+    };
+
+    await expect(createGithubPilotSignIn({
+      ...dependencies,
+      social: vi.fn(async () => ({ data: { url: null }, error: null })),
+    })(window.location)).rejects.toThrow("GitHub sign-in did not return a valid authorization URL");
+    await expect(createGithubPilotSignIn({
+      ...dependencies,
+      social: vi.fn(async () => ({ data: { url: "https://example.test/steal" }, error: null })),
+    })(window.location)).rejects.toThrow("GitHub sign-in did not return a valid authorization URL");
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("removes the temporary challenge container when Better Auth rejects initiation", async () => {
