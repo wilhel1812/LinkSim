@@ -17,13 +17,18 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   clearGithubAuthRecovery,
+  clearLegacyMigrationAttempt,
+  completeLegacyMigration,
   consumeAuthCallbackError,
   consumeGithubAuthRecovery,
   consumeGithubAuthReturn,
   getGithubSignInUiErrorMessage,
+  getLegacyMigrationAttempt,
+  getLegacyMigrationUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   requestGithubAuthRecoveryReload,
+  startLegacyAccessMigration,
   signInWithGithubPilot,
   signInWithPasskeyPilot,
 } from "../lib/betterAuthPilot";
@@ -322,6 +327,8 @@ export function AppShell() {
   const githubAuthReturnPendingRef = useRef(false);
   const githubAuthReturnReloadedRef = useRef(false);
   const githubAuthReturnRetryAttemptRef = useRef(0);
+  const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
+  const legacyMigrationNoticeShownRef = useRef(false);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -390,6 +397,15 @@ export function AppShell() {
       id: "github-sign-in-failed",
       message: "GitHub sign-in failed. Try again.",
       tone: "error",
+    });
+  }, [betterAuthPilotEnabled, pushNotification]);
+  useEffect(() => {
+    if (!betterAuthPilotEnabled || !legacyMigrationAttemptRef.current || legacyMigrationNoticeShownRef.current) return;
+    legacyMigrationNoticeShownRef.current = true;
+    pushNotification({
+      id: "legacy-migration-access-confirmed",
+      message: "Cloudflare account confirmed. Choose GitHub to finish moving this LinkSim account to the new sign-in.",
+      tone: "info",
     });
   }, [betterAuthPilotEnabled, pushNotification]);
   const dismissNotification = useCallback((id: string) => {
@@ -665,6 +681,13 @@ export function AppShell() {
       setAuthSignInBusyMethod(null);
     }
   }, [clearAuthRetryTimer, pushNotification]);
+
+  const handleLegacyMigrationRequested = useCallback(() => {
+    clearAuthRetryTimer();
+    setAuthSignInBusyMethod("legacy");
+    setAuthSignInAnchor(null);
+    startLegacyAccessMigration(window.location);
+  }, [clearAuthRetryTimer]);
 
   const handlePasskeySignInRequested = useCallback(async () => {
     clearAuthRetryTimer();
@@ -968,6 +991,30 @@ export function AppShell() {
             return;
           }
           if (!isLocalRuntime) {
+            const migrationAttempt = legacyMigrationAttemptRef.current;
+            if (githubAuthReturnPendingRef.current && migrationAttempt) {
+              try {
+                await completeLegacyMigration(migrationAttempt);
+                clearLegacyMigrationAttempt(window.location, window.history);
+                legacyMigrationAttemptRef.current = null;
+                pushNotification({
+                  id: "legacy-migration-complete",
+                  message: "Your existing LinkSim account now uses the new sign-in.",
+                  tone: "success",
+                });
+              } catch (error) {
+                githubAuthReturnPendingRef.current = false;
+                githubAuthReturnRetryAttemptRef.current = 0;
+                window.clearTimeout(timeoutId);
+                settleReadonlySession(getLegacyMigrationUiErrorMessage(error));
+                pushNotification({
+                  id: "legacy-migration-failed",
+                  message: getLegacyMigrationUiErrorMessage(error),
+                  tone: "error",
+                });
+                return;
+              }
+            }
             const authStatus = await fetchAuthStatus();
             if (!isCurrentRun()) return;
             setAuthSource(authStatus.authSource);
@@ -2519,6 +2566,7 @@ export function AppShell() {
         busyMethod={authSignInBusyMethod}
         onClose={() => setAuthSignInAnchor(null)}
         onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
+        onLegacyMigration={handleLegacyMigrationRequested}
         onPasskey={() => void handlePasskeySignInRequested()}
         open={betterAuthPilotEnabled && authSignInAnchor !== null}
         triggerRef={authSignInTriggerRef}

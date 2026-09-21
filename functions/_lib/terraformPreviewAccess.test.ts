@@ -133,7 +133,10 @@ describe("authenticated Pages preview Terraform intent", () => {
       .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
       .replace(/\n\[\[durable_objects\.bindings\]\]\nname = "AUTH"\nclass_name = "AuthRuntime"\nscript_name = "linksim-auth-runtime-staging"\n/, "")
       .replace('\nHISTORY_SCOPE = "staging"', "")
-      .replace('\nAUTH_SESSION_SOURCE = "better-auth"', ""));
+      .replace('\nAUTH_SESSION_SOURCE = "better-auth"', "")
+      .replace('\nAUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"', "")
+      .replace('\nAUTH_LEGACY_CLAIM_ENABLED = "true"', "")
+      .replace('\nAUTH_REGISTRATION_ENABLED = "true"', ""));
   });
 
   it("binds the private auth Durable Object only to stable staging", () => {

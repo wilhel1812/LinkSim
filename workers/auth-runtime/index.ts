@@ -48,6 +48,7 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
         ? {
             status,
             authUserId: session.response.user.id,
+            fresh: Date.now() - new Date(session.response.session.createdAt).getTime() < 5 * 60 * 1000,
             setCookies: getSetCookieHeaders(session.headers),
           }
         : { status, setCookies: getSetCookieHeaders(session.headers) };

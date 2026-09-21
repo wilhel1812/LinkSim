@@ -17,7 +17,25 @@ describe("staging auth runtime isolation", () => {
     expect(config).not.toContain("d669aac0-37ea-4c68-9b27-ece888e1966a");
     expect(config).toContain("[observability]\nenabled = true");
     expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"');
+    expect(config).toContain('AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"');
+    expect(config).toContain('AUTH_LEGACY_CLAIM_ENABLED = "true"');
+    expect(config).toContain('AUTH_REGISTRATION_ENABLED = "true"');
     expect(config).not.toContain("AUTH_PILOT_");
+  });
+
+  it("enables migration, claims and registration only in stable staging Pages", () => {
+    const staging = readFileSync(resolve(process.cwd(), "wrangler.staging.toml"), "utf8");
+    const preview = readFileSync(resolve(process.cwd(), "wrangler.staging-preview.toml"), "utf8");
+    const production = readFileSync(resolve(process.cwd(), "wrangler.toml"), "utf8");
+    for (const flag of [
+      "AUTH_DUAL_LOGIN_MIGRATION_ENABLED",
+      "AUTH_LEGACY_CLAIM_ENABLED",
+      "AUTH_REGISTRATION_ENABLED",
+    ]) {
+      expect(staging).toContain(`${flag} = "true"`);
+      expect(preview).not.toContain(flag);
+      expect(production).not.toContain(flag);
+    }
   });
 
   it("keeps auth runtime telemetry bounded and free of identity or request data", () => {

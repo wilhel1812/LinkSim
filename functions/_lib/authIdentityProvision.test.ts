@@ -106,12 +106,54 @@ describe("Better Auth identity provisioning", () => {
 
   const provision = (authUserId = "auth-1", now = BEFORE_DEADLINE) => provisionAuthIdentity(
     database as unknown as D1Database,
-    { authUserId, now, legacyClaimDeadline: DEADLINE },
+    {
+      authUserId,
+      now,
+      legacyClaimDeadline: DEADLINE,
+      legacyClaimEnabled: true,
+      registrationEnabled: true,
+    },
   );
 
   beforeEach(() => {
     database = new SqliteD1();
     database.db.exec(migration);
+  });
+
+  it("keeps existing mappings usable while registration and ordinary claims are disabled", async () => {
+    addAuthIdentity();
+    addLegacyClaim();
+    await provision();
+    await expect(provisionAuthIdentity(database as unknown as D1Database, {
+      authUserId: "auth-1",
+      now: BEFORE_DEADLINE,
+      legacyClaimDeadline: DEADLINE,
+      legacyClaimEnabled: false,
+      registrationEnabled: false,
+    })).resolves.toMatchObject({ linksimUserId: "legacy-user", kind: "existing" });
+
+    addAuthIdentity({ authUserId: "auth-2", accountId: "67890", email: "new@example.org" });
+    await expect(provisionAuthIdentity(database as unknown as D1Database, {
+      authUserId: "auth-2",
+      now: BEFORE_DEADLINE,
+      legacyClaimDeadline: DEADLINE,
+      legacyClaimEnabled: false,
+      registrationEnabled: false,
+    })).rejects.toMatchObject({ code: "REGISTRATION_DISABLED" });
+  });
+
+  it("does not auto-claim an eligible legacy account while the claim gate is disabled", async () => {
+    addAuthIdentity({ email: "ordinary@example.org" });
+    addLegacyClaim();
+    await expect(provisionAuthIdentity(database as unknown as D1Database, {
+      authUserId: "auth-1",
+      now: BEFORE_DEADLINE,
+      legacyClaimDeadline: DEADLINE,
+      legacyClaimEnabled: false,
+      registrationEnabled: true,
+    })).rejects.toMatchObject({ code: "LEGACY_CLAIM_INELIGIBLE" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get())
+      .toEqual({ count: 0 });
   });
 
   it("claims one eligible ordinary legacy identity without changing its data", async () => {

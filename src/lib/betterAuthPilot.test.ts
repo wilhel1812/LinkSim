@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAuthReturnPath,
   buildGithubAuthReturnPath,
+  buildLegacyMigrationStartPath,
+  clearLegacyMigrationAttempt,
   clearGithubAuthRecovery,
+  completeLegacyMigration,
   consumeGithubAuthRecovery,
   consumeGithubAuthReturn,
   consumeAuthCallbackError,
@@ -12,6 +15,8 @@ import {
   createGithubPilotSignIn,
   getTurnstileToken,
   getGithubSignInUiErrorMessage,
+  getLegacyMigrationAttempt,
+  getLegacyMigrationUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
   PasskeyPilotError,
@@ -49,6 +54,55 @@ describe("Better Auth pilot client", () => {
       "/wilhelm/Svalbard/Pyramiden?layer=terrain#profile",
     );
     expect(consumeGithubAuthReturn(window.location, window.history)).toBe(false);
+  });
+
+  it("starts legacy migration through the reserved Access path without dropping route state", () => {
+    expect(buildLegacyMigrationStartPath(window.location)).toBe(
+      "/api/auth/legacy-access/start?returnTo=%2Fwilhelm%2FSvalbard%2FPyramiden%3Flayer%3Dterrain%23profile",
+    );
+  });
+
+  it("reads and clears only a valid server migration attempt", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/wilhelm/Svalbard?layer=terrain&legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420#profile",
+    );
+    expect(getLegacyMigrationAttempt(window.location)).toBe("78d2594f-6ef2-4d59-b8de-d42366a4c420");
+    clearLegacyMigrationAttempt(window.location, window.history);
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/wilhelm/Svalbard?layer=terrain#profile",
+    );
+
+    window.history.replaceState(null, "", "/?legacyMigration=not-an-attempt");
+    expect(getLegacyMigrationAttempt(window.location)).toBeNull();
+  });
+
+  it("completes migration with an exact same-origin JSON mutation and safe failures", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    await expect(completeLegacyMigration(
+      "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      fetcher,
+    )).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledWith("/api/auth/legacy-access/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ attemptId: "78d2594f-6ef2-4d59-b8de-d42366a4c420" }),
+    });
+
+    await expect(completeLegacyMigration(
+      "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      vi.fn(async () => new Response(JSON.stringify({ code: "MIGRATION_CONFLICT", error: "internal detail" }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      })),
+    )).rejects.toMatchObject({ code: "MIGRATION_CONFLICT", status: 409 });
+    expect(getLegacyMigrationUiErrorMessage(new Error("database secret leaked"))).toBe(
+      "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+    );
   });
 
   it("uses one session-scoped reload marker for GitHub callback recovery", () => {

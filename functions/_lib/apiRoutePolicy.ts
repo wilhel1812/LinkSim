@@ -17,6 +17,11 @@ const PUBLIC_AUTH_ROUTES = new Set([
   "POST /api/auth/passkey/verify-authentication",
 ]);
 
+const APPLICATION_MANAGED_PUBLIC_AUTH_ROUTES = new Set([
+  "GET /api/auth/legacy-access/start",
+  "POST /api/auth/legacy-access/complete",
+]);
+
 const AUTH_GATEWAY_ROUTES = new Set([
   ...PUBLIC_AUTH_ROUTES,
   "GET /api/auth/passkey/generate-register-options",
@@ -28,7 +33,8 @@ const AUTH_GATEWAY_ROUTES = new Set([
 
 export const isExposedAuthRoute = (request: Request): boolean => {
   const pathname = new URL(request.url).pathname;
-  return PUBLIC_AUTH_ROUTES.has(`${request.method.toUpperCase()} ${pathname}`);
+  const route = `${request.method.toUpperCase()} ${pathname}`;
+  return PUBLIC_AUTH_ROUTES.has(route) || APPLICATION_MANAGED_PUBLIC_AUTH_ROUTES.has(route);
 };
 
 export const isAuthGatewayRoute = (request: Request): boolean => {

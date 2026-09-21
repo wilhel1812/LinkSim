@@ -28,6 +28,8 @@ export class AuthRuntimeUnavailableError extends Error {
 }
 
 type AccessTokenVerifier = (token: string, env: Env) => Promise<JWTPayload>;
+const ACCESS_MIGRATION_MAX_AGE_SECONDS = 5 * 60;
+const ACCESS_MIGRATION_CLOCK_SKEW_SECONDS = 30;
 
 const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 const VERIFIED_IDP_EMAIL_CLAIM = "__linksim_verified_idp_email";
@@ -87,6 +89,40 @@ const verifyAccessToken: AccessTokenVerifier = async (token, env) => {
     audience: audiences,
   });
   return payload;
+};
+
+export const verifyFreshAccessJwt = async (
+  request: Request,
+  env: Env,
+  nowMs = Date.now(),
+  verifier: AccessTokenVerifier = verifyAccessToken,
+): Promise<{ userId: string; issuedAt: string } | null> => {
+  const token = request.headers.get("cf-access-jwt-assertion")
+    ?? request.headers.get("Cf-Access-Jwt-Assertion")
+    ?? "";
+  if (!token.trim()) return null;
+  const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
+  const configured = configuredAccessAudiences(env);
+  if (!teamDomain || configured.size === 0) return null;
+  try {
+    const payload = await verifier(token.trim(), env) as Record<string, unknown>;
+    if (payload.iss !== `https://${teamDomain}` || !hasConfiguredAudience(payload, env)) return null;
+    const subject = typeof payload.sub === "string" ? payload.sub.trim() : "";
+    const issuedAt = typeof payload.iat === "number" ? payload.iat : Number.NaN;
+    const expiresAt = typeof payload.exp === "number" ? payload.exp : Number.NaN;
+    const nowSeconds = Math.floor(nowMs / 1000);
+    if (
+      !subject
+      || !Number.isFinite(issuedAt)
+      || !Number.isFinite(expiresAt)
+      || expiresAt <= nowSeconds
+      || issuedAt > nowSeconds + ACCESS_MIGRATION_CLOCK_SKEW_SECONDS
+      || nowSeconds - issuedAt > ACCESS_MIGRATION_MAX_AGE_SECONDS
+    ) return null;
+    return { userId: subject, issuedAt: new Date(issuedAt * 1000).toISOString() };
+  } catch {
+    return null;
+  }
 };
 
 const normalizeUserId = (request: Request): string => {

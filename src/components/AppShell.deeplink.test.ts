@@ -13,6 +13,9 @@ const hoisted = vi.hoisted(() => {
   const signInWithGithubPilot = vi.fn();
   const signInWithPasskeyPilot = vi.fn();
   const signOutBetterAuthPilot = vi.fn();
+  const completeLegacyMigration = vi.fn();
+  const clearLegacyMigrationAttempt = vi.fn();
+  const startLegacyAccessMigration = vi.fn();
   const requestGithubAuthRecoveryReload = vi.fn(() => true);
 
   const state: Record<string, unknown> = {
@@ -81,11 +84,15 @@ const hoisted = vi.hoisted(() => {
     signInWithGithubPilot,
     signInWithPasskeyPilot,
     signOutBetterAuthPilot,
+    completeLegacyMigration,
+    clearLegacyMigrationAttempt,
+    startLegacyAccessMigration,
     requestGithubAuthRecoveryReload,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
     githubAuthReturn: false,
     githubAuthRecoveryReturn: false,
+    legacyMigrationAttempt: null as string | null,
     runtimeEnvironment: "production",
     state,
     useAppStore,
@@ -137,6 +144,11 @@ vi.mock("../lib/betterAuthPilot", () => ({
   consumeAuthCallbackError: vi.fn(() => hoisted.authCallbackError),
   consumeGithubAuthReturn: vi.fn(() => hoisted.githubAuthReturn),
   consumeGithubAuthRecovery: vi.fn(() => hoisted.githubAuthRecoveryReturn),
+  getLegacyMigrationAttempt: vi.fn(() => hoisted.legacyMigrationAttempt),
+  startLegacyAccessMigration: hoisted.startLegacyAccessMigration,
+  completeLegacyMigration: hoisted.completeLegacyMigration,
+  clearLegacyMigrationAttempt: hoisted.clearLegacyMigrationAttempt,
+  getLegacyMigrationUiErrorMessage: () => "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
   clearGithubAuthRecovery: vi.fn(),
   requestGithubAuthRecoveryReload: hoisted.requestGithubAuthRecoveryReload,
   isBetterAuthPilotEnabled: () => hoisted.betterAuthPilotEnabled,
@@ -266,10 +278,12 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.authCallbackError = false;
     hoisted.githubAuthReturn = false;
     hoisted.githubAuthRecoveryReturn = false;
+    hoisted.legacyMigrationAttempt = null;
     hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
     hoisted.signOutBetterAuthPilot.mockResolvedValue(undefined);
+    hoisted.completeLegacyMigration.mockResolvedValue(undefined);
     hoisted.loadDemoScenario.mockReset();
     installLocalStorageMock();
     vi.stubGlobal("React", React);
@@ -351,7 +365,7 @@ describe("AppShell deeplink cold-load flow", () => {
     );
   });
 
-  it("offers explicit GitHub and passkey choices while retaining an Access-backed workspace", async () => {
+  it("starts paired migration only from the explicit legacy-account choice", async () => {
     hoisted.betterAuthPilotEnabled = true;
     window.history.replaceState(null, "", "/");
     hoisted.fetchAuthStatus.mockResolvedValue({
@@ -368,14 +382,35 @@ describe("AppShell deeplink cold-load flow", () => {
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
-      const github = document.querySelector('button[aria-label="GitHub"]');
-      fireEvent.click(github as HTMLButtonElement);
+      const legacy = document.querySelector('button[aria-label="Move existing Cloudflare account"]');
+      fireEvent.click(legacy as HTMLButtonElement);
       await flushMicrotasks();
-      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(
-        window.location,
-        expect.any(HTMLElement),
-      );
+      expect(hoisted.startLegacyAccessMigration).toHaveBeenCalledWith(window.location);
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
       expect(hoisted.fetchMe).toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("continues through GitHub after the Access proof created a migration attempt", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+
+    const view = await renderAppShell();
+    try {
+      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
+      await flushMicrotasks();
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location, expect.any(HTMLElement));
+      expect(hoisted.startLegacyAccessMigration).not.toHaveBeenCalled();
     } finally {
       unmountAppShell(view);
     }
@@ -383,6 +418,7 @@ describe("AppShell deeplink cold-load flow", () => {
 
   it("keeps the embedded challenge mounted when the trigger is clicked during GitHub sign-in", async () => {
     hoisted.betterAuthPilotEnabled = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
     hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: true,
       authState: "authenticated",
@@ -441,6 +477,28 @@ describe("AppShell deeplink cold-load flow", () => {
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
+    }
+  });
+
+  it("consumes the paired migration before accepting the returned Better Auth session", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.completeLegacyMigration.mock.calls.length === 1);
+      expect(hoisted.completeLegacyMigration).toHaveBeenCalledWith("78d2594f-6ef2-4d59-b8de-d42366a4c420");
+      expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalledWith(window.location, window.history);
+      expect(document.body.textContent).toContain("Your existing LinkSim account now uses the new sign-in.");
+    } finally {
+      unmountAppShell(view);
     }
   });
 
@@ -633,6 +691,7 @@ describe("AppShell deeplink cold-load flow", () => {
 
   it("keeps the chooser open and explains a GitHub initiation failure", async () => {
     hoisted.betterAuthPilotEnabled = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
     hoisted.signInWithGithubPilot.mockRejectedValueOnce(new Error("database connection string leaked"));
     hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: true,

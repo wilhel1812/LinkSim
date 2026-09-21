@@ -6,7 +6,9 @@ const TURNSTILE_ACTION = "github-login";
 const TURNSTILE_LOAD_TIMEOUT_MS = 15_000;
 const TURNSTILE_INTERACTION_TIMEOUT_MS = 120_000;
 const GITHUB_AUTH_RETURN_PARAM = "auth-return";
+const LEGACY_MIGRATION_PARAM = "legacyMigration";
 const GITHUB_AUTH_RECOVERY_KEY = "linksim:github-auth-return-reload:v1";
+const LEGACY_MIGRATION_ATTEMPT_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type PilotEnvironment = {
   VITE_BETTER_AUTH_PILOT?: string;
@@ -162,6 +164,83 @@ export const buildGithubAuthReturnPath = (
   const url = new URL(returnPath, "https://linksim.invalid");
   url.searchParams.set(GITHUB_AUTH_RETURN_PARAM, "github");
   return `${url.pathname}${url.search}${url.hash}`;
+};
+
+export const buildLegacyMigrationStartPath = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+): string => `/api/auth/legacy-access/start?returnTo=${encodeURIComponent(buildAuthReturnPath(location))}`;
+
+export const startLegacyAccessMigration = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  navigate: (path: string) => void = (path) => window.location.assign(path),
+): void => navigate(buildLegacyMigrationStartPath(location));
+
+export const getLegacyMigrationAttempt = (
+  location: Pick<Location, "href" | "origin">,
+): string | null => {
+  const attemptId = new URL(location.href, location.origin).searchParams.get(LEGACY_MIGRATION_PARAM)?.trim() ?? "";
+  return LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId) ? attemptId : null;
+};
+
+export const clearLegacyMigrationAttempt = (
+  location: Pick<Location, "href" | "origin">,
+  history: Pick<History, "replaceState">,
+): void => {
+  const url = new URL(location.href, location.origin);
+  url.searchParams.delete(LEGACY_MIGRATION_PARAM);
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+};
+
+export class LegacyMigrationError extends Error {
+  readonly name = "LegacyMigrationError";
+  readonly code: string;
+  readonly status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export const completeLegacyMigration = async (
+  attemptId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<void> => {
+  if (!LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId)) {
+    throw new LegacyMigrationError("Invalid migration attempt", "MIGRATION_INVALID", 400);
+  }
+  const response = await fetcher("/api/auth/legacy-access/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ attemptId }),
+  });
+  if (response.ok) return;
+  let code = "MIGRATION_FAILED";
+  try {
+    const body = await response.json() as { code?: unknown };
+    if (typeof body.code === "string" && /^MIGRATION_[A-Z_]+$/.test(body.code)) code = body.code;
+  } catch {
+    // The UI never exposes raw server responses.
+  }
+  throw new LegacyMigrationError("Legacy migration failed", code, response.status);
+};
+
+export const getLegacyMigrationUiErrorMessage = (error: unknown): string => {
+  const migration = error instanceof LegacyMigrationError ? error : null;
+  if (migration?.code === "MIGRATION_EXPIRED" || migration?.code === "MIGRATION_STALE") {
+    return "The account-migration sign-ins expired before they could be joined. Start again and complete both sign-ins within ten minutes.";
+  }
+  if (migration?.code === "MIGRATION_CONFLICT") {
+    return "This GitHub or LinkSim account is already connected to a different account. Nothing was changed. Contact an administrator for help.";
+  }
+  if (migration?.code === "MIGRATION_INELIGIBLE") {
+    return "LinkSim could not move this account automatically because its current account state requires administrator review. Nothing was changed.";
+  }
+  if (migration?.status === 401 || migration?.status === 403) {
+    return "LinkSim could not verify both recent sign-ins. Start the migration again and complete Cloudflare Access and GitHub when prompted.";
+  }
+  return "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.";
 };
 
 export const consumeGithubAuthReturn = (
