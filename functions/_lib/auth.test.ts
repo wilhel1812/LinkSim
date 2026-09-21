@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
-import { AuthRuntimeUnavailableError, authResponseCookies, inspectAuthRequest, verifyAuth } from "./auth";
+import {
+  AuthRuntimeUnavailableError,
+  authResponseCookies,
+  inspectAuthRequest,
+  verifyAuth,
+  verifyFreshAccessJwt,
+} from "./auth";
 import type { Env } from "./types";
 
 const makeEnv = (overrides?: Partial<Env>): Env =>
@@ -21,6 +27,43 @@ describe("auth inspection", () => {
     expect(inspected.hasEmailHeader).toBe(true);
     expect(inspected.hasUserIdHeader).toBe(true);
     expect(inspected.hasJwtAssertion).toBe(false);
+  });
+});
+
+describe("fresh Access migration proof", () => {
+  const now = Date.parse("2026-09-21T10:05:00.000Z");
+  const request = (headers: HeadersInit) => new Request(
+    "https://staging.linksim.link/api/auth/legacy-access/start",
+    { headers },
+  );
+  const env = makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "legacy-migration" });
+
+  it("accepts only a freshly issued exact JWT assertion", async () => {
+    const proof = await verifyFreshAccessJwt(
+      request({ "cf-access-jwt-assertion": "signed" }),
+      env,
+      now,
+      async () => ({
+        iss: "https://team.example", aud: "legacy-migration", sub: "legacy-user",
+        iat: Math.floor(now / 1000) - 60, exp: Math.floor(now / 1000) + 3600,
+      }),
+    );
+    expect(proof).toEqual({
+      userId: "legacy-user",
+      issuedAt: "2026-09-21T10:04:00.000Z",
+    });
+  });
+
+  it.each([
+    ["header-only", { "cf-access-authenticated-user-id": "legacy-user" }, 60],
+    ["cookie-only", { cookie: "CF_Authorization=signed" }, 60],
+    ["stale", { "cf-access-jwt-assertion": "signed" }, 301],
+    ["future", { "cf-access-jwt-assertion": "signed" }, -31],
+  ])("rejects %s proof", async (_name, headers, ageSeconds) => {
+    await expect(verifyFreshAccessJwt(request(headers), env, now, async () => ({
+      iss: "https://team.example", aud: "legacy-migration", sub: "legacy-user",
+      iat: Math.floor(now / 1000) - ageSeconds, exp: Math.floor(now / 1000) + 3600,
+    }))).resolves.toBeNull();
   });
 });
 

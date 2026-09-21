@@ -16,6 +16,7 @@ const renderPopover = (overrides: Partial<React.ComponentProps<typeof AuthSignIn
     busyMethod: null,
     onClose: vi.fn(),
     onGithub: vi.fn(),
+    onLegacyMigration: vi.fn(),
     onPasskey: vi.fn(),
     open: true,
     triggerRef,
@@ -34,10 +35,11 @@ describe("AuthSignInPopover", () => {
       expect(screen.queryByText("Sign in or sign up")).not.toBeInTheDocument();
       expect(screen.queryByText("Choose a sign-in method.")).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent(
-        "New accounts start with GitHub. Passkey works after you add one in Settings.",
+        "New accounts start with GitHub. Used LinkSim before? Move your Cloudflare account first.",
       );
       expect(screen.getByRole("button", { name: "GitHub" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Passkey" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move existing Cloudflare account" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     } finally {
       view.unmount();
@@ -53,6 +55,21 @@ describe("AuthSignInPopover", () => {
       expect(view.props.onGithub).toHaveBeenCalledWith(
         screen.getByLabelText("Anti-bot check"),
       );
+      expect(view.props.onPasskey).not.toHaveBeenCalled();
+      expect(view.props.onLegacyMigration).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      view.trigger.remove();
+    }
+  });
+
+  it("starts the explicit legacy migration path without invoking GitHub directly", async () => {
+    const view = renderPopover();
+    try {
+      await screen.findByRole("dialog", { name: "Sign in or sign up" });
+      await userEvent.click(screen.getByRole("button", { name: "Move existing Cloudflare account" }));
+      expect(view.props.onLegacyMigration).toHaveBeenCalledOnce();
+      expect(view.props.onGithub).not.toHaveBeenCalled();
       expect(view.props.onPasskey).not.toHaveBeenCalled();
     } finally {
       view.unmount();
@@ -120,6 +137,7 @@ describe("AuthSignInPopover", () => {
             busyMethod={null}
             onClose={() => setOpen(false)}
             onGithub={vi.fn()}
+            onLegacyMigration={vi.fn()}
             onPasskey={vi.fn()}
             open={open}
             triggerRef={triggerRef}

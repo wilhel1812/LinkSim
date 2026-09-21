@@ -1,10 +1,16 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   FRESH_PASSKEY_MUTATION_PATHS,
   authRuntimeOptions,
+  legacyMigrationAttemptFromCallbackURL,
+  prepareAuthSessionIdentity,
   type AuthRuntimeEnv,
 } from "../../workers/auth-runtime/options";
+import { SqliteD1 } from "./testSqliteD1";
 
 const envWithSecret = (secret: string): AuthRuntimeEnv => ({
   DB: {} as D1Database,
@@ -15,9 +21,69 @@ const envWithSecret = (secret: string): AuthRuntimeEnv => ({
   TURNSTILE_SITE_KEY: "turnstile-site",
   TURNSTILE_SECRET_KEY: "turnstile-secret",
   AUTH_LEGACY_CLAIM_DEADLINE: "2026-12-19T23:59:59.999Z",
+  AUTH_DUAL_LOGIN_MIGRATION_ENABLED: "true",
+  AUTH_LEGACY_CLAIM_ENABLED: "true",
+  AUTH_REGISTRATION_ENABLED: "true",
 });
 
 describe("auth runtime options", () => {
+  it("accepts migration correlation only from the exact trusted callback origin", () => {
+    const attempt = "67eef596-ce53-4c91-918d-54f200cabee9";
+    expect(legacyMigrationAttemptFromCallbackURL(
+      `https://staging.linksim.link/wilhelm/simulation?legacyMigration=${attempt}`,
+      "https://staging.linksim.link",
+    )).toBe(attempt);
+    expect(legacyMigrationAttemptFromCallbackURL(
+      `/wilhelm/simulation?legacyMigration=${attempt}`,
+      "https://staging.linksim.link",
+    )).toBe(attempt);
+    expect(legacyMigrationAttemptFromCallbackURL(
+      `https://evil.example/?legacyMigration=${attempt}`,
+      "https://staging.linksim.link",
+    )).toBeNull();
+    expect(legacyMigrationAttemptFromCallbackURL(
+      "https://staging.linksim.link/?legacyMigration=guessable",
+      "https://staging.linksim.link",
+    )).toBeNull();
+  });
+
+  it("binds an OAuth-state migration attempt without ordinary claim or registration", async () => {
+    const database = new SqliteD1();
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-19_better_auth_schema.sql",
+    ), "utf8"));
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-21_auth_migration_attempt.sql",
+    ), "utf8"));
+    database.db.prepare(`INSERT INTO users
+      (id, username, is_admin, is_approved, created_at, updated_at)
+      VALUES ('legacy-admin', 'admin', 1, 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('legacy-admin', 'current', 'legacy-admin', 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO auth_user
+      (id, name, email, emailVerified, createdAt, updatedAt)
+      VALUES ('auth-new', 'GitHub User', 'different@example.org', 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO auth_account
+      (id, accountId, providerId, userId, createdAt, updatedAt)
+      VALUES ('account-new', '12345', 'github', 'auth-new', datetime('now'), datetime('now'))`).run();
+    const attemptId = "67eef596-ce53-4c91-918d-54f200cabee9";
+    database.db.prepare(`INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, created_at, expires_at)
+      VALUES (?, 'legacy-admin', 'legacy-admin', ?, ?, ?)`)
+      .run(attemptId, new Date().toISOString(), new Date().toISOString(), new Date(Date.now() + 600_000).toISOString());
+
+    await expect(prepareAuthSessionIdentity({
+      ...envWithSecret("x".repeat(32)),
+      DB: database as unknown as D1Database,
+      AUTH_LEGACY_CLAIM_ENABLED: "false",
+      AUTH_REGISTRATION_ENABLED: "false",
+    }, "auth-new", attemptId)).resolves.toBe(true);
+    expect(database.db.prepare("SELECT auth_user_id FROM auth_migration_attempt WHERE id = ?").get(attemptId))
+      .toEqual({ auth_user_id: "auth-new" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 1 });
+  });
   it("fails closed when the Better Auth secret is shorter than 32 characters", () => {
     expect(() => authRuntimeOptions(envWithSecret("x".repeat(31))))
       .toThrow("Better Auth runtime configuration is incomplete");

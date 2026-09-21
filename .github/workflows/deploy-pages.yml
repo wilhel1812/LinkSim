@@ -95,7 +95,7 @@ jobs:
             echo "Invalid preview base SHA." >&2
             exit 1
           fi
-          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql db/migrations/2026-08-27_basemap_preferences.sql db/migrations/2026-09-11_library_change_window.sql db/migrations/2026-09-17_library_history_candidates.sql db/migrations/2026-09-18_history_archive.sql db/migrations/2026-09-19_history_archive_maintenance.sql db/migrations/2026-09-19_better_auth_schema.sql; then
+          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql db/migrations/2026-08-27_basemap_preferences.sql db/migrations/2026-09-11_library_change_window.sql db/migrations/2026-09-17_library_history_candidates.sql db/migrations/2026-09-18_history_archive.sql db/migrations/2026-09-19_history_archive_maintenance.sql db/migrations/2026-09-19_better_auth_schema.sql db/migrations/2026-09-21_auth_migration_attempt.sql; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -308,6 +308,7 @@ jobs:
           if ! npx wrangler d1 execute linksim_staging --remote --file db/probes/better-auth-schema.sql; then
             npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-19_better_auth_schema.sql --yes
           fi
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-21_auth_migration_attempt.sql --yes
           npx wrangler d1 execute linksim_staging --remote --file db/probes/better-auth-schema.sql
 
       - name: Configure staging auth secrets

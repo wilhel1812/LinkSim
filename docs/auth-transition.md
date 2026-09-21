@@ -103,6 +103,40 @@ conditional WebAuthn autofill. GitHub replaces password or email-OTP fallback
 examples because LinkSim intentionally operates without passwords or
 transactional email.
 
+Issue #1164 adds the temporary paired-login path for privileged and unmatched
+legacy users. A newly issued, signature-verified Access JWT creates a ten-minute,
+single-use D1 attempt for the current LinkSim ID. Better Auth carries only that
+attempt ID through its library-managed GitHub OAuth state. A fresh Better Auth
+session may then atomically create the unique auth-user/LinkSim-user mapping,
+consume the attempt and write a `better_auth_dual_login` audit event. The flow
+never selects an account by profile email and never overwrites a mapping.
+The existing sign-in popover exposes this as **Move existing Cloudflare
+account**, separate from ordinary GitHub registration and passkey sign-in. After
+Access returns, the same popover's GitHub row completes the paired proof.
+Closing or abandoning GitHub leaves the attempt pending and retryable until its
+ten-minute expiry; no cancellation state or partial mapping is written. Deleting
+either still-unmapped identity removes its attempt, so temporary proof rows
+cannot block the existing account lifecycle.
+
+The three staging rollout gates are explicit and fail closed:
+`AUTH_DUAL_LOGIN_MIGRATION_ENABLED`, `AUTH_LEGACY_CLAIM_ENABLED` and
+`AUTH_REGISTRATION_ENABLED`. Stable staging enables all three. Preview and
+production configuration omit them. Turning off the migration gate stops new
+attempts and assisted recovery without invalidating existing mappings; turning
+off claims or registration stops those provisioning paths while mapped sessions
+continue to resolve normally.
+
+Administrators can perform exceptional recovery through the existing protected
+ownership-tools API only while the migration gate is enabled. The operation
+requires a verified GitHub identity, an eligible current LinkSim account and an
+independent evidence type and summary; an email address alone is rejected. It
+creates the unique mapping and a `better_auth_assisted_recovery` audit event in
+one D1 batch. The successful event records the bounded `mapped` outcome; rejected
+requests create no ownership change and return a typed error. No recovery action
+is available from a public or anonymous route. Evidence containing credential
+terms, JWT-shaped values, provider-token prefixes, private-key markers or long
+high-entropy strings is rejected before persistence.
+
 The staging GitHub OAuth application uses
 `https://staging.linksim.link/api/auth/callback/github`. The `staging` GitHub
 environment must provide `BETTER_AUTH_SECRET`,

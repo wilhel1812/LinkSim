@@ -10,6 +10,8 @@ This project supports a separate staging stack with production-like data.
 - Private `linksim-auth-runtime-staging` Durable Object bound only to stable
   staging. Pages uses its RPC session check under the existing Access API
   boundary; the Worker has no public route or `workers.dev` hostname.
+- Stable-staging-only registration, legacy-claim and paired-login feature gates.
+  Preview and production configurations omit these gates.
 - Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](../package.json)
 - Custom domain: https://staging.linksim.link
@@ -43,6 +45,25 @@ plan contains no destruction. Set it to `true` only after that gate passes.
 For an explicitly requested operator deployment, `npm run
 deploy:staging:preview -- --branch <safe-branch>` remains available. Do not use
 it for routine verification.
+
+### Paired legacy migration rehearsal
+
+Use synthetic legacy accounts only. The legacy proof route remains the narrow
+Access-protected `/api/auth/legacy-access/*` application while ordinary staging
+APIs use Better Auth. A successful rehearsal must show all three effects for the
+same ten-minute attempt: one unique `auth_identity_map` row, a consumed
+`auth_migration_attempt`, and one `better_auth_dual_login` audit event. Replays,
+expired attempts, conflicting mappings and blocked/deleted/superseded/revoked
+accounts must fail without changing ownership.
+Start the rehearsal from **Move existing Cloudflare account** in the existing
+sign-in popover. Ordinary GitHub remains the registration path and must not
+silently send new users through Access.
+
+Disabling `AUTH_DUAL_LOGIN_MIGRATION_ENABLED` in both staging Wrangler configs
+is the rollback switch for new attempts and assisted recovery. Existing mappings
+remain valid. `AUTH_LEGACY_CLAIM_ENABLED` and `AUTH_REGISTRATION_ENABLED` can be
+disabled independently to stop automatic claims or new accounts while keeping
+already mapped users signed in.
 
 ### Refresh staging DB from production D1
 

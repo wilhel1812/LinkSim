@@ -23,10 +23,29 @@ export class AuthIdentityMapEligibilityError extends Error {
   }
 }
 
+export type LegacyAuthMigrationCode =
+  | "ATTEMPT_NOT_FOUND"
+  | "ATTEMPT_EXPIRED"
+  | "ATTEMPT_CONSUMED"
+  | "ATTEMPT_IDENTITY_MISMATCH"
+  | "LEGACY_IDENTITY_INELIGIBLE"
+  | "AUTH_IDENTITY_INELIGIBLE"
+  | "IDENTITY_CONFLICT"
+  | "MIGRATION_FAILED";
+
+export class LegacyAuthMigrationError extends Error {
+  readonly name = "LegacyAuthMigrationError";
+
+  constructor(readonly code: LegacyAuthMigrationCode) {
+    super(code);
+  }
+}
+
 export type AuthIdentityProvisionCode =
   | "AUTH_IDENTITY_INELIGIBLE"
   | "LEGACY_CLAIM_INELIGIBLE"
   | "LEGACY_CLAIM_EXPIRED"
+  | "REGISTRATION_DISABLED"
   | "IDENTITY_CONFLICT"
   | "PROVISION_FAILED";
 
@@ -70,7 +89,13 @@ async function currentProvisionedIdentity(
 
 export async function provisionAuthIdentity(
   db: D1Database,
-  input: { authUserId: string; now?: string; legacyClaimDeadline: string },
+  input: {
+    authUserId: string;
+    now?: string;
+    legacyClaimDeadline: string;
+    legacyClaimEnabled: boolean;
+    registrationEnabled: boolean;
+  },
 ): Promise<ProvisionResult> {
   const now = input.now ?? new Date().toISOString();
   const accounts = await db.prepare(`
@@ -129,6 +154,9 @@ export async function provisionAuthIdentity(
   }>();
 
   if (claim) {
+    if (!input.legacyClaimEnabled) {
+      throw new AuthIdentityProvisionError("LEGACY_CLAIM_INELIGIBLE");
+    }
     if (now > input.legacyClaimDeadline) {
       throw new AuthIdentityProvisionError("LEGACY_CLAIM_EXPIRED");
     }
@@ -202,6 +230,9 @@ export async function provisionAuthIdentity(
   `).bind(email, email).first<{ has_state: number; has_user: number }>();
   if (legacyEvidence?.has_state || legacyEvidence?.has_user) {
     throw new AuthIdentityProvisionError("LEGACY_CLAIM_INELIGIBLE");
+  }
+  if (!input.registrationEnabled) {
+    throw new AuthIdentityProvisionError("REGISTRATION_DISABLED");
   }
 
   const linksimUserId = crypto.randomUUID();
@@ -427,4 +458,164 @@ export async function attachAuthIdentity(
     throw new AuthIdentityMapEligibilityError("LINKSIM_USER_NOT_FOUND");
   }
   throw new AuthIdentityMapEligibilityError("LINKSIM_USER_INELIGIBLE");
+}
+
+type MigrationAttemptRow = {
+  id: string;
+  legacy_user_id: string;
+  auth_user_id: string | null;
+  expires_at: string;
+  consumed_at: string | null;
+  completion_token: string | null;
+};
+
+const readMigrationAttempt = async (db: D1Database, attemptId: string) =>
+  db.prepare(`SELECT id, legacy_user_id, auth_user_id, expires_at, consumed_at, completion_token
+    FROM auth_migration_attempt WHERE id = ?`).bind(attemptId).first<MigrationAttemptRow>();
+
+const attemptStateError = (row: MigrationAttemptRow | null, now: string) => {
+  if (!row) return new LegacyAuthMigrationError("ATTEMPT_NOT_FOUND");
+  if (row.consumed_at) return new LegacyAuthMigrationError("ATTEMPT_CONSUMED");
+  if (row.expires_at <= now) return new LegacyAuthMigrationError("ATTEMPT_EXPIRED");
+  return null;
+};
+
+export async function createLegacyAuthMigrationAttempt(
+  db: D1Database,
+  input: {
+    attemptId: string;
+    legacyUserId: string;
+    accessSubject: string;
+    accessIssuedAt: string;
+    now: string;
+    expiresAt: string;
+  },
+) {
+  const result = await db.prepare(`
+    INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, created_at, expires_at)
+    SELECT ?, user.id, ?, ?, ?, ?
+    FROM users AS user
+    JOIN identity_subject_states AS state ON state.user_id = user.id
+    LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+    WHERE user.id = ? AND ? = user.id
+      AND deleted.id IS NULL
+      AND state.status = 'current' AND state.canonical_user_id = user.id
+      AND (user.is_admin = 1 OR user.is_moderator = 1 OR user.is_approved = 1)
+      AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+      AND ? < ?
+  `).bind(
+    input.attemptId, input.accessSubject, input.accessIssuedAt, input.now, input.expiresAt,
+    input.legacyUserId, input.accessSubject, input.now, input.expiresAt,
+  ).run();
+  if ((result.meta?.changes ?? 0) !== 1) {
+    throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
+  }
+  return { attemptId: input.attemptId, expiresAt: input.expiresAt };
+}
+
+export async function isPendingLegacyAuthMigrationAttempt(
+  db: D1Database,
+  attemptId: string,
+  now = new Date().toISOString(),
+) {
+  const row = await readMigrationAttempt(db, attemptId);
+  return !attemptStateError(row, now);
+}
+
+export async function bindLegacyAuthMigrationAttempt(
+  db: D1Database,
+  attemptId: string,
+  authUserId: string,
+  now = new Date().toISOString(),
+) {
+  const result = await db.prepare(`
+    UPDATE auth_migration_attempt
+    SET auth_user_id = ?
+    WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
+      AND (auth_user_id IS NULL OR auth_user_id = ?)
+      AND EXISTS (
+        SELECT 1 FROM auth_user AS auth
+        JOIN auth_account AS account ON account.userId = auth.id
+        WHERE auth.id = ? AND auth.emailVerified = 1
+          AND account.providerId = 'github'
+          AND account.accountId GLOB '[0-9]*'
+          AND account.accountId NOT GLOB '*[^0-9]*'
+      )
+  `).bind(authUserId, attemptId, now, authUserId, authUserId).run();
+  if ((result.meta?.changes ?? 0) === 1) return { attemptId, authUserId };
+  const row = await readMigrationAttempt(db, attemptId);
+  const stateError = attemptStateError(row, now);
+  if (stateError) throw stateError;
+  if (row?.auth_user_id && row.auth_user_id !== authUserId) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+  throw new LegacyAuthMigrationError("AUTH_IDENTITY_INELIGIBLE");
+}
+
+export async function completeLegacyAuthMigrationAttempt(
+  db: D1Database,
+  input: { attemptId: string; authUserId: string; now?: string; completionToken?: string },
+) {
+  const now = input.now ?? new Date().toISOString();
+  const completionToken = input.completionToken ?? crypto.randomUUID();
+  const attempt = await readMigrationAttempt(db, input.attemptId);
+  const stateError = attemptStateError(attempt, now);
+  if (stateError) throw stateError;
+  if (attempt?.auth_user_id !== input.authUserId) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+
+  const existing = await db.prepare(`SELECT auth_user_id, linksim_user_id
+    FROM auth_identity_map WHERE auth_user_id = ? OR linksim_user_id = ?`)
+    .bind(input.authUserId, attempt.legacy_user_id).all<MappingRow>();
+  if (existing.results.length > 0) throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
+
+  try {
+    const results = await db.batch([
+      db.prepare(`
+        INSERT INTO auth_identity_map (auth_user_id, linksim_user_id, created_at)
+        SELECT attempt.auth_user_id, attempt.legacy_user_id, ?
+        FROM auth_migration_attempt AS attempt
+        JOIN auth_user AS auth ON auth.id = attempt.auth_user_id
+        JOIN auth_account AS account ON account.userId = auth.id
+        JOIN users AS user ON user.id = attempt.legacy_user_id
+        JOIN identity_subject_states AS state ON state.user_id = user.id
+        LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+        WHERE attempt.id = ? AND attempt.auth_user_id = ?
+          AND attempt.consumed_at IS NULL
+          AND attempt.expires_at > ? AND attempt.access_subject = attempt.legacy_user_id
+          AND deleted.id IS NULL
+          AND state.status = 'current' AND state.canonical_user_id = user.id
+          AND (user.is_admin = 1 OR user.is_moderator = 1 OR user.is_approved = 1)
+          AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+          AND auth.emailVerified = 1 AND account.providerId = 'github'
+          AND account.accountId GLOB '[0-9]*'
+          AND account.accountId NOT GLOB '*[^0-9]*'
+      `).bind(now, input.attemptId, input.authUserId, now),
+      db.prepare(`UPDATE auth_migration_attempt SET consumed_at = ?, completion_token = ?
+        WHERE id = ? AND auth_user_id = ? AND consumed_at IS NULL
+          AND expires_at > ?
+          AND EXISTS (SELECT 1 FROM auth_identity_map
+            WHERE auth_user_id = ? AND linksim_user_id = legacy_user_id)`)
+        .bind(now, completionToken, input.attemptId, input.authUserId, now, input.authUserId),
+      db.prepare(`INSERT INTO user_identity_audit
+        (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+        SELECT 'better_auth_dual_login', legacy_user_id, NULL, legacy_user_id, NULL, ?, ?
+        FROM auth_migration_attempt
+        WHERE id = ? AND auth_user_id = ? AND completion_token = ?`)
+        .bind(JSON.stringify({ attemptId: input.attemptId, authUserId: input.authUserId, provider: "github" }),
+          now, input.attemptId, input.authUserId, completionToken),
+    ]);
+    if (results.some(result => (result.meta?.changes ?? 0) !== 1)) {
+      throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
+    }
+    return { authUserId: input.authUserId, linksimUserId: attempt.legacy_user_id };
+  } catch (error) {
+    if (error instanceof LegacyAuthMigrationError) throw error;
+    const conflict = await db.prepare(`SELECT 1 AS found FROM auth_identity_map
+      WHERE auth_user_id = ? OR linksim_user_id = ? LIMIT 1`)
+      .bind(input.authUserId, attempt.legacy_user_id).first<{ found: number }>();
+    throw new LegacyAuthMigrationError(conflict ? "IDENTITY_CONFLICT" : "MIGRATION_FAILED");
+  }
 }

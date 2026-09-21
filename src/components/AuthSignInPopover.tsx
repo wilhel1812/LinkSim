@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-import { KeyRound } from "lucide-react";
+import { Cloud, KeyRound } from "lucide-react";
 import { siGithub } from "simple-icons";
 import { FloatingPopover } from "./ui/FloatingPopover";
 
-export type AuthSignInMethod = "github" | "passkey";
+export type AuthSignInMethod = "github" | "passkey" | "legacy";
 
 type AuthSignInPopoverProps = {
   busyMethod: AuthSignInMethod | null;
   onClose: () => void;
   onGithub: (challengeContainer: HTMLElement) => void;
+  onLegacyMigration: () => void;
   onPasskey: () => void;
   open: boolean;
   triggerRef: RefObject<HTMLElement | null>;
@@ -18,6 +19,7 @@ export function AuthSignInPopover({
   busyMethod,
   onClose,
   onGithub,
+  onLegacyMigration,
   onPasskey,
   open,
   triggerRef,
@@ -104,6 +106,22 @@ export function AuthSignInPopover({
               </span>
             </button>
           </li>
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label={busyMethod === "legacy" ? "Opening Cloudflare…" : "Move existing Cloudflare account"}
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={onLegacyMigration}
+              type="button"
+            >
+              <span className="ui-settings-toggle-label">
+                {busyMethod === "legacy" ? "Opening Cloudflare…" : "Move existing Cloudflare account"}
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <Cloud aria-hidden="true" size={18} strokeWidth={1.8} />
+              </span>
+            </button>
+          </li>
           <li
             aria-live="polite"
             className="ui-settings-popover-row auth-sign-in-note"
@@ -111,7 +129,9 @@ export function AuthSignInPopover({
           >
             {busyMethod === "passkey"
               ? "Follow your browser or device prompt to use your passkey."
-              : "New accounts start with GitHub. Passkey works after you add one in Settings."}
+              : busyMethod === "legacy"
+                ? "Confirm your previous Cloudflare sign-in, then connect GitHub."
+                : "New accounts start with GitHub. Used LinkSim before? Move your Cloudflare account first."}
           </li>
         </ul>
       </div>

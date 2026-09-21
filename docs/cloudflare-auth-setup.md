@@ -58,6 +58,11 @@ Notes:
   passkey authentication. GitHub is required to create a new account.
 - Access GitHub or one-time PIN remains relevant only to legacy migration and
   the production deployment while the transition is open.
+- The legacy migration route accepts only a freshly issued Access JWT, creates
+  a ten-minute single-use attempt, and then requires a fresh Better Auth GitHub
+  session. `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true` must be present in both the
+  stable-staging Pages and auth-runtime configurations. Preview and production
+  must omit it until their separately reviewed rollout phase.
 
 ## 4) Registration Behavior
 
@@ -83,6 +88,17 @@ administrator can durably demote or revoke a bootstrap identity. Diagnostics
 endpoints follow that current D1 state and do not provide a configuration-only
 break-glass bypass. Bootstrap consumption survives account deletion and
 restoration, so reauthentication cannot undo a durable demotion.
+
+Stable staging additionally declares these non-secret, fail-closed rollout
+gates in checked-in Wrangler configuration:
+
+- `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true`
+- `AUTH_LEGACY_CLAIM_ENABLED=true`
+- `AUTH_REGISTRATION_ENABLED=true`
+
+Omitting or setting a gate to any value other than the exact string `true`
+disables that path. Existing auth mappings continue to work when claim or
+registration is disabled.
 
 ## Account lifecycle policy
 

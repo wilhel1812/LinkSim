@@ -11,6 +11,9 @@ enabled = true
 [vars]
 AUTH_ORIGIN = "https://staging.linksim.link"
 AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"
+AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"
+AUTH_LEGACY_CLAIM_ENABLED = "true"
+AUTH_REGISTRATION_ENABLED = "true"
 
 [[d1_databases]]
 binding = "DB"

@@ -6,6 +6,7 @@ import {
   fetchUserProfile,
   reassignResourceOwner,
 } from "../_lib/db";
+import { assistAuthIdentityRecovery, AuthAssistedRecoveryError } from "../_lib/authAssistedRecovery";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -29,6 +30,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       newOwnerUserId?: unknown;
       fromUserId?: unknown;
       toUserId?: unknown;
+      authUserId?: unknown;
+      linksimUserId?: unknown;
+      evidenceType?: unknown;
+      evidenceSummary?: unknown;
     };
 
     const action = typeof body.action === "string" ? body.action : "";
@@ -51,6 +56,54 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       }
       const result = await bulkReassignOwnership(env, fromUserId, toUserId, auth.userId);
       return withCors(request, json({ ok: true, action, result }));
+    }
+
+    if (action === "assist_auth_recovery") {
+      if (env.AUTH_DUAL_LOGIN_MIGRATION_ENABLED !== "true") {
+        return withCors(request, json({
+          error: "Assisted account recovery is unavailable.",
+          code: "RECOVERY_DISABLED",
+        }, { status: 404 }));
+      }
+      const authUserId = typeof body.authUserId === "string" ? body.authUserId.trim() : "";
+      const linksimUserId = typeof body.linksimUserId === "string" ? body.linksimUserId.trim() : "";
+      const evidenceType = typeof body.evidenceType === "string" ? body.evidenceType.trim() : "";
+      const evidenceSummary = typeof body.evidenceSummary === "string" ? body.evidenceSummary.trim() : "";
+      if (!authUserId || !linksimUserId || !evidenceType || !evidenceSummary) {
+        return withCors(request, json({
+          error: "Assisted recovery requires the Better Auth user ID, LinkSim user ID, evidence type, and independent evidence summary.",
+          code: "RECOVERY_EVIDENCE_REQUIRED",
+        }, { status: 400 }));
+      }
+      try {
+        const result = await assistAuthIdentityRecovery(env.DB, {
+          actorUserId: auth.userId,
+          authUserId,
+          linksimUserId,
+          evidenceType,
+          evidenceSummary,
+        });
+        return withCors(request, json({ ok: true, action, result }));
+      } catch (error) {
+        if (error instanceof AuthAssistedRecoveryError) {
+          const status = error.code === "ACTOR_FORBIDDEN"
+            ? 403
+            : error.code === "EVIDENCE_INSUFFICIENT"
+              ? 400
+              : error.code === "IDENTITY_CONFLICT"
+                ? 409
+                : 422;
+          const message = error.code === "IDENTITY_CONFLICT"
+            ? "The Better Auth or LinkSim identity is already connected. Nothing was changed."
+            : error.code === "IDENTITY_INELIGIBLE"
+              ? "One of the selected identities is not eligible for assisted recovery. Nothing was changed."
+              : error.code === "EVIDENCE_INSUFFICIENT"
+                ? "Record independent ownership evidence; an email address alone is insufficient."
+                : "Assisted recovery could not be completed. Nothing was changed.";
+          return withCors(request, json({ error: message, code: `RECOVERY_${error.code}` }, { status }));
+        }
+        throw error;
+      }
     }
 
     return withCors(request, json({ error: "Unknown admin ownership action." }, { status: 400 }));

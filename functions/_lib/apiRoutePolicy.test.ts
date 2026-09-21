@@ -16,6 +16,8 @@ describe("API authentication policy", () => {
     ["POST", "/api/auth/sign-out"],
     ["GET", "/api/auth/passkey/generate-authenticate-options"],
     ["POST", "/api/auth/passkey/verify-authentication"],
+    ["GET", "/api/auth/legacy-access/start"],
+    ["POST", "/api/auth/legacy-access/complete"],
   ])("keeps the intentional public exception %s %s", (method, path) => {
     expect(requiresApiAuthentication(new Request(`https://linksim.link${path}`, { method })))
       .toBe(false);
@@ -58,6 +60,8 @@ describe("API authentication policy", () => {
   });
 
   it.each([
+    ["GET", "/api/auth/legacy-access/start"],
+    ["POST", "/api/auth/legacy-access/complete"],
     ["POST", "/api/auth/passkey/generate-authenticate-options"],
     ["GET", "/api/auth/passkey/verify-authentication"],
     ["POST", "/api/auth/passkey/list-user-passkeys"],
