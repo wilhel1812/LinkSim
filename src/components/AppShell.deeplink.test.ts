@@ -171,9 +171,16 @@ vi.mock("../store/appStore", () => ({
 
 vi.mock("./MapView", () => ({ MapView: () => null }));
 vi.mock("./Sidebar", () => ({
-  Sidebar: ({ onSignInRequested, showSignInForAccessPilot }: { onSignInRequested?: (trigger: HTMLElement) => void; showSignInForAccessPilot?: boolean }) =>
+  Sidebar: ({ onSignInRequested, onSignInTriggerReady, showSignInForAccessPilot }: {
+    onSignInRequested?: (trigger: HTMLElement) => void;
+    onSignInTriggerReady?: (trigger: HTMLButtonElement | null) => void;
+    showSignInForAccessPilot?: boolean;
+  }) =>
     showSignInForAccessPilot
-      ? React.createElement("button", { onClick: (event: React.MouseEvent<HTMLButtonElement>) => onSignInRequested?.(event.currentTarget) }, "Pilot sign in")
+      ? React.createElement("button", {
+          onClick: (event: React.MouseEvent<HTMLButtonElement>) => onSignInRequested?.(event.currentTarget),
+          ref: onSignInTriggerReady,
+        }, "Pilot sign in")
       : null,
 }));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
@@ -404,9 +411,8 @@ describe("AppShell deeplink cold-load flow", () => {
 
     const view = await renderAppShell();
     try {
-      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
-      fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
       fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
       await flushMicrotasks();
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location, expect.any(HTMLElement));
@@ -432,7 +438,6 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = await renderAppShell();
     try {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
-      fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
       fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
       await flushMicrotasks();
@@ -701,8 +706,6 @@ describe("AppShell deeplink cold-load flow", () => {
 
     const view = await renderAppShell();
     try {
-      const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
-      fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
       const github = document.querySelector('button[aria-label="GitHub"]');
       fireEvent.click(github as HTMLButtonElement);

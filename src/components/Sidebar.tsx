@@ -36,6 +36,7 @@ type SidebarProps = {
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
   onSignInRequested?: (trigger: HTMLElement) => void;
+  onSignInTriggerReady?: (trigger: HTMLButtonElement | null) => void;
   showSignInForAccessPilot?: boolean;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
@@ -51,6 +52,7 @@ export function Sidebar({
   onOpenHelp,
   onOpenSettings,
   onSignInRequested,
+  onSignInTriggerReady,
   showSignInForAccessPilot = false,
   hideLibraryBrowsing = false,
   readOnly = false,
@@ -415,7 +417,7 @@ export function Sidebar({
   };
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
-      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} showSignInForAccessPilot={showSignInForAccessPilot} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} onSignInTriggerReady={onSignInTriggerReady} showSignInForAccessPilot={showSignInForAccessPilot} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>

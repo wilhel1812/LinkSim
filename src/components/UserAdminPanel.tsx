@@ -85,6 +85,8 @@ type UserAdminPanelProps = {
    * When provided, clicking "Sign in" delegates sign-in handling to the shell.
    */
   onSignInRequested?: (trigger: HTMLElement) => void;
+  /** Supplies the existing sign-in chip as an anchor for an automatic continuation popover. */
+  onSignInTriggerReady?: (trigger: HTMLButtonElement | null) => void;
   /** Show the existing sign-in chip while Access still supplies the workspace during the Better Auth pilot. */
   showSignInForAccessPilot?: boolean;
 };
@@ -96,6 +98,7 @@ export function UserAdminPanel({
   renderMode = "chip",
   onOpenSettings,
   onSignInRequested,
+  onSignInTriggerReady,
   showSignInForAccessPilot = false,
 }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -961,7 +964,7 @@ export function UserAdminPanel({
               </div>
             </div>
           ) : (
-            <button aria-label="Sign in or sign up" className="user-chip user-chip-signup" onClick={handleSignUp} type="button">
+            <button aria-label="Sign in or sign up" className="user-chip user-chip-signup" onClick={handleSignUp} ref={onSignInTriggerReady} type="button">
               <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
               <span>Sign in / Sign up</span>
             </button>
