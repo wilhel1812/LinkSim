@@ -90,6 +90,8 @@ describe("legacy Access migration routes", () => {
   });
 
   it("binds a fresh Better Auth session and consumes the attempt once", async () => {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const expiresAt = new Date(Date.now() + 9 * 60_000).toISOString();
     database.db.prepare(`INSERT INTO auth_user
       (id, name, email, emailVerified, createdAt, updatedAt)
       VALUES ('auth-1', 'GitHub User', 'new@example.org', 1, ?, ?)`).run(
@@ -103,7 +105,7 @@ describe("legacy Access migration routes", () => {
     database.db.prepare(`INSERT INTO auth_migration_attempt
       (id, legacy_user_id, access_subject, access_issued_at, auth_user_id, created_at, expires_at)
       VALUES (?, 'legacy-admin', 'legacy-admin', ?, 'auth-1', ?, ?)`).run(
-        attemptId, "2026-09-21T10:04:00.000Z", "2026-09-21T10:05:00.000Z", "2026-09-21T10:15:00.000Z",
+        attemptId, "2026-09-21T10:04:00.000Z", createdAt, expiresAt,
       );
     const env = {
       DB: database as unknown as D1Database,

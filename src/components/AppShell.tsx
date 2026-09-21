@@ -329,6 +329,7 @@ export function AppShell() {
   const githubAuthReturnRetryAttemptRef = useRef(0);
   const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
   const legacyMigrationNoticeShownRef = useRef(false);
+  const legacyMigrationPopoverOpenedRef = useRef(false);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -664,6 +665,17 @@ export function AppShell() {
     }
     window.location.href = buildAuthStartPath(window.location);
   }, [authSignInBusyMethod, betterAuthPilotEnabled, clearAuthRetryTimer]);
+
+  const handleSignInTriggerReady = useCallback((trigger: HTMLButtonElement | null) => {
+    if (
+      !trigger ||
+      !betterAuthPilotEnabled ||
+      !legacyMigrationAttemptRef.current ||
+      legacyMigrationPopoverOpenedRef.current
+    ) return;
+    legacyMigrationPopoverOpenedRef.current = true;
+    setAuthSignInAnchor(trigger);
+  }, [betterAuthPilotEnabled]);
 
   const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement) => {
     clearAuthRetryTimer();
@@ -2277,6 +2289,7 @@ export function AppShell() {
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
             onSignInRequested={handleUserSignInRequested}
+            onSignInTriggerReady={handleSignInTriggerReady}
             showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
             readOnly={!canPersistWorkspace}
             renderedBasemapAttribution={renderedBasemapAttribution}
@@ -2498,6 +2511,7 @@ export function AppShell() {
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
                 onSignInRequested={handleUserSignInRequested}
+                onSignInTriggerReady={handleSignInTriggerReady}
                 showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
                 readOnly={!canPersistWorkspace}
                 renderedBasemapAttribution={renderedBasemapAttribution}
