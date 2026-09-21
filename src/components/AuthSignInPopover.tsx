@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Cloud, KeyRound } from "lucide-react";
 import { siGithub } from "simple-icons";
 import { FloatingPopover } from "./ui/FloatingPopover";
@@ -6,7 +6,9 @@ import { FloatingPopover } from "./ui/FloatingPopover";
 export type AuthSignInMethod = "github" | "passkey" | "legacy";
 
 type AuthSignInPopoverProps = {
+  autoStartGithub?: boolean;
   busyMethod: AuthSignInMethod | null;
+  onAutoGithub?: (challengeContainer: HTMLElement) => void;
   onClose: () => void;
   onGithub: (challengeContainer: HTMLElement) => void;
   onLegacyMigration: () => void;
@@ -16,7 +18,9 @@ type AuthSignInPopoverProps = {
 };
 
 export function AuthSignInPopover({
+  autoStartGithub = false,
   busyMethod,
+  onAutoGithub,
   onClose,
   onGithub,
   onLegacyMigration,
@@ -24,6 +28,8 @@ export function AuthSignInPopover({
   open,
   triggerRef,
 }: AuthSignInPopoverProps) {
+  const [challengeContainer, setChallengeContainer] = useState<HTMLDivElement | null>(null);
+  const autoStartGithubRequestedRef = useRef(false);
   const focusContent = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
     window.setTimeout(() => {
@@ -51,8 +57,14 @@ export function AuthSignInPopover({
     };
   }, [open, triggerRef]);
 
+  useEffect(() => {
+    if (!open || !autoStartGithub || autoStartGithubRequestedRef.current) return;
+    if (!challengeContainer) return;
+    autoStartGithubRequestedRef.current = true;
+    onAutoGithub?.(challengeContainer);
+  }, [autoStartGithub, challengeContainer, onAutoGithub, open]);
+
   const busy = busyMethod !== null;
-  const challengeRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <FloatingPopover
@@ -73,7 +85,7 @@ export function AuthSignInPopover({
               className="ui-settings-row-toggle auth-sign-in-option"
               disabled={busy}
               onClick={() => {
-                if (challengeRef.current) onGithub(challengeRef.current);
+                if (challengeContainer) onGithub(challengeContainer);
               }}
               type="button"
             >
@@ -88,7 +100,7 @@ export function AuthSignInPopover({
             </button>
           </li>
           <li className={`ui-settings-popover-row auth-sign-in-challenge-row ${busyMethod === "github" ? "is-active" : ""}`.trim()}>
-            <div className="auth-sign-in-challenge" ref={challengeRef} aria-label="Anti-bot check" />
+            <div className="auth-sign-in-challenge" ref={setChallengeContainer} aria-label="Anti-bot check" />
           </li>
           <li className="ui-settings-popover-row">
             <button
