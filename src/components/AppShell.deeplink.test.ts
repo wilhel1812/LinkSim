@@ -93,6 +93,7 @@ const hoisted = vi.hoisted(() => {
     githubAuthReturn: false,
     githubAuthRecoveryReturn: false,
     legacyMigrationAttempt: null as string | null,
+    sidebarTriggerVersion: 0,
     runtimeEnvironment: "production",
     state,
     useAppStore,
@@ -178,6 +179,7 @@ vi.mock("./Sidebar", () => ({
   }) =>
     showSignInForAccessPilot
       ? React.createElement("button", {
+          key: hoisted.sidebarTriggerVersion,
           onClick: (event: React.MouseEvent<HTMLButtonElement>) => onSignInRequested?.(event.currentTarget),
           ref: onSignInTriggerReady,
         }, "Pilot sign in")
@@ -286,6 +288,7 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.githubAuthReturn = false;
     hoisted.githubAuthRecoveryReturn = false;
     hoisted.legacyMigrationAttempt = null;
+    hoisted.sidebarTriggerVersion = 0;
     hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
@@ -411,6 +414,14 @@ describe("AppShell deeplink cold-load flow", () => {
 
     const view = await renderAppShell();
     try {
+      await flushMicrotasks();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      hoisted.sidebarTriggerVersion = 1;
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      const replacementTrigger = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.focusIn(replacementTrigger as HTMLButtonElement);
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
       fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
