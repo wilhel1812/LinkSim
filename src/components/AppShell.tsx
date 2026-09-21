@@ -278,6 +278,7 @@ export function AppShell() {
   const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [authSignInAnchor, setAuthSignInAnchor] = useState<HTMLElement | null>(null);
   const [authSignInBusyMethod, setAuthSignInBusyMethod] = useState<AuthSignInMethod | null>(null);
+  const [githubAuthReturnInitialized, setGithubAuthReturnInitialized] = useState(false);
   const authSignInTriggerRef = useMemo(() => ({ current: authSignInAnchor }), [authSignInAnchor]);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -326,9 +327,10 @@ export function AppShell() {
   const githubAuthReturnInitializedRef = useRef(false);
   const githubAuthReturnPendingRef = useRef(false);
   const githubAuthReturnReloadedRef = useRef(false);
+  const githubAuthCallbackFailedRef = useRef(false);
   const githubAuthReturnRetryAttemptRef = useRef(0);
   const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
-  const legacyMigrationNoticeShownRef = useRef(false);
+  const legacyMigrationGithubAutoStartedRef = useRef(false);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -390,23 +392,16 @@ export function AppShell() {
     const returnedFromRecoveryReload = !returnedFromGithub && consumeGithubAuthRecovery();
     githubAuthReturnPendingRef.current = returnedFromGithub || returnedFromRecoveryReload;
     githubAuthReturnReloadedRef.current = returnedFromRecoveryReload;
-  }, [betterAuthPilotEnabled]);
-  useEffect(() => {
-    if (!betterAuthPilotEnabled || !consumeAuthCallbackError(window.location, window.history)) return;
-    pushNotification({
-      id: "github-sign-in-failed",
-      message: "GitHub sign-in failed. Try again.",
-      tone: "error",
-    });
-  }, [betterAuthPilotEnabled, pushNotification]);
-  useEffect(() => {
-    if (!betterAuthPilotEnabled || !legacyMigrationAttemptRef.current || legacyMigrationNoticeShownRef.current) return;
-    legacyMigrationNoticeShownRef.current = true;
-    pushNotification({
-      id: "legacy-migration-access-confirmed",
-      message: "Cloudflare account confirmed. Choose GitHub to finish moving this LinkSim account to the new sign-in.",
-      tone: "info",
-    });
+    const callbackFailed = consumeAuthCallbackError(window.location, window.history);
+    githubAuthCallbackFailedRef.current = callbackFailed;
+    if (callbackFailed) {
+      pushNotification({
+        id: "github-sign-in-failed",
+        message: "GitHub sign-in failed. Try again.",
+        tone: "error",
+      });
+    }
+    setGithubAuthReturnInitialized(true);
   }, [betterAuthPilotEnabled, pushNotification]);
   const dismissNotification = useCallback((id: string) => {
     setUiNotifications((current) => {
@@ -674,22 +669,30 @@ export function AppShell() {
     setAuthSignInAnchor(trigger);
   }, [betterAuthPilotEnabled]);
 
-  const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement) => {
+  const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement): Promise<boolean> => {
     clearAuthRetryTimer();
     setAuthSignInBusyMethod("github");
     try {
       const result = await signInWithGithubPilot(window.location, challengeContainer);
       if (result === "started") setAuthSignInAnchor(null);
+      return result === "started";
     } catch (error) {
       pushNotification({
         id: "github-sign-in-failed",
         message: getGithubSignInUiErrorMessage(error),
         tone: "error",
       });
+      return false;
     } finally {
       setAuthSignInBusyMethod(null);
     }
   }, [clearAuthRetryTimer, pushNotification]);
+
+  const handleLegacyMigrationGithubAutoStart = useCallback((challengeContainer: HTMLElement) => {
+    if (legacyMigrationGithubAutoStartedRef.current) return;
+    legacyMigrationGithubAutoStartedRef.current = true;
+    void handleGithubSignInRequested(challengeContainer);
+  }, [handleGithubSignInRequested]);
 
   const handleLegacyMigrationRequested = useCallback(() => {
     clearAuthRetryTimer();
@@ -2281,7 +2284,7 @@ export function AppShell() {
       ) : null}
       {!isMobileViewport && (!isMapExpanded || navigatorMotionPhase === "exiting") && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
-            authBootstrapPending={accessState === "checking"}
+            authBootstrapPending={accessState === "checking" && !legacyMigrationAttemptRef.current}
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
@@ -2503,7 +2506,7 @@ export function AppShell() {
           >
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
-                authBootstrapPending={accessState === "checking"}
+                authBootstrapPending={accessState === "checking" && !legacyMigrationAttemptRef.current}
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
@@ -2574,7 +2577,14 @@ export function AppShell() {
         </section>
       ) : null}
       <AuthSignInPopover
+        autoStartGithub={Boolean(
+          legacyMigrationAttemptRef.current
+          && githubAuthReturnInitialized
+          && !githubAuthReturnPendingRef.current
+          && !githubAuthCallbackFailedRef.current
+        )}
         busyMethod={authSignInBusyMethod}
+        onAutoGithub={handleLegacyMigrationGithubAutoStart}
         onClose={() => setAuthSignInAnchor(null)}
         onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
         onLegacyMigration={handleLegacyMigrationRequested}

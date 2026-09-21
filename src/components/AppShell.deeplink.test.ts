@@ -172,12 +172,15 @@ vi.mock("../store/appStore", () => ({
 
 vi.mock("./MapView", () => ({ MapView: () => null }));
 vi.mock("./Sidebar", () => ({
-  Sidebar: ({ onSignInRequested, onSignInTriggerReady, showSignInForAccessPilot }: {
+  Sidebar: ({ authBootstrapPending, onSignInRequested, onSignInTriggerReady, showSignInForAccessPilot }: {
+    authBootstrapPending?: boolean;
     onSignInRequested?: (trigger: HTMLElement) => void;
     onSignInTriggerReady?: (trigger: HTMLButtonElement | null) => void;
     showSignInForAccessPilot?: boolean;
   }) =>
-    showSignInForAccessPilot
+    authBootstrapPending
+      ? React.createElement("div", { "aria-label": "Loading account" })
+      : showSignInForAccessPilot || Boolean(hoisted.legacyMigrationAttempt)
       ? React.createElement("button", {
           key: hoisted.sidebarTriggerVersion,
           onClick: (event: React.MouseEvent<HTMLButtonElement>) => onSignInRequested?.(event.currentTarget),
@@ -406,16 +409,24 @@ describe("AppShell deeplink cold-load flow", () => {
   it("continues through GitHub after the Access proof created a migration attempt", async () => {
     hoisted.betterAuthPilotEnabled = true;
     hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
-    hoisted.fetchAuthStatus.mockResolvedValue({
-      authenticated: true,
-      authState: "authenticated",
-      authSource: "access",
-    });
+    let finishSignIn!: (result: "started") => void;
+    hoisted.signInWithGithubPilot.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSignIn = resolve;
+    }));
+    let finishAuthStatus!: (value: { authenticated: boolean; authState: string; authSource: string }) => void;
+    hoisted.fetchAuthStatus.mockImplementationOnce(() => new Promise((resolve) => {
+      finishAuthStatus = resolve;
+    }));
 
-    const view = await renderAppShell();
+    const view = render(React.createElement(AppShell));
     try {
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(document.body.textContent).not.toContain("Cloudflare account confirmed");
+      await waitForCondition(() => hoisted.signInWithGithubPilot.mock.calls.length === 1);
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location, expect.any(HTMLElement));
+      finishAuthStatus({ authenticated: true, authState: "authenticated", authSource: "access" });
+      await flushMicrotasks();
       hoisted.sidebarTriggerVersion = 1;
       view.rerender(React.createElement(AppShell));
       await flushMicrotasks();
@@ -424,10 +435,10 @@ describe("AppShell deeplink cold-load flow", () => {
       fireEvent.focusIn(replacementTrigger as HTMLButtonElement);
       await flushMicrotasks();
       expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
-      fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
-      await flushMicrotasks();
-      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location, expect.any(HTMLElement));
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledTimes(1);
       expect(hoisted.startLegacyAccessMigration).not.toHaveBeenCalled();
+      finishSignIn("started");
+      await flushMicrotasks();
     } finally {
       unmountAppShell(view);
     }
@@ -450,10 +461,10 @@ describe("AppShell deeplink cold-load flow", () => {
     try {
       const trigger = Array.from(document.querySelectorAll("button")).find((entry) => entry.textContent === "Pilot sign in");
       await flushMicrotasks();
-      fireEvent.click(document.querySelector('button[aria-label="GitHub"]') as HTMLButtonElement);
-      await flushMicrotasks();
       const challenge = document.querySelector<HTMLElement>('[aria-label="Anti-bot check"]');
       expect(challenge).toBeTruthy();
+      await waitForCondition(() => hoisted.signInWithGithubPilot.mock.calls.length === 1);
+      expect(hoisted.signInWithGithubPilot).toHaveBeenCalledTimes(1);
 
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
@@ -511,6 +522,7 @@ describe("AppShell deeplink cold-load flow", () => {
     try {
       await waitForCondition(() => hoisted.completeLegacyMigration.mock.calls.length === 1);
       expect(hoisted.completeLegacyMigration).toHaveBeenCalledWith("78d2594f-6ef2-4d59-b8de-d42366a4c420");
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
       expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalledWith(window.location, window.history);
       expect(document.body.textContent).toContain("Your existing LinkSim account now uses the new sign-in.");
     } finally {
@@ -718,10 +730,8 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = await renderAppShell();
     try {
       await flushMicrotasks();
-      const github = document.querySelector('button[aria-label="GitHub"]');
-      fireEvent.click(github as HTMLButtonElement);
+      await waitForCondition(() => hoisted.signInWithGithubPilot.mock.calls.length === 1);
       await flushMicrotasks();
-
       expect(document.body.textContent).toContain(
         "GitHub sign-in could not start. Try again. If the problem continues, reload the page.",
       );
@@ -740,6 +750,31 @@ describe("AppShell deeplink cold-load flow", () => {
     try {
       expect(document.body.textContent).toContain("GitHub sign-in failed. Try again.");
     } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("does not restart GitHub automatically after a failed migration callback", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.authCallbackError = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-error=github");
+    const { consumeAuthCallbackError } = await import("../lib/betterAuthPilot");
+    vi.mocked(consumeAuthCallbackError)
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+
+    const view = render(
+      React.createElement(React.StrictMode, null, React.createElement(AppShell)),
+    );
+    await flushMicrotasks();
+    try {
+      await flushMicrotasks();
+      expect(document.body.textContent).toContain("GitHub sign-in failed. Try again.");
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(consumeAuthCallbackError).mockImplementation(() => hoisted.authCallbackError);
       unmountAppShell(view);
     }
   });

@@ -63,6 +63,22 @@ describe("AuthSignInPopover", () => {
     }
   });
 
+  it("automatically continues GitHub when an existing-account migration requires it", async () => {
+    const onAutoGithub = vi.fn();
+    const view = renderPopover({ autoStartGithub: true, onAutoGithub });
+    try {
+      await waitFor(() => expect(onAutoGithub).toHaveBeenCalledWith(
+        screen.getByLabelText("Anti-bot check"),
+      ));
+      expect(onAutoGithub).toHaveBeenCalledTimes(1);
+      view.rerender(<AuthSignInPopover {...view.props} busyMethod="github" />);
+      expect(onAutoGithub).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      view.trigger.remove();
+    }
+  });
+
   it("starts the explicit legacy migration path without invoking GitHub directly", async () => {
     const view = renderPopover();
     try {
