@@ -329,7 +329,6 @@ export function AppShell() {
   const githubAuthReturnRetryAttemptRef = useRef(0);
   const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
   const legacyMigrationNoticeShownRef = useRef(false);
-  const legacyMigrationPopoverOpenedRef = useRef(false);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -670,10 +669,8 @@ export function AppShell() {
     if (
       !trigger ||
       !betterAuthPilotEnabled ||
-      !legacyMigrationAttemptRef.current ||
-      legacyMigrationPopoverOpenedRef.current
+      !legacyMigrationAttemptRef.current
     ) return;
-    legacyMigrationPopoverOpenedRef.current = true;
     setAuthSignInAnchor(trigger);
   }, [betterAuthPilotEnabled]);
 
