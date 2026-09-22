@@ -107,11 +107,12 @@ describe("legacy Access migration routes", () => {
       VALUES (?, 'legacy-admin', 'legacy-admin', ?, 'auth-1', ?, ?)`).run(
         attemptId, "2026-09-21T10:04:00.000Z", createdAt, expiresAt,
       );
+    let sessionAuthUserId = "auth-1";
     const env = {
       DB: database as unknown as D1Database,
       AUTH_DUAL_LOGIN_MIGRATION_ENABLED: "true",
       AUTH: { getByName: () => ({
-        checkSession: async () => ({ status: 200, authUserId: "auth-1", fresh: true, setCookies: [] }),
+        checkSession: async () => ({ status: 200, authUserId: sessionAuthUserId, fresh: true, setCookies: [] }),
         fetch: async () => new Response(null, { status: 404 }),
       }) },
     };
@@ -123,7 +124,39 @@ describe("legacy Access migration routes", () => {
     const response = await complete({ request: request(), env } as never);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, userId: "legacy-admin" });
-    expect((await complete({ request: request(), env } as never)).status).toBe(409);
+    const replay = await complete({ request: request(), env } as never);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual({
+      ok: true, userId: "legacy-admin", alreadyComplete: true,
+    });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 1 });
+
+    database.db.prepare(`INSERT INTO auth_user
+      (id, name, email, emailVerified, createdAt, updatedAt)
+      VALUES ('auth-2', 'Other GitHub User', 'other@example.org', 1, ?, ?)`).run(
+        "2026-09-21T10:05:00.000Z", "2026-09-21T10:05:00.000Z",
+      );
+    database.db.prepare(`INSERT INTO auth_account
+      (id, accountId, providerId, userId, createdAt, updatedAt)
+      VALUES ('account-2', '67890', 'github', 'auth-2', ?, ?)`).run(
+        "2026-09-21T10:05:00.000Z", "2026-09-21T10:05:00.000Z",
+      );
+    sessionAuthUserId = "auth-2";
+    const differentIdentityReplay = await complete({ request: request(), env } as never);
+    expect(differentIdentityReplay.status).toBe(409);
+    await expect(differentIdentityReplay.json()).resolves.toMatchObject({ code: "MIGRATION_CONFLICT" });
+    sessionAuthUserId = "auth-1";
+
+    database.db.prepare(`UPDATE identity_subject_states SET status = 'blocked'
+      WHERE user_id = 'legacy-admin'`).run();
+    const ineligibleReplay = await complete({ request: request(), env } as never);
+    expect(ineligibleReplay.status).toBe(409);
+    await expect(ineligibleReplay.json()).resolves.toMatchObject({ code: "MIGRATION_CONFLICT" });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 1 });
+    database.db.prepare(`UPDATE identity_subject_states SET status = 'current'
+      WHERE user_id = 'legacy-admin'`).run();
 
     const repeatAttemptId = "c1ffe09c-a597-4023-95cb-9343a75da7d6";
     database.db.prepare(`INSERT INTO auth_migration_attempt
@@ -134,9 +167,84 @@ describe("legacy Access migration routes", () => {
     const repeat = await complete({ request: request(repeatAttemptId), env } as never);
     expect(repeat.status).toBe(200);
     await expect(repeat.json()).resolves.toEqual({ ok: true, userId: "legacy-admin" });
+
+    const overlappingAttemptId = "91eb9878-c407-4ae9-baf2-c7ec4034cc72";
+    database.db.prepare(`INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, auth_user_id, created_at, expires_at)
+      VALUES (?, 'legacy-admin', 'legacy-admin', ?, 'auth-1', ?, ?)`).run(
+        overlappingAttemptId, "2026-09-21T10:04:00.000Z", createdAt, expiresAt,
+      );
+    const overlapping = await Promise.all([
+      complete({ request: request(overlappingAttemptId), env } as never),
+      complete({ request: request(overlappingAttemptId), env } as never),
+    ]);
+    expect(overlapping.map((entry) => entry.status)).toEqual([200, 200]);
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 1 });
     expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
-      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 2 });
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 3 });
+  });
+
+  it.each([
+    ["mapping drift", `DELETE FROM auth_identity_map;
+      INSERT INTO auth_identity_map (auth_user_id, linksim_user_id, created_at)
+      VALUES ('auth-2', 'legacy-admin', '2026-09-21T10:07:00.000Z')`],
+    ["a deletion tombstone", `INSERT INTO deleted_users (id, deleted_at)
+      VALUES ('legacy-admin', '2026-09-21T10:07:00.000Z')`],
+    ["a blocked identity", `UPDATE identity_subject_states SET status = 'blocked'
+      WHERE user_id = 'legacy-admin'`],
+    ["a superseded identity", `UPDATE identity_subject_states SET status = 'superseded'
+      WHERE user_id = 'legacy-admin'`],
+    ["a changed canonical identity", `UPDATE identity_subject_states SET canonical_user_id = 'other-user'
+      WHERE user_id = 'legacy-admin'`],
+    ["lost application eligibility", `UPDATE users SET is_admin = 0, is_moderator = 0, is_approved = 0
+      WHERE id = 'legacy-admin'`],
+    ["application revocation", `UPDATE users SET approved_by_user_id = 'revoked:admin'
+      WHERE id = 'legacy-admin'`],
+    ["an unverified GitHub identity", `UPDATE auth_user SET emailVerified = 0 WHERE id = 'auth-1'`],
+    ["a different provider", `UPDATE auth_account SET providerId = 'gitlab' WHERE id = 'account-1'`],
+    ["a nonnumeric GitHub subject", `UPDATE auth_account SET accountId = 'not-numeric' WHERE id = 'account-1'`],
+  ])("rejects completed-attempt recovery after %s", async (_state, mutation) => {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const expiresAt = new Date(Date.now() + 9 * 60_000).toISOString();
+    for (const [id, accountId] of [["auth-1", "12345"], ["auth-2", "67890"]]) {
+      database.db.prepare(`INSERT INTO auth_user
+        (id, name, email, emailVerified, createdAt, updatedAt)
+        VALUES (?, ?, ?, 1, ?, ?)`).run(
+          id, id, `${id}@example.org`, "2026-09-21T10:05:00.000Z", "2026-09-21T10:05:00.000Z",
+        );
+      database.db.prepare(`INSERT INTO auth_account
+        (id, accountId, providerId, userId, createdAt, updatedAt)
+        VALUES (?, ?, 'github', ?, ?, ?)`).run(
+          `account-${id === "auth-1" ? "1" : "2"}`, accountId, id,
+          "2026-09-21T10:05:00.000Z", "2026-09-21T10:05:00.000Z",
+        );
+    }
+    database.db.prepare(`INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, auth_user_id, created_at, expires_at)
+      VALUES (?, 'legacy-admin', 'legacy-admin', ?, 'auth-1', ?, ?)`).run(
+        attemptId, "2026-09-21T10:04:00.000Z", createdAt, expiresAt,
+      );
+    const env = {
+      DB: database as unknown as D1Database,
+      AUTH_DUAL_LOGIN_MIGRATION_ENABLED: "true",
+      AUTH: { getByName: () => ({
+        checkSession: async () => ({ status: 200, authUserId: "auth-1", fresh: true, setCookies: [] }),
+        fetch: async () => new Response(null, { status: 404 }),
+      }) },
+    };
+    const request = () => new Request("https://staging.linksim.link/api/auth/legacy-access/complete", {
+      method: "POST",
+      headers: { origin: "https://staging.linksim.link", "content-type": "application/json" },
+      body: JSON.stringify({ attemptId }),
+    });
+    expect((await complete({ request: request(), env } as never)).status).toBe(200);
+    database.db.exec(mutation);
+
+    const replay = await complete({ request: request(), env } as never);
+    expect(replay.status).toBe(409);
+    await expect(replay.json()).resolves.toMatchObject({ code: "MIGRATION_CONFLICT" });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 1 });
   });
 
   it("rejects non-fresh Better Auth sessions without mutating the attempt", async () => {
