@@ -54,7 +54,10 @@ APIs use Better Auth. A successful rehearsal must show all three effects for the
 same ten-minute attempt: one unique `auth_identity_map` row, a consumed
 `auth_migration_attempt`, and one `better_auth_dual_login` audit event. Replays,
 expired attempts, conflicting mappings and blocked/deleted/superseded/revoked
-accounts must fail without changing ownership.
+accounts must not change ownership. A repeated completion request for the exact
+already-consumed attempt may return its prior success only while the same fresh
+GitHub identity, exact mapping, and current eligible LinkSim account still match;
+it never consumes the attempt or writes another audit event.
 Start the rehearsal from **Move existing Cloudflare account** in the existing
 sign-in popover. The migration modal then owns the Access proof, GitHub proof,
 Turnstile challenge and final binding until completion. Ordinary GitHub remains

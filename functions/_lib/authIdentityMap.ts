@@ -650,3 +650,33 @@ export async function completeLegacyAuthMigrationAttempt(
     throw new LegacyAuthMigrationError(conflict ? "IDENTITY_CONFLICT" : "MIGRATION_FAILED");
   }
 }
+
+export async function resolveCompletedLegacyAuthMigrationAttempt(
+  db: D1Database,
+  input: { attemptId: string; authUserId: string },
+) {
+  const row = await db.prepare(`
+    SELECT attempt.auth_user_id, attempt.legacy_user_id AS linksim_user_id
+    FROM auth_migration_attempt AS attempt
+    JOIN auth_identity_map AS mapping
+      ON mapping.auth_user_id = attempt.auth_user_id
+      AND mapping.linksim_user_id = attempt.legacy_user_id
+    JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+    JOIN auth_account AS account ON account.userId = auth.id
+    JOIN users AS user ON user.id = mapping.linksim_user_id
+    JOIN identity_subject_states AS state ON state.user_id = user.id
+    LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+    WHERE attempt.id = ? AND attempt.auth_user_id = ?
+      AND attempt.consumed_at IS NOT NULL AND attempt.completion_token IS NOT NULL
+      AND attempt.access_subject = attempt.legacy_user_id
+      AND deleted.id IS NULL
+      AND state.status = 'current' AND state.canonical_user_id = user.id
+      AND (user.is_admin = 1 OR user.is_moderator = 1 OR user.is_approved = 1)
+      AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+      AND auth.emailVerified = 1 AND account.providerId = 'github'
+      AND account.accountId GLOB '[0-9]*'
+      AND account.accountId NOT GLOB '*[^0-9]*'
+    LIMIT 1
+  `).bind(input.attemptId, input.authUserId).first<MappingRow>();
+  return publicMapping(row);
+}

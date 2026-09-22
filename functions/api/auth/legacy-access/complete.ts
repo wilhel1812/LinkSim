@@ -1,6 +1,7 @@
 import {
   LegacyAuthMigrationError,
   completeLegacyAuthMigrationAttempt,
+  resolveCompletedLegacyAuthMigrationAttempt,
 } from "../../../_lib/authIdentityMap";
 import { hasExactRequestOrigin } from "../../../_lib/apiRoutePolicy";
 import { ApiRequestError, json, readBoundedJson } from "../../../_lib/http";
@@ -76,6 +77,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
     return json({ ok: true, userId: result.linksimUserId }, { headers: NO_STORE });
   } catch (error) {
+    if (error instanceof LegacyAuthMigrationError) {
+      try {
+        const completed = await resolveCompletedLegacyAuthMigrationAttempt(env.DB, {
+          attemptId,
+          authUserId: session.authUserId,
+        });
+        if (completed) {
+          return json({ ok: true, userId: completed.linksimUserId, alreadyComplete: true }, { headers: NO_STORE });
+        }
+      } catch {
+        return failure(503, "MIGRATION_FAILED", "LinkSim could not confirm the completed account migration. Try again.");
+      }
+    }
     return error instanceof LegacyAuthMigrationError
       ? migrationFailure(error)
       : failure(503, "MIGRATION_FAILED", "LinkSim could not finish account migration. Nothing was changed; try again.");
