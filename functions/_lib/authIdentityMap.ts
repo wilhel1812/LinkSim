@@ -569,12 +569,14 @@ export async function completeLegacyAuthMigrationAttempt(
   const existing = await db.prepare(`SELECT auth_user_id, linksim_user_id
     FROM auth_identity_map WHERE auth_user_id = ? OR linksim_user_id = ?`)
     .bind(input.authUserId, attempt.legacy_user_id).all<MappingRow>();
-  if (existing.results.length > 0) throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
+  if (existing.results.some(row =>
+    row.auth_user_id !== input.authUserId || row.linksim_user_id !== attempt.legacy_user_id
+  )) throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
 
   try {
     const results = await db.batch([
       db.prepare(`
-        INSERT INTO auth_identity_map (auth_user_id, linksim_user_id, created_at)
+        INSERT OR IGNORE INTO auth_identity_map (auth_user_id, linksim_user_id, created_at)
         SELECT attempt.auth_user_id, attempt.legacy_user_id, ?
         FROM auth_migration_attempt AS attempt
         JOIN auth_user AS auth ON auth.id = attempt.auth_user_id
@@ -596,8 +598,23 @@ export async function completeLegacyAuthMigrationAttempt(
       db.prepare(`UPDATE auth_migration_attempt SET consumed_at = ?, completion_token = ?
         WHERE id = ? AND auth_user_id = ? AND consumed_at IS NULL
           AND expires_at > ?
-          AND EXISTS (SELECT 1 FROM auth_identity_map
-            WHERE auth_user_id = ? AND linksim_user_id = legacy_user_id)`)
+          AND access_subject = legacy_user_id
+          AND EXISTS (
+            SELECT 1 FROM auth_identity_map AS mapping
+            JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+            JOIN auth_account AS account ON account.userId = auth.id
+            JOIN users AS user ON user.id = mapping.linksim_user_id
+            JOIN identity_subject_states AS state ON state.user_id = user.id
+            LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+            WHERE mapping.auth_user_id = ? AND mapping.linksim_user_id = legacy_user_id
+              AND deleted.id IS NULL
+              AND state.status = 'current' AND state.canonical_user_id = user.id
+              AND (user.is_admin = 1 OR user.is_moderator = 1 OR user.is_approved = 1)
+              AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+              AND auth.emailVerified = 1 AND account.providerId = 'github'
+              AND account.accountId GLOB '[0-9]*'
+              AND account.accountId NOT GLOB '*[^0-9]*'
+          )`)
         .bind(now, completionToken, input.attemptId, input.authUserId, now, input.authUserId),
       db.prepare(`INSERT INTO user_identity_audit
         (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
@@ -607,15 +624,29 @@ export async function completeLegacyAuthMigrationAttempt(
         .bind(JSON.stringify({ attemptId: input.attemptId, authUserId: input.authUserId, provider: "github" }),
           now, input.attemptId, input.authUserId, completionToken),
     ]);
-    if (results.some(result => (result.meta?.changes ?? 0) !== 1)) {
+    const mappingChanges = results[0].meta?.changes ?? 0;
+    if (
+      (mappingChanges !== 0 && mappingChanges !== 1)
+      || (results[1].meta?.changes ?? 0) !== 1
+      || (results[2].meta?.changes ?? 0) !== 1
+    ) {
+      const current = await db.prepare(`SELECT auth_user_id, linksim_user_id
+        FROM auth_identity_map WHERE auth_user_id = ? OR linksim_user_id = ?`)
+        .bind(input.authUserId, attempt.legacy_user_id).all<MappingRow>();
+      if (current.results.some(row =>
+        row.auth_user_id !== input.authUserId || row.linksim_user_id !== attempt.legacy_user_id
+      )) throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
       throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
     }
     return { authUserId: input.authUserId, linksimUserId: attempt.legacy_user_id };
   } catch (error) {
     if (error instanceof LegacyAuthMigrationError) throw error;
-    const conflict = await db.prepare(`SELECT 1 AS found FROM auth_identity_map
-      WHERE auth_user_id = ? OR linksim_user_id = ? LIMIT 1`)
-      .bind(input.authUserId, attempt.legacy_user_id).first<{ found: number }>();
+    const current = await db.prepare(`SELECT auth_user_id, linksim_user_id
+      FROM auth_identity_map WHERE auth_user_id = ? OR linksim_user_id = ?`)
+      .bind(input.authUserId, attempt.legacy_user_id).all<MappingRow>();
+    const conflict = current.results.some(row =>
+      row.auth_user_id !== input.authUserId || row.linksim_user_id !== attempt.legacy_user_id
+    );
     throw new LegacyAuthMigrationError(conflict ? "IDENTITY_CONFLICT" : "MIGRATION_FAILED");
   }
 }

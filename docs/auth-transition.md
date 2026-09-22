@@ -110,6 +110,9 @@ attempt ID through its library-managed GitHub OAuth state. A fresh Better Auth
 session may then atomically create the unique auth-user/LinkSim-user mapping,
 consume the attempt and write a `better_auth_dual_login` audit event. The flow
 never selects an account by profile email and never overwrites a mapping.
+A later attempt for the exact same auth-user/LinkSim-user pair is consumed as a
+successful reconfirmation so an already-migrated user signs in normally; either
+identity mapped to a different account remains a fail-closed conflict.
 The existing sign-in popover exposes this as **Move existing Cloudflare
 account**, separate from ordinary GitHub registration and passkey sign-in.
 Selecting it hands the full paired proof to a raised, non-dismissible migration
