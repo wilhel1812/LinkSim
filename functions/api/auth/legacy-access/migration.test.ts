@@ -115,15 +115,28 @@ describe("legacy Access migration routes", () => {
         fetch: async () => new Response(null, { status: 404 }),
       }) },
     };
-    const request = () => new Request("https://staging.linksim.link/api/auth/legacy-access/complete", {
+    const request = (currentAttemptId = attemptId) => new Request("https://staging.linksim.link/api/auth/legacy-access/complete", {
       method: "POST",
       headers: { origin: "https://staging.linksim.link", "content-type": "application/json" },
-      body: JSON.stringify({ attemptId }),
+      body: JSON.stringify({ attemptId: currentAttemptId }),
     });
     const response = await complete({ request: request(), env } as never);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, userId: "legacy-admin" });
     expect((await complete({ request: request(), env } as never)).status).toBe(409);
+
+    const repeatAttemptId = "c1ffe09c-a597-4023-95cb-9343a75da7d6";
+    database.db.prepare(`INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, auth_user_id, created_at, expires_at)
+      VALUES (?, 'legacy-admin', 'legacy-admin', ?, 'auth-1', ?, ?)`).run(
+        repeatAttemptId, "2026-09-21T10:04:00.000Z", createdAt, expiresAt,
+      );
+    const repeat = await complete({ request: request(repeatAttemptId), env } as never);
+    expect(repeat.status).toBe(200);
+    await expect(repeat.json()).resolves.toEqual({ ok: true, userId: "legacy-admin" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 1 });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 2 });
   });
 
   it("rejects non-fresh Better Auth sessions without mutating the attempt", async () => {

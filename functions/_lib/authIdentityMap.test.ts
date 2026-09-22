@@ -286,6 +286,35 @@ describe("auth identity mapping", () => {
     })).resolves.toEqual({ authUserId: "auth-1", linksimUserId: "linksim-1" });
   });
 
+  it("consumes a new attempt when the exact auth and LinkSim identities are already mapped", async () => {
+    const db = database as unknown as D1Database;
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('linksim-1', 'current', 'linksim-1', 1, ?, ?)`).run(
+        "2026-09-21T10:00:00.000Z", "2026-09-21T10:00:00.000Z",
+      );
+    await attachAuthIdentity(db, "auth-1", "linksim-1", "2026-09-21T10:00:00.000Z");
+    await createLegacyAuthMigrationAttempt(db, {
+      attemptId: "already-mapped", legacyUserId: "linksim-1", accessSubject: "linksim-1",
+      accessIssuedAt: "2026-09-21T10:00:00.000Z", now: "2026-09-21T10:00:01.000Z",
+      expiresAt: "2026-09-21T10:10:01.000Z",
+    });
+    await bindLegacyAuthMigrationAttempt(db, "already-mapped", "auth-1", "2026-09-21T10:01:00.000Z");
+
+    await expect(completeLegacyAuthMigrationAttempt(db, {
+      attemptId: "already-mapped", authUserId: "auth-1", now: "2026-09-21T10:02:00.000Z",
+      completionToken: "already-mapped-completion",
+    })).resolves.toEqual({ authUserId: "auth-1", linksimUserId: "linksim-1" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 1 });
+    expect(database.db.prepare(`SELECT consumed_at, completion_token FROM auth_migration_attempt
+      WHERE id = 'already-mapped'`).get()).toEqual({
+        consumed_at: "2026-09-21T10:02:00.000Z",
+        completion_token: "already-mapped-completion",
+      });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 1 });
+  });
+
   it("allows only one same-timestamp completion and audit event", async () => {
     const db = database as unknown as D1Database;
     database.db.prepare(`INSERT INTO identity_subject_states
@@ -319,6 +348,69 @@ describe("auth identity mapping", () => {
         consumed_at: "2026-09-21T10:02:00.000Z",
         completion_token: expect.stringMatching(/^winner-[ab]$/),
       });
+  });
+
+  it("reports a conflicting mapping created after the completion precheck", async () => {
+    const db = database as unknown as D1Database;
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('linksim-1', 'current', 'linksim-1', 1, ?, ?)`).run(
+        "2026-09-21T10:00:00.000Z", "2026-09-21T10:00:00.000Z",
+      );
+    await createLegacyAuthMigrationAttempt(db, {
+      attemptId: "racing-conflict", legacyUserId: "linksim-1", accessSubject: "linksim-1",
+      accessIssuedAt: "2026-09-21T10:00:00.000Z", now: "2026-09-21T10:00:01.000Z",
+      expiresAt: "2026-09-21T10:10:01.000Z",
+    });
+    await bindLegacyAuthMigrationAttempt(db, "racing-conflict", "auth-1", "2026-09-21T10:01:00.000Z");
+    database.beforeBatch = () => {
+      database.db.prepare(`INSERT INTO auth_identity_map
+        (auth_user_id, linksim_user_id, created_at) VALUES (?, ?, ?)`).run(
+          "auth-2", "linksim-1", "2026-09-21T10:01:30.000Z",
+        );
+    };
+
+    await expect(completeLegacyAuthMigrationAttempt(db, {
+      attemptId: "racing-conflict", authUserId: "auth-1", now: "2026-09-21T10:02:00.000Z",
+    })).rejects.toMatchObject<LegacyAuthMigrationError>({ code: "IDENTITY_CONFLICT" });
+    expect(database.db.prepare("SELECT auth_user_id, linksim_user_id FROM auth_identity_map").get())
+      .toEqual({ auth_user_id: "auth-2", linksim_user_id: "linksim-1" });
+    expect(database.db.prepare(`SELECT consumed_at FROM auth_migration_attempt
+      WHERE id = 'racing-conflict'`).get()).toEqual({ consumed_at: null });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 0 });
+  });
+
+  it("keeps an exact existing mapping retryable after a completion batch failure", async () => {
+    const db = database as unknown as D1Database;
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('linksim-1', 'current', 'linksim-1', 1, ?, ?)`).run(
+        "2026-09-21T10:00:00.000Z", "2026-09-21T10:00:00.000Z",
+      );
+    await attachAuthIdentity(db, "auth-1", "linksim-1", "2026-09-21T10:00:00.000Z");
+    await createLegacyAuthMigrationAttempt(db, {
+      attemptId: "exact-batch-failure", legacyUserId: "linksim-1", accessSubject: "linksim-1",
+      accessIssuedAt: "2026-09-21T10:00:00.000Z", now: "2026-09-21T10:00:01.000Z",
+      expiresAt: "2026-09-21T10:10:01.000Z",
+    });
+    await bindLegacyAuthMigrationAttempt(
+      db, "exact-batch-failure", "auth-1", "2026-09-21T10:01:00.000Z",
+    );
+    database.db.exec(`CREATE TRIGGER reject_dual_login_audit
+      BEFORE INSERT ON user_identity_audit
+      WHEN NEW.event_type = 'better_auth_dual_login'
+      BEGIN SELECT RAISE(ABORT, 'forced audit failure'); END`);
+
+    await expect(completeLegacyAuthMigrationAttempt(db, {
+      attemptId: "exact-batch-failure", authUserId: "auth-1", now: "2026-09-21T10:02:00.000Z",
+    })).rejects.toMatchObject<LegacyAuthMigrationError>({ code: "MIGRATION_FAILED" });
+    expect(database.db.prepare("SELECT auth_user_id, linksim_user_id FROM auth_identity_map").get())
+      .toEqual({ auth_user_id: "auth-1", linksim_user_id: "linksim-1" });
+    expect(database.db.prepare(`SELECT consumed_at FROM auth_migration_attempt
+      WHERE id = 'exact-batch-failure'`).get()).toEqual({ consumed_at: null });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 0 });
   });
 
   it.each(["pending", "expired", "consumed"])(
@@ -444,5 +536,38 @@ describe("auth identity mapping", () => {
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 0 });
     expect(database.db.prepare("SELECT consumed_at FROM auth_migration_attempt WHERE id = 'attempt-state'").get())
       .toEqual({ consumed_at: null });
+  });
+
+  it.each([
+    ["blocked", "UPDATE identity_subject_states SET status = 'blocked' WHERE user_id = 'linksim-1'"],
+    ["superseded", "UPDATE identity_subject_states SET status = 'superseded' WHERE user_id = 'linksim-1'"],
+    ["deleted", "INSERT INTO deleted_users (id, deleted_at) VALUES ('linksim-1', '2026-09-21T10:02:00.000Z')"],
+    ["revoked", "UPDATE users SET is_approved = 0, approved_by_user_id = 'revoked:admin' WHERE id = 'linksim-1'"],
+  ])("rejects a new attempt when an already-mapped account becomes %s", async (_state, mutation) => {
+    const db = database as unknown as D1Database;
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('linksim-1', 'current', 'linksim-1', 1, ?, ?)`).run(
+        "2026-09-21T10:00:00.000Z", "2026-09-21T10:00:00.000Z",
+      );
+    await attachAuthIdentity(db, "auth-1", "linksim-1", "2026-09-21T10:00:00.000Z");
+    await createLegacyAuthMigrationAttempt(db, {
+      attemptId: "already-mapped-state", legacyUserId: "linksim-1", accessSubject: "linksim-1",
+      accessIssuedAt: "2026-09-21T10:00:00.000Z", now: "2026-09-21T10:00:01.000Z",
+      expiresAt: "2026-09-21T10:10:01.000Z",
+    });
+    await bindLegacyAuthMigrationAttempt(
+      db, "already-mapped-state", "auth-1", "2026-09-21T10:01:00.000Z",
+    );
+    database.db.exec(mutation);
+
+    await expect(completeLegacyAuthMigrationAttempt(db, {
+      attemptId: "already-mapped-state", authUserId: "auth-1", now: "2026-09-21T10:03:00.000Z",
+    })).rejects.toMatchObject<LegacyAuthMigrationError>({ code: "LEGACY_IDENTITY_INELIGIBLE" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 1 });
+    expect(database.db.prepare(`SELECT consumed_at FROM auth_migration_attempt
+      WHERE id = 'already-mapped-state'`).get()).toEqual({ consumed_at: null });
+    expect(database.db.prepare(`SELECT COUNT(*) AS count FROM user_identity_audit
+      WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({ count: 0 });
   });
 });
