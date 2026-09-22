@@ -398,6 +398,8 @@ describe("AppShell deeplink cold-load flow", () => {
       const legacy = document.querySelector('button[aria-label="Move existing Cloudflare account"]');
       fireEvent.click(legacy as HTMLButtonElement);
       await flushMicrotasks();
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeTruthy();
+      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeNull();
       expect(hoisted.startLegacyAccessMigration).toHaveBeenCalledWith(window.location);
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
       expect(hoisted.fetchMe).toHaveBeenCalled();
@@ -421,7 +423,7 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = render(React.createElement(AppShell));
     try {
       await flushMicrotasks();
-      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeTruthy();
       expect(document.body.textContent).not.toContain("Cloudflare account confirmed");
       await waitForCondition(() => hoisted.signInWithGithubPilot.mock.calls.length === 1);
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledWith(window.location, expect.any(HTMLElement));
@@ -434,11 +436,15 @@ describe("AppShell deeplink cold-load flow", () => {
         .find((entry) => entry.textContent === "Pilot sign in");
       fireEvent.focusIn(replacementTrigger as HTMLButtonElement);
       await flushMicrotasks();
-      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeTruthy();
       expect(hoisted.signInWithGithubPilot).toHaveBeenCalledTimes(1);
       expect(hoisted.startLegacyAccessMigration).not.toHaveBeenCalled();
       finishSignIn("started");
       await flushMicrotasks();
+      const continueButton = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Continue with GitHub");
+      expect(continueButton).toBeTruthy();
+      expect(continueButton).not.toBeDisabled();
     } finally {
       unmountAppShell(view);
     }
@@ -468,7 +474,7 @@ describe("AppShell deeplink cold-load flow", () => {
 
       fireEvent.click(trigger as HTMLButtonElement);
       await flushMicrotasks();
-      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toContainElement(challenge);
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toContainElement(challenge);
 
       finishSignIn("started");
       await flushMicrotasks();
@@ -512,11 +518,10 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.githubAuthReturn = true;
     hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
     window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
-    hoisted.fetchAuthStatus.mockResolvedValue({
-      authenticated: true,
-      authState: "authenticated",
-      authSource: "better-auth",
-    });
+    let finishAuthStatus!: (value: { authenticated: boolean; authState: string; authSource: string }) => void;
+    hoisted.fetchAuthStatus.mockImplementationOnce(() => new Promise((resolve) => {
+      finishAuthStatus = resolve;
+    }));
 
     const view = await renderAppShell();
     try {
@@ -524,7 +529,42 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(hoisted.completeLegacyMigration).toHaveBeenCalledWith("78d2594f-6ef2-4d59-b8de-d42366a4c420");
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
       expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalledWith(window.location, window.history);
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeTruthy();
+      finishAuthStatus({
+        authenticated: true,
+        authState: "authenticated",
+        authSource: "better-auth",
+      });
+      await flushMicrotasks();
       expect(document.body.textContent).toContain("Your existing LinkSim account now uses the new sign-in.");
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeNull();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps a failed mapping in the modal and restarts the complete migration", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(new Error("internal migration details"));
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.completeLegacyMigration.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+      const restart = Array.from(modal?.querySelectorAll("button") ?? [])
+        .find((button) => button.textContent === "Start migration again");
+      fireEvent.click(restart as HTMLButtonElement);
+      await waitForCondition(() => hoisted.startLegacyAccessMigration.mock.calls.length === 1);
+      expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalledWith(window.location, window.history);
+      expect(hoisted.startLegacyAccessMigration).toHaveBeenCalledWith(window.location);
     } finally {
       unmountAppShell(view);
     }
@@ -720,7 +760,9 @@ describe("AppShell deeplink cold-load flow", () => {
   it("keeps the chooser open and explains a GitHub initiation failure", async () => {
     hoisted.betterAuthPilotEnabled = true;
     hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
-    hoisted.signInWithGithubPilot.mockRejectedValueOnce(new Error("database connection string leaked"));
+    hoisted.signInWithGithubPilot
+      .mockRejectedValueOnce(new Error("database connection string leaked"))
+      .mockResolvedValueOnce("started");
     hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: true,
       authState: "authenticated",
@@ -735,7 +777,24 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(document.body.textContent).toContain(
         "GitHub sign-in could not start. Try again. If the problem continues, reload the page.",
       );
-      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      const retry = Array.from(modal?.querySelectorAll("button") ?? [])
+        .find((button) => button.textContent === "Try GitHub again");
+      fireEvent.click(retry as HTMLButtonElement);
+      await waitForCondition(() => hoisted.signInWithGithubPilot.mock.calls.length === 2);
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("does not trap a stale migration URL when the Better Auth pilot is disabled", async () => {
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+
+    const view = await renderAppShell();
+    try {
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeNull();
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
     } finally {
       unmountAppShell(view);
     }
@@ -770,8 +829,8 @@ describe("AppShell deeplink cold-load flow", () => {
     await flushMicrotasks();
     try {
       await flushMicrotasks();
-      expect(document.body.textContent).toContain("GitHub sign-in failed. Try again.");
-      expect(document.querySelector('[role="dialog"][aria-label="Sign in or sign up"]')).toBeTruthy();
+      expect(document.body.textContent).toContain("GitHub sign-in failed. Try GitHub again to continue moving your account.");
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeTruthy();
       expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
     } finally {
       vi.mocked(consumeAuthCallbackError).mockImplementation(() => hoisted.authCallbackError);

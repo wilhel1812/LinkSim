@@ -62,4 +62,26 @@ describe("ModalOverlay focus management", () => {
     expect(editorControl).toHaveFocus();
     expect(screen.queryByRole("dialog", { name: "Suspended modal" })).not.toBeInTheDocument();
   });
+
+  it("allows keyboard focus to reach an interactive challenge iframe", () => {
+    render(
+      <ModalOverlay aria-label="Challenge modal">
+        <button type="button">Before challenge</button>
+        <iframe title="Turnstile challenge" />
+      </ModalOverlay>,
+    );
+
+    const button = screen.getByRole("button", { name: "Before challenge" });
+    const challenge = screen.getByTitle("Turnstile challenge");
+    expect(button).toHaveFocus();
+    challenge.focus();
+    expect(challenge).toHaveFocus();
+    const endSentinel = document.querySelector('[data-modal-focus-sentinel="end"]') as HTMLElement;
+    endSentinel.focus();
+    expect(button).toHaveFocus();
+
+    const startSentinel = document.querySelector('[data-modal-focus-sentinel="start"]') as HTMLElement;
+    startSentinel.focus();
+    expect(challenge).toHaveFocus();
+  });
 });

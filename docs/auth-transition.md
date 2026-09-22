@@ -111,9 +111,11 @@ session may then atomically create the unique auth-user/LinkSim-user mapping,
 consume the attempt and write a `better_auth_dual_login` audit event. The flow
 never selects an account by profile email and never overwrites a mapping.
 The existing sign-in popover exposes this as **Move existing Cloudflare
-account**, separate from ordinary GitHub registration and passkey sign-in. After
-Access returns, the same popover reopens automatically and its GitHub row
-completes the paired proof.
+account**, separate from ordinary GitHub registration and passkey sign-in.
+Selecting it hands the full paired proof to a raised, non-dismissible migration
+modal. The modal remains through the Access and GitHub round trips, hosts the
+Turnstile challenge, shows the three proof/binding steps and keeps failures and
+retry actions visible until the existing LinkSim account is connected.
 Closing or abandoning GitHub leaves the attempt pending and retryable until its
 ten-minute expiry; no cancellation state or partial mapping is written. Deleting
 either still-unmapped identity removes its attempt, so temporary proof rows
