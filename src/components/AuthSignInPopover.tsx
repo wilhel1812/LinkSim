@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { Cloud, KeyRound } from "lucide-react";
 import { siGithub } from "simple-icons";
 import { FloatingPopover } from "./ui/FloatingPopover";
 
-export type AuthSignInMethod = "github" | "passkey" | "legacy";
+export type AuthSignInMethod = "github" | "passkey";
 
 type AuthSignInPopoverProps = {
-  autoStartGithub?: boolean;
   busyMethod: AuthSignInMethod | null;
-  onAutoGithub?: (challengeContainer: HTMLElement) => void;
   onClose: () => void;
   onGithub: (challengeContainer: HTMLElement) => void;
   onLegacyMigration: () => void;
@@ -18,9 +16,7 @@ type AuthSignInPopoverProps = {
 };
 
 export function AuthSignInPopover({
-  autoStartGithub = false,
   busyMethod,
-  onAutoGithub,
   onClose,
   onGithub,
   onLegacyMigration,
@@ -29,7 +25,6 @@ export function AuthSignInPopover({
   triggerRef,
 }: AuthSignInPopoverProps) {
   const [challengeContainer, setChallengeContainer] = useState<HTMLDivElement | null>(null);
-  const autoStartGithubRequestedRef = useRef(false);
   const focusContent = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
     window.setTimeout(() => {
@@ -56,13 +51,6 @@ export function AuthSignInPopover({
       window.setTimeout(() => trigger?.focus(), 0);
     };
   }, [open, triggerRef]);
-
-  useEffect(() => {
-    if (!open || !autoStartGithub || autoStartGithubRequestedRef.current) return;
-    if (!challengeContainer) return;
-    autoStartGithubRequestedRef.current = true;
-    onAutoGithub?.(challengeContainer);
-  }, [autoStartGithub, challengeContainer, onAutoGithub, open]);
 
   const busy = busyMethod !== null;
 
@@ -120,14 +108,14 @@ export function AuthSignInPopover({
           </li>
           <li className="ui-settings-popover-row">
             <button
-              aria-label={busyMethod === "legacy" ? "Opening Cloudflare…" : "Move existing Cloudflare account"}
+              aria-label="Move existing Cloudflare account"
               className="ui-settings-row-toggle auth-sign-in-option"
               disabled={busy}
               onClick={onLegacyMigration}
               type="button"
             >
               <span className="ui-settings-toggle-label">
-                {busyMethod === "legacy" ? "Opening Cloudflare…" : "Move existing Cloudflare account"}
+                Move existing Cloudflare account
               </span>
               <span className="ui-settings-toggle-icon">
                 <Cloud aria-hidden="true" size={18} strokeWidth={1.8} />
@@ -141,9 +129,7 @@ export function AuthSignInPopover({
           >
             {busyMethod === "passkey"
               ? "Follow your browser or device prompt to use your passkey."
-              : busyMethod === "legacy"
-                ? "Confirm your previous Cloudflare sign-in, then connect GitHub."
-                : "New accounts start with GitHub. Used LinkSim before? Move your Cloudflare account first."}
+              : "New accounts start with GitHub. Used LinkSim before? Move your Cloudflare account first."}
           </li>
         </ul>
       </div>

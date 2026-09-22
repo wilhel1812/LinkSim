@@ -3380,6 +3380,48 @@ button {
   max-width: 100%;
 }
 
+.legacy-migration-card {
+  width: min(520px, 96vw);
+}
+
+.legacy-migration-progress {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.legacy-migration-progress li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  color: var(--text);
+}
+
+.legacy-migration-progress li + li {
+  border-top: 1px solid var(--border);
+}
+
+.legacy-migration-progress strong {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: right;
+}
+
+.legacy-migration-challenge {
+  display: none;
+  margin: 0 auto;
+}
+
+.legacy-migration-challenge.is-active {
+  display: block;
+}
+
 .ui-settings-popover-list {
   list-style: none;
   margin: 0;

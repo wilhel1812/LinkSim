@@ -65,6 +65,7 @@ import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 import { AuthSignInPopover, type AuthSignInMethod } from "./AuthSignInPopover";
+import { LegacyMigrationModal, type LegacyMigrationStage } from "./LegacyMigrationModal";
 
 initializeMigrations();
 
@@ -276,9 +277,15 @@ export function AppShell() {
   const [presetImportBusy, setPresetImportBusy] = useState(false);
   const [presetImportStatus, setPresetImportStatus] = useState("");
   const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
+  const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
   const [authSignInAnchor, setAuthSignInAnchor] = useState<HTMLElement | null>(null);
   const [authSignInBusyMethod, setAuthSignInBusyMethod] = useState<AuthSignInMethod | null>(null);
   const [githubAuthReturnInitialized, setGithubAuthReturnInitialized] = useState(false);
+  const [legacyMigrationModalOpen, setLegacyMigrationModalOpen] = useState(Boolean(legacyMigrationAttemptRef.current));
+  const [legacyMigrationStage, setLegacyMigrationStage] = useState<LegacyMigrationStage>(
+    legacyMigrationAttemptRef.current ? "github" : "opening-cloudflare",
+  );
+  const [legacyMigrationError, setLegacyMigrationError] = useState<string | null>(null);
   const authSignInTriggerRef = useMemo(() => ({ current: authSignInAnchor }), [authSignInAnchor]);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -329,8 +336,8 @@ export function AppShell() {
   const githubAuthReturnReloadedRef = useRef(false);
   const githubAuthCallbackFailedRef = useRef(false);
   const githubAuthReturnRetryAttemptRef = useRef(0);
-  const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
   const legacyMigrationGithubAutoStartedRef = useRef(false);
+  const legacyMigrationCompletedRef = useRef(false);
   const authCheckGenerationRef = useRef(0);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
@@ -394,7 +401,14 @@ export function AppShell() {
     githubAuthReturnReloadedRef.current = returnedFromRecoveryReload;
     const callbackFailed = consumeAuthCallbackError(window.location, window.history);
     githubAuthCallbackFailedRef.current = callbackFailed;
-    if (callbackFailed) {
+    if (legacyMigrationAttemptRef.current) {
+      setLegacyMigrationModalOpen(true);
+      setLegacyMigrationStage(returnedFromGithub || returnedFromRecoveryReload ? "finishing" : "github");
+    }
+    if (callbackFailed && legacyMigrationAttemptRef.current) {
+      setLegacyMigrationStage("github");
+      setLegacyMigrationError("GitHub sign-in failed. Try GitHub again to continue moving your account.");
+    } else if (callbackFailed) {
       pushNotification({
         id: "github-sign-in-failed",
         message: "GitHub sign-in failed. Try again.",
@@ -664,24 +678,34 @@ export function AppShell() {
     if (
       !trigger ||
       !betterAuthPilotEnabled ||
-      !legacyMigrationAttemptRef.current
+      !authSignInAnchor
     ) return;
     setAuthSignInAnchor(trigger);
-  }, [betterAuthPilotEnabled]);
+  }, [authSignInAnchor, betterAuthPilotEnabled]);
 
   const handleGithubSignInRequested = useCallback(async (challengeContainer: HTMLElement): Promise<boolean> => {
     clearAuthRetryTimer();
     setAuthSignInBusyMethod("github");
+    if (legacyMigrationAttemptRef.current || legacyMigrationCompletedRef.current) {
+      setLegacyMigrationError(null);
+      setLegacyMigrationStage("github");
+    }
     try {
       const result = await signInWithGithubPilot(window.location, challengeContainer);
       if (result === "started") setAuthSignInAnchor(null);
       return result === "started";
     } catch (error) {
-      pushNotification({
-        id: "github-sign-in-failed",
-        message: getGithubSignInUiErrorMessage(error),
-        tone: "error",
-      });
+      const message = getGithubSignInUiErrorMessage(error);
+      if (legacyMigrationAttemptRef.current || legacyMigrationCompletedRef.current) {
+        setLegacyMigrationError(message);
+        setLegacyMigrationStage("github");
+      } else {
+        pushNotification({
+          id: "github-sign-in-failed",
+          message,
+          tone: "error",
+        });
+      }
       return false;
     } finally {
       setAuthSignInBusyMethod(null);
@@ -696,10 +720,25 @@ export function AppShell() {
 
   const handleLegacyMigrationRequested = useCallback(() => {
     clearAuthRetryTimer();
-    setAuthSignInBusyMethod("legacy");
     setAuthSignInAnchor(null);
-    startLegacyAccessMigration(window.location);
+    setLegacyMigrationError(null);
+    setLegacyMigrationStage("opening-cloudflare");
+    setLegacyMigrationModalOpen(true);
+    legacyMigrationGithubAutoStartedRef.current = false;
+    window.requestAnimationFrame(() => startLegacyAccessMigration(window.location));
   }, [clearAuthRetryTimer]);
+
+  const handleLegacyMigrationRestart = useCallback(() => {
+    clearLegacyMigrationAttempt(window.location, window.history);
+    legacyMigrationAttemptRef.current = null;
+    githubAuthReturnPendingRef.current = false;
+    githubAuthReturnRetryAttemptRef.current = 0;
+    legacyMigrationCompletedRef.current = false;
+    legacyMigrationGithubAutoStartedRef.current = false;
+    setLegacyMigrationError(null);
+    setLegacyMigrationStage("opening-cloudflare");
+    window.requestAnimationFrame(() => startLegacyAccessMigration(window.location));
+  }, []);
 
   const handlePasskeySignInRequested = useCallback(async () => {
     clearAuthRetryTimer();
@@ -864,6 +903,16 @@ export function AppShell() {
       hadAuthenticatedSessionRef.current = true;
       markAuthenticatedSession();
       setActiveUserId(profile.id);
+      if (legacyMigrationCompletedRef.current) {
+        legacyMigrationCompletedRef.current = false;
+        setLegacyMigrationError(null);
+        setLegacyMigrationModalOpen(false);
+        pushNotification({
+          id: "legacy-migration-complete",
+          message: "Your existing LinkSim account now uses the new sign-in.",
+          tone: "success",
+        });
+      }
       if (profile.needsUsername) {
         setAccessState("pending");
         setShowUsernameSetup(true);
@@ -889,7 +938,7 @@ export function AppShell() {
       console.info("[AppShell] Access check recovered", { reason, userId: profile.id });
       setAccessState("granted");
     },
-    [clearAuthRetryTimer, deepLinkParse.ok, setAuthState, setCurrentUser],
+    [clearAuthRetryTimer, deepLinkParse.ok, pushNotification, setAuthState, setCurrentUser],
   );
 
   const completeUsernameSetup = useCallback(
@@ -1005,25 +1054,20 @@ export function AppShell() {
           if (!isLocalRuntime) {
             const migrationAttempt = legacyMigrationAttemptRef.current;
             if (githubAuthReturnPendingRef.current && migrationAttempt) {
+              setLegacyMigrationStage("finishing");
               try {
                 await completeLegacyMigration(migrationAttempt);
                 clearLegacyMigrationAttempt(window.location, window.history);
                 legacyMigrationAttemptRef.current = null;
-                pushNotification({
-                  id: "legacy-migration-complete",
-                  message: "Your existing LinkSim account now uses the new sign-in.",
-                  tone: "success",
-                });
+                legacyMigrationCompletedRef.current = true;
               } catch (error) {
                 githubAuthReturnPendingRef.current = false;
                 githubAuthReturnRetryAttemptRef.current = 0;
                 window.clearTimeout(timeoutId);
-                settleReadonlySession(getLegacyMigrationUiErrorMessage(error));
-                pushNotification({
-                  id: "legacy-migration-failed",
-                  message: getLegacyMigrationUiErrorMessage(error),
-                  tone: "error",
-                });
+                const message = getLegacyMigrationUiErrorMessage(error);
+                setLegacyMigrationError(message);
+                setLegacyMigrationStage("failed");
+                settleReadonlySession(message);
                 return;
               }
             }
@@ -1053,11 +1097,17 @@ export function AppShell() {
               }
               githubAuthReturnPendingRef.current = false;
               githubAuthReturnRetryAttemptRef.current = 0;
-              pushNotification({
-                id: "github-session-not-confirmed",
-                message: "GitHub sign-in completed, but this browser did not retain the LinkSim session. Allow cookies for this site, then try GitHub again.",
-                tone: "error",
-              });
+              const message = "GitHub sign-in completed, but this browser did not retain the LinkSim session. Allow cookies for this site, then try GitHub again.";
+              if (legacyMigrationAttemptRef.current || legacyMigrationCompletedRef.current) {
+                setLegacyMigrationError(message);
+                setLegacyMigrationStage("github");
+              } else {
+                pushNotification({
+                  id: "github-session-not-confirmed",
+                  message,
+                  tone: "error",
+                });
+              }
             } else if (authStatus.authSource === "better-auth") {
               githubAuthReturnPendingRef.current = false;
               githubAuthReturnReloadedRef.current = false;
@@ -1112,6 +1162,10 @@ export function AppShell() {
             deepLinkMode: deepLinkParse.ok,
             online: isOnlineNow,
           });
+          if (legacyMigrationCompletedRef.current) {
+            setLegacyMigrationError("Your account was moved, but LinkSim could not finish signing in. Reload the page, then try GitHub again.");
+            setLegacyMigrationStage("github");
+          }
           if (message.includes("Session revoked by admin")) {
             settleReadonlySession(
               "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.",
@@ -2284,7 +2338,7 @@ export function AppShell() {
       ) : null}
       {!isMobileViewport && (!isMapExpanded || navigatorMotionPhase === "exiting") && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
-            authBootstrapPending={accessState === "checking" && !legacyMigrationAttemptRef.current}
+            authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
@@ -2506,7 +2560,7 @@ export function AppShell() {
           >
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
-                authBootstrapPending={accessState === "checking" && !legacyMigrationAttemptRef.current}
+                authBootstrapPending={accessState === "checking"}
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 onOpenSettings={() => openSettings("profile")}
@@ -2577,19 +2631,12 @@ export function AppShell() {
         </section>
       ) : null}
       <AuthSignInPopover
-        autoStartGithub={Boolean(
-          legacyMigrationAttemptRef.current
-          && githubAuthReturnInitialized
-          && !githubAuthReturnPendingRef.current
-          && !githubAuthCallbackFailedRef.current
-        )}
         busyMethod={authSignInBusyMethod}
-        onAutoGithub={handleLegacyMigrationGithubAutoStart}
         onClose={() => setAuthSignInAnchor(null)}
         onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
         onLegacyMigration={handleLegacyMigrationRequested}
         onPasskey={() => void handlePasskeySignInRequested()}
-        open={betterAuthPilotEnabled && authSignInAnchor !== null}
+        open={betterAuthPilotEnabled && authSignInAnchor !== null && !legacyMigrationModalOpen}
         triggerRef={authSignInTriggerRef}
       />
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
@@ -2886,6 +2933,22 @@ export function AppShell() {
       ) : null}
       <UserProfilePopover onClose={() => setProfileTarget(null)} target={profileTarget} viewer={currentUser} />
       <MapEditorPanel isMobile={isMobileViewport} />
+      {betterAuthPilotEnabled && legacyMigrationModalOpen ? (
+        <LegacyMigrationModal
+          autoStartGithub={Boolean(
+            legacyMigrationAttemptRef.current
+            && githubAuthReturnInitialized
+            && !githubAuthReturnPendingRef.current
+            && !githubAuthCallbackFailedRef.current
+          )}
+          error={legacyMigrationError}
+          githubBusy={authSignInBusyMethod === "github"}
+          onAutoGithub={handleLegacyMigrationGithubAutoStart}
+          onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
+          onRestart={handleLegacyMigrationRestart}
+          stage={legacyMigrationStage}
+        />
+      ) : null}
     </main>
   );
 }

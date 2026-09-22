@@ -56,8 +56,9 @@ same ten-minute attempt: one unique `auth_identity_map` row, a consumed
 expired attempts, conflicting mappings and blocked/deleted/superseded/revoked
 accounts must fail without changing ownership.
 Start the rehearsal from **Move existing Cloudflare account** in the existing
-sign-in popover. Ordinary GitHub remains the registration path and must not
-silently send new users through Access.
+sign-in popover. The migration modal then owns the Access proof, GitHub proof,
+Turnstile challenge and final binding until completion. Ordinary GitHub remains
+the registration path and must not silently send new users through Access.
 
 Disabling `AUTH_DUAL_LOGIN_MIGRATION_ENABLED` in both staging Wrangler configs
 is the rollback switch for new attempts and assisted recovery. Existing mappings
