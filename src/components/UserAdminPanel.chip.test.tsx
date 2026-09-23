@@ -182,6 +182,88 @@ it("loads administrator datasets only when admin settings open", async () => {
   expect(fetchSchemaDiagnostics).toHaveBeenCalledTimes(1);
 });
 
+it("shows administrator migration progress from the complete unfiltered user directory", async () => {
+  mockStoreState.currentUser = {
+    ...signedInUser,
+    id: "admin-1",
+    username: "Admin",
+    isAdmin: true,
+    authMigrationState: "migrated",
+  } as CloudUser;
+  vi.mocked(fetchUsers).mockResolvedValue([
+    mockStoreState.currentUser,
+    { ...signedInUser, id: "user-1", username: "Migrated", authMigrationState: "migrated" } as CloudUser,
+    {
+      ...signedInUser,
+      id: "user-2",
+      username: "Waiting",
+      accountState: "pending",
+      authMigrationState: "not_migrated",
+    } as CloudUser,
+  ]);
+
+  render(<UserAdminPanel renderMode="admin-inline" />);
+
+  expect(await screen.findByText("2 of 3 accounts migrated")).toBeInTheDocument();
+  const progress = screen.getByRole("progressbar", { name: "Authentication migration progress" });
+  expect(progress).toHaveAttribute("aria-valuemin", "0");
+  expect(progress).toHaveAttribute("aria-valuemax", "3");
+  expect(progress).toHaveAttribute("aria-valuenow", "2");
+  expect(screen.getByText("Migrated", { selector: ".auth-migration-state" })).toBeInTheDocument();
+  expect(screen.getByText("Not migrated", { selector: ".auth-migration-state" })).toBeInTheDocument();
+  expect(screen.getByText("Pending")).toBeInTheDocument();
+
+  await userEvent.type(screen.getByPlaceholderText("Name, email, or user ID"), "Waiting");
+  expect(screen.getByText("2 of 3 accounts migrated")).toBeInTheDocument();
+});
+
+it("shows an empty migration denominator without dividing by zero", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isAdmin: true } as CloudUser;
+  vi.mocked(fetchUsers).mockResolvedValue([]);
+
+  render(<UserAdminPanel renderMode="admin-inline" />);
+
+  expect(await screen.findByText("0 of 0 accounts migrated")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "Authentication migration progress" }))
+    .toHaveAttribute("aria-valuenow", "0");
+});
+
+it("does not report an empty migration denominator while the directory is loading", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isAdmin: true } as CloudUser;
+  vi.mocked(fetchUsers).mockReturnValue(new Promise(() => {}));
+
+  render(<UserAdminPanel renderMode="admin-inline" />);
+
+  expect(await screen.findByText("Loading authentication migration progress…")).toBeInTheDocument();
+  expect(screen.queryByText("0 of 0 accounts migrated")).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar", { name: "Authentication migration progress" })).not.toBeInTheDocument();
+});
+
+it("marks migration progress unavailable when the directory load fails", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isAdmin: true } as CloudUser;
+  vi.mocked(fetchUsers).mockRejectedValue(new Error("offline"));
+
+  render(<UserAdminPanel renderMode="admin-inline" />);
+
+  expect(await screen.findByText("Authentication migration progress unavailable. Refresh admin data to try again."))
+    .toBeInTheDocument();
+  expect(screen.queryByText("0 of 0 accounts migrated")).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar", { name: "Authentication migration progress" })).not.toBeInTheDocument();
+});
+
+it("does not expose authentication migration progress to moderators", async () => {
+  mockStoreState.currentUser = { ...signedInUser, isModerator: true } as CloudUser;
+  vi.mocked(fetchUsers).mockResolvedValue([
+    { ...signedInUser, id: "user-1" } as CloudUser,
+  ]);
+
+  render(<UserAdminPanel renderMode="admin-inline" />);
+
+  await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("progressbar", { name: "Authentication migration progress" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/accounts migrated/)).not.toBeInTheDocument();
+});
+
 
 it.each([false, true])("counts one-hour idle chip traffic with administrator=%s", async (isAdmin) => {
   vi.useFakeTimers();

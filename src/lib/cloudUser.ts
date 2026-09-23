@@ -18,6 +18,7 @@ export type CloudUser = {
   isApproved: boolean;
   role?: "admin" | "moderator" | "user" | "pending";
   accountState?: "pending" | "approved" | "revoked";
+  authMigrationState?: "migrated" | "not_migrated";
   approvedAt?: string | null;
   approvedByUserId?: string | null;
   createdAt: string;
