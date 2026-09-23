@@ -14,10 +14,20 @@ const hoisted = vi.hoisted(() => {
   const signInWithPasskeyPilot = vi.fn();
   const signOutBetterAuthPilot = vi.fn();
   const completeLegacyMigration = vi.fn();
-  const clearLegacyMigrationAttempt = vi.fn();
+  const clearLegacyMigrationAttempt = vi.fn(() => {
+    hoistedState.legacyMigrationConflictAttempt = null;
+  });
+  const markPendingLegacyMigrationConflict = vi.fn((
+    _location: Location,
+    _history: History,
+    attemptId: string,
+  ) => {
+    hoistedState.legacyMigrationConflictAttempt = attemptId;
+  });
   const startLegacyAccessMigration = vi.fn();
   const requestGithubAuthRecoveryReload = vi.fn(() => true);
 
+  const hoistedState = { legacyMigrationConflictAttempt: null as string | null };
   const state: Record<string, unknown> = {
     srtmTiles: [{ id: "tile-1" }],
     recommendAndFetchTerrainForCurrentArea: async () => {},
@@ -86,6 +96,7 @@ const hoisted = vi.hoisted(() => {
     signOutBetterAuthPilot,
     completeLegacyMigration,
     clearLegacyMigrationAttempt,
+    markPendingLegacyMigrationConflict,
     startLegacyAccessMigration,
     requestGithubAuthRecoveryReload,
     betterAuthPilotEnabled: false,
@@ -93,6 +104,7 @@ const hoisted = vi.hoisted(() => {
     githubAuthReturn: false,
     githubAuthRecoveryReturn: false,
     legacyMigrationAttempt: null as string | null,
+    hoistedState,
     sidebarTriggerVersion: 0,
     runtimeEnvironment: "production",
     state,
@@ -149,6 +161,9 @@ vi.mock("../lib/betterAuthPilot", () => ({
   startLegacyAccessMigration: hoisted.startLegacyAccessMigration,
   completeLegacyMigration: hoisted.completeLegacyMigration,
   clearLegacyMigrationAttempt: hoisted.clearLegacyMigrationAttempt,
+  hasPendingLegacyMigrationConflict: (_location: Location, attemptId: string) =>
+    hoisted.hoistedState.legacyMigrationConflictAttempt === attemptId,
+  markPendingLegacyMigrationConflict: hoisted.markPendingLegacyMigrationConflict,
   getLegacyMigrationUiErrorMessage: () => "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
   clearGithubAuthRecovery: vi.fn(),
   requestGithubAuthRecoveryReload: hoisted.requestGithubAuthRecoveryReload,
@@ -291,6 +306,7 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.githubAuthReturn = false;
     hoisted.githubAuthRecoveryReturn = false;
     hoisted.legacyMigrationAttempt = null;
+    hoisted.hoistedState.legacyMigrationConflictAttempt = null;
     hoisted.sidebarTriggerVersion = 0;
     hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
@@ -309,6 +325,7 @@ describe("AppShell deeplink cold-load flow", () => {
       links: [],
       currentUser: null,
       authState: "checking",
+      initializeCloudSync: () => {},
       setCurrentUser: () => {},
       setAuthState: () => {},
       isInitializing: false,
@@ -567,6 +584,305 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(hoisted.startLegacyAccessMigration).toHaveBeenCalledWith(window.location);
     } finally {
       unmountAppShell(view);
+    }
+  });
+
+  it("offers the existing mapped GitHub profile when migration reports an identity conflict", async () => {
+    const setCurrentUser = vi.fn();
+    const initializeCloudSync = vi.fn();
+    Object.assign(hoisted.state, { initializeCloudSync, setCurrentUser });
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+      await flushMicrotasks();
+      expect(hoisted.clearLegacyMigrationAttempt).not.toHaveBeenCalled();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "GitHub signed you in as Owner. That profile is connected to a different LinkSim account, so your Cloudflare account was not moved.",
+      );
+      const continueButton = Array.from(modal?.querySelectorAll("button") ?? [])
+        .find((button) => button.textContent === "Continue as Owner");
+      expect(continueButton).toBeTruthy();
+      expect(setCurrentUser).not.toHaveBeenCalled();
+      expect(initializeCloudSync).not.toHaveBeenCalled();
+      fireEvent.click(continueButton as HTMLButtonElement);
+      expect(document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]')).toBeNull();
+      expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalledWith(window.location, window.history);
+      expect(setCurrentUser).toHaveBeenCalledWith(expect.objectContaining({ id: "user-1", username: "Owner" }));
+      await waitForCondition(() => initializeCloudSync.mock.calls.length === 1);
+      expect(document.body.textContent).not.toContain("Your existing LinkSim account now uses the new sign-in.");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("does not activate the existing GitHub profile when migration is restarted", async () => {
+    const setCurrentUser = vi.fn();
+    const initializeCloudSync = vi.fn();
+    Object.assign(hoisted.state, { initializeCloudSync, setCurrentUser });
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      const restartButton = Array.from(modal?.querySelectorAll("button") ?? [])
+        .find((button) => button.textContent === "Start migration again");
+      expect(restartButton).toBeTruthy();
+      expect(setCurrentUser).not.toHaveBeenCalled();
+      expect(initializeCloudSync).not.toHaveBeenCalled();
+      fireEvent.click(restartButton as HTMLButtonElement);
+      await waitForCondition(() => hoisted.startLegacyAccessMigration.mock.calls.length === 1);
+      expect(setCurrentUser).not.toHaveBeenCalled();
+      expect(initializeCloudSync).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("restores the unresolved profile choice after reloading without the consumed GitHub return", async () => {
+    const attemptId = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    const setCurrentUser = vi.fn();
+    const initializeCloudSync = vi.fn();
+    Object.assign(hoisted.state, { initializeCloudSync, setCurrentUser });
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = attemptId;
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    window.history.replaceState(null, "", `/?legacyMigration=${attemptId}&auth-return=github`);
+
+    const firstView = await renderAppShell();
+    await waitForCondition(() => hoisted.markPendingLegacyMigrationConflict.mock.calls.length === 1);
+    await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+    unmountAppShell(firstView);
+
+    hoisted.githubAuthReturn = false;
+    window.history.replaceState(null, "", `/?legacyMigration=${attemptId}&legacyMigrationConflict=${attemptId}`);
+    setCurrentUser.mockClear();
+    initializeCloudSync.mockClear();
+    hoisted.fetchMe.mockClear();
+
+    const secondView = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toHaveTextContent("Continue as Owner");
+      expect(setCurrentUser).not.toHaveBeenCalled();
+      expect(initializeCloudSync).not.toHaveBeenCalled();
+      expect(hoisted.completeLegacyMigration).toHaveBeenCalledTimes(1);
+    } finally {
+      unmountAppShell(secondView);
+    }
+  });
+
+  it("keeps the migration conflict visible when the GitHub session has no loadable profile", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    hoisted.fetchMe.mockRejectedValueOnce(new Error("profile unavailable"));
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+      expect(Array.from(modal?.querySelectorAll("button") ?? []))
+        .toContainEqual(expect.objectContaining({ textContent: "Start migration again" }));
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps the migration conflict visible for a revoked mapped profile", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    hoisted.fetchMe.mockResolvedValueOnce({
+      id: "user-1",
+      username: "Owner",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: false,
+      accountState: "revoked",
+      avatarUrl: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      bio: "",
+    });
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchMe.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps the migration conflict restartable when the auth probe is revoked", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValueOnce({
+      authenticated: false,
+      authState: "revoked",
+      authSource: "better-auth",
+    });
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await waitForCondition(() => hoisted.fetchAuthStatus.mock.calls.length === 1);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+      expect(Array.from(modal?.querySelectorAll("button") ?? []).some(
+        (button) => button.textContent === "Start migration again",
+      )).toBe(true);
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps an unresolved migration conflict instead of losing it to session-recovery reload", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "access",
+    });
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await advanceTimers(250);
+      await advanceTimers(750);
+      await advanceTimers(1_500);
+      await flushMicrotasks();
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+      expect(Array.from(modal?.querySelectorAll("button") ?? []).some(
+        (button) => button.textContent === "Start migration again",
+      )).toBe(true);
+      expect(hoisted.requestGithubAuthRecoveryReload).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("restores the migration conflict when the mapped-session probe times out", async () => {
+    vi.useFakeTimers();
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.githubAuthReturn = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.completeLegacyMigration.mockRejectedValueOnce(Object.assign(
+      new Error("legacy identity differs from the existing mapping"),
+      { code: "MIGRATION_CONFLICT", status: 409 },
+    ));
+    hoisted.fetchAuthStatus.mockImplementationOnce(() => new Promise(() => {}));
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&auth-return=github");
+
+    const view = await renderAppShell();
+    try {
+      await flushMicrotasks();
+      await advanceTimers(10_000);
+      const modal = document.querySelector('[data-modal-overlay][aria-label="Move your LinkSim account"]');
+      expect(modal).toBeTruthy();
+      expect(modal).toHaveTextContent(
+        "LinkSim could not move this account to the new sign-in. Your existing account was not changed. Try again or contact an administrator.",
+      );
+      expect(Array.from(modal?.querySelectorAll("button") ?? []).some(
+        (button) => button.textContent === "Start migration again",
+      )).toBe(true);
+      expect(hoisted.requestGithubAuthRecoveryReload).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
     }
   });
 

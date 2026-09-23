@@ -7,6 +7,7 @@ const TURNSTILE_LOAD_TIMEOUT_MS = 15_000;
 const TURNSTILE_INTERACTION_TIMEOUT_MS = 120_000;
 const GITHUB_AUTH_RETURN_PARAM = "auth-return";
 const LEGACY_MIGRATION_PARAM = "legacyMigration";
+const LEGACY_MIGRATION_CONFLICT_PARAM = "legacyMigrationConflict";
 const GITHUB_AUTH_RECOVERY_KEY = "linksim:github-auth-return-reload:v1";
 const LEGACY_MIGRATION_ATTEMPT_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -182,12 +183,32 @@ export const getLegacyMigrationAttempt = (
   return LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId) ? attemptId : null;
 };
 
+export const hasPendingLegacyMigrationConflict = (
+  location: Pick<Location, "href" | "origin">,
+  attemptId: string,
+): boolean => {
+  if (!LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId)) return false;
+  return new URL(location.href, location.origin).searchParams.get(LEGACY_MIGRATION_CONFLICT_PARAM) === attemptId;
+};
+
+export const markPendingLegacyMigrationConflict = (
+  location: Pick<Location, "href" | "origin">,
+  history: Pick<History, "replaceState">,
+  attemptId: string,
+): void => {
+  if (!LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId)) return;
+  const url = new URL(location.href, location.origin);
+  url.searchParams.set(LEGACY_MIGRATION_CONFLICT_PARAM, attemptId);
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+};
+
 export const clearLegacyMigrationAttempt = (
   location: Pick<Location, "href" | "origin">,
   history: Pick<History, "replaceState">,
 ): void => {
   const url = new URL(location.href, location.origin);
   url.searchParams.delete(LEGACY_MIGRATION_PARAM);
+  url.searchParams.delete(LEGACY_MIGRATION_CONFLICT_PARAM);
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 };
 

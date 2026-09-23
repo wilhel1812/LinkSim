@@ -11,8 +11,10 @@ describe("LegacyMigrationModal", () => {
       <LegacyMigrationModal
         autoStartGithub
         error={null}
+        existingProfileUsername={null}
         githubBusy
         onAutoGithub={onGithub}
+        onContinueExistingProfile={vi.fn()}
         onGithub={onGithub}
         onRestart={vi.fn()}
         stage="github"
@@ -34,8 +36,10 @@ describe("LegacyMigrationModal", () => {
       <LegacyMigrationModal
         autoStartGithub={false}
         error="GitHub sign-in failed. Try again."
+        existingProfileUsername={null}
         githubBusy={false}
         onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
         onGithub={onGithub}
         onRestart={vi.fn()}
         stage="github"
@@ -53,8 +57,10 @@ describe("LegacyMigrationModal", () => {
       <LegacyMigrationModal
         autoStartGithub={false}
         error="The migration attempt expired. Start again."
+        existingProfileUsername={null}
         githubBusy={false}
         onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
         onGithub={vi.fn()}
         onRestart={onRestart}
         stage="failed"
@@ -68,14 +74,57 @@ describe("LegacyMigrationModal", () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
+  it("requires an explicit choice before continuing with an existing GitHub profile", async () => {
+    const onContinueExistingProfile = vi.fn();
+    const onRestart = vi.fn();
+    render(
+      <LegacyMigrationModal
+        autoStartGithub={false}
+        error="GitHub signed you in as Owner. That profile is connected to a different LinkSim account, so your Cloudflare account was not moved. Continue only if Owner is the account you want to use."
+        existingProfileUsername="Owner"
+        githubBusy={false}
+        onAutoGithub={vi.fn()}
+        onContinueExistingProfile={onContinueExistingProfile}
+        onGithub={vi.fn()}
+        onRestart={onRestart}
+        stage="failed"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("your Cloudflare account was not moved");
+    await userEvent.click(screen.getByRole("button", { name: "Continue as Owner" }));
+    expect(onContinueExistingProfile).toHaveBeenCalledTimes(1);
+    expect(onRestart).not.toHaveBeenCalled();
+  });
+
+  it("offers continuation when the existing profile still needs a username", () => {
+    render(
+      <LegacyMigrationModal
+        autoStartGithub={false}
+        error="GitHub signed you in to a LinkSim profile that still needs a username."
+        existingProfileUsername=""
+        githubBusy={false}
+        onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
+        onGithub={vi.fn()}
+        onRestart={vi.fn()}
+        stage="failed"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Continue with this account" })).toBeInTheDocument();
+  });
+
   it("allows GitHub continuation when a restored page has no active request", async () => {
     const onGithub = vi.fn();
     render(
       <LegacyMigrationModal
         autoStartGithub={false}
         error={null}
+        existingProfileUsername={null}
         githubBusy={false}
         onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
         onGithub={onGithub}
         onRestart={vi.fn()}
         stage="github"
@@ -94,8 +143,10 @@ describe("LegacyMigrationModal", () => {
       <LegacyMigrationModal
         autoStartGithub={false}
         error={null}
+        existingProfileUsername={null}
         githubBusy={false}
         onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
         onGithub={vi.fn()}
         onRestart={onRestart}
         stage="opening-cloudflare"
