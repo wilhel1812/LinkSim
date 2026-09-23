@@ -1552,9 +1552,24 @@ export const getUserAvatarKeys = async (
   };
 };
 
-export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
+export const authMigrationSchemaAvailable = async (db: D1Database): Promise<boolean> => {
+  const [mapping, authUser] = await Promise.all([
+    db.prepare("PRAGMA table_info(auth_identity_map)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(auth_user)").all<{ name: string }>(),
+  ]);
+  const mappingColumns = new Set(mapping.results.map((column) => column.name));
+  const authUserColumns = new Set(authUser.results.map((column) => column.name));
+  return ["auth_user_id", "linksim_user_id"].every((column) => mappingColumns.has(column))
+    && authUserColumns.has("id");
+};
+
+export const listUsers = async (
+  env: Env,
+  includePrivateIdentity: boolean,
+  includeAuthMigration = includePrivateIdentity,
+) => {
   await ensureSchema(env);
-  const authMigrationProjection = includePrivateIdentity
+  const authMigrationProjection = includeAuthMigration
     ? `, CASE WHEN EXISTS (
          SELECT 1
          FROM auth_identity_map AS mapping
@@ -1587,6 +1602,8 @@ export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
       ...(includePrivateIdentity ? {
         idpEmail,
         idpEmailVerified,
+      } : {}),
+      ...(includeAuthMigration ? {
         authMigrationState: row.auth_migrated === 1 ? "migrated" as const : "not_migrated" as const,
       } : {}),
     };

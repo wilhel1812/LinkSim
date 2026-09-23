@@ -25,6 +25,11 @@ export type CloudUser = {
   updatedAt: string | null;
 };
 
+export type CloudUserDirectory = {
+  users: CloudUser[];
+  authMigrationAvailable: boolean;
+};
+
 export type ResourceChange = {
   id: number;
   action: string;
@@ -367,8 +372,16 @@ export const updateMyProfile = (patch: CloudUserProfilePatch): Promise<CloudUser
 };
 
 export const fetchUsers = async (): Promise<CloudUser[]> => {
-  const data = await apiCall<{ users: CloudUser[] }>("/api/users", { method: "GET" });
-  return Array.isArray(data.users) ? data.users : [];
+  const data = await fetchUserDirectory();
+  return data.users;
+};
+
+export const fetchUserDirectory = async (): Promise<CloudUserDirectory> => {
+  const data = await apiCall<{ users: CloudUser[]; authMigrationAvailable?: boolean }>("/api/users", { method: "GET" });
+  return {
+    users: Array.isArray(data.users) ? data.users : [],
+    authMigrationAvailable: data.authMigrationAvailable === true,
+  };
 };
 
 export const fetchCollaboratorDirectory = async (): Promise<CollaboratorDirectoryUser[]> => {

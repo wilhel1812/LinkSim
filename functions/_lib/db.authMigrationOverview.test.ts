@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { listUsers } from "./db";
+import { authMigrationSchemaAvailable, listUsers } from "./db";
 import { SqliteD1 } from "./testSqliteD1";
 
 const applicationSchema = readFileSync(resolve(process.cwd(), "db/schema.sql"), "utf8");
@@ -84,5 +84,13 @@ describe("administrator authentication migration overview", () => {
     expect(users.find((user) => user.id === "admin-1")).toMatchObject({
       authMigrationState: "not_migrated",
     });
+  });
+
+  it("detects whether the additive auth tables are available", async () => {
+    await expect(authMigrationSchemaAvailable(database as unknown as D1Database)).resolves.toBe(true);
+
+    const applicationOnly = new SqliteD1();
+    applicationOnly.db.exec(applicationSchema);
+    await expect(authMigrationSchemaAvailable(applicationOnly as unknown as D1Database)).resolves.toBe(false);
   });
 });
