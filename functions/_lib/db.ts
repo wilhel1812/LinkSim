@@ -692,6 +692,10 @@ type UserRow = {
   updated_at: string | null;
 };
 
+type UserDirectoryRow = UserRow & {
+  auth_migrated?: number;
+};
+
 type VerifiedIdentityEnsureInput = {
   userId: string;
   email: string;
@@ -1548,13 +1552,62 @@ export const getUserAvatarKeys = async (
   };
 };
 
-export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
+export const authMigrationSchemaAvailable = async (db: D1Database): Promise<boolean> => {
+  const [mapping, authUser] = await Promise.all([
+    db.prepare("PRAGMA table_info(auth_identity_map)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(auth_user)").all<{ name: string }>(),
+  ]);
+  const mappingColumns = new Set(mapping.results.map((column) => column.name));
+  const authUserColumns = new Set(authUser.results.map((column) => column.name));
+  return ["auth_user_id", "linksim_user_id"].every((column) => mappingColumns.has(column))
+    && authUserColumns.has("id");
+};
+
+export const getAuthMigrationProgress = async (
+  db: D1Database,
+): Promise<{ migrated: number; total: number }> => {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total, COUNT(auth.id) AS migrated
+     FROM users
+     LEFT JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = users.id
+     LEFT JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+     WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE deleted_users.id = users.id)`,
+  ).first<{ migrated: number; total: number }>();
+  return {
+    migrated: Number(row?.migrated ?? 0),
+    total: Number(row?.total ?? 0),
+  };
+};
+
+export const listUsers = async (
+  env: Env,
+  includePrivateIdentity: boolean,
+  includeAuthMigration = includePrivateIdentity,
+) => {
   await ensureSchema(env);
+  const authMigrationProjection = includeAuthMigration
+    ? `, CASE WHEN EXISTS (
+         SELECT 1
+         FROM auth_identity_map AS mapping
+         JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+         WHERE mapping.linksim_user_id = users.id
+       ) THEN 1 ELSE 0 END AS auth_migrated`
+    : "";
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      `SELECT id, username, email, username_set_at, bio, access_request_note,
+              idp_email, idp_email_verified, avatar_url, email_public,
+              default_frequency_preset_id, simulation_defaults_preference_json,
+              basemap_preferences_json, avatar_object_key, avatar_thumb_key,
+              avatar_hash, avatar_bytes, avatar_content_type, is_admin,
+              is_moderator, is_approved, approved_at, approved_by_user_id,
+              created_at, updated_at${authMigrationProjection}
+       FROM users
+       WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE deleted_users.id = users.id)
+       ORDER BY created_at DESC
+       LIMIT 2000`,
     )
-    .all<UserRow>();
+    .all<UserDirectoryRow>();
   return rows.results.map((row) => {
     const profile = toUserProfile(row);
     const { idpEmail, idpEmailVerified, ...ordinaryProfile } = profile;
@@ -1562,7 +1615,13 @@ export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
       ...ordinaryProfile,
       avatarUrl: thumbnailAvatarUrl(profile.avatarUrl, profile.avatarThumbKey),
       email: includePrivateIdentity || row.email_public === 1 ? profile.email : "",
-      ...(includePrivateIdentity ? { idpEmail, idpEmailVerified } : {}),
+      ...(includePrivateIdentity ? {
+        idpEmail,
+        idpEmailVerified,
+      } : {}),
+      ...(includeAuthMigration ? {
+        authMigrationState: row.auth_migrated === 1 ? "migrated" as const : "not_migrated" as const,
+      } : {}),
     };
   });
 };

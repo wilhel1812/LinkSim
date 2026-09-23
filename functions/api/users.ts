@@ -1,6 +1,13 @@
 import { verifyAuth } from "../_lib/auth";
 import { canListUsers } from "../_lib/access";
-import { assertUserAccess, ensureUser, fetchUserProfile, listUsers } from "../_lib/db";
+import {
+  assertUserAccess,
+  authMigrationSchemaAvailable,
+  ensureUser,
+  fetchUserProfile,
+  getAuthMigrationProgress,
+  listUsers,
+} from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -17,8 +24,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) =
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     if (!canListUsers(me)) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
-    const users = await listUsers(env, me.isAdmin);
-    return withCors(request, json({ users }));
+    const includeAuthMigration = me.isAdmin && await authMigrationSchemaAvailable(env.DB);
+    const [users, authMigrationProgress] = includeAuthMigration
+      ? await Promise.all([
+        listUsers(env, true, true),
+        getAuthMigrationProgress(env.DB),
+      ])
+      : [await listUsers(env, me.isAdmin, false), null];
+    return withCors(request, json({
+      users,
+      ...(me.isAdmin ? { authMigrationAggregateAvailable: includeAuthMigration } : {}),
+      ...(authMigrationProgress ? { authMigrationProgress } : {}),
+    }));
   } catch (error) {
     return errorResponse(request, error, 500);
   }

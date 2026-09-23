@@ -18,10 +18,17 @@ export type CloudUser = {
   isApproved: boolean;
   role?: "admin" | "moderator" | "user" | "pending";
   accountState?: "pending" | "approved" | "revoked";
+  authMigrationState?: "migrated" | "not_migrated";
   approvedAt?: string | null;
   approvedByUserId?: string | null;
   createdAt: string;
   updatedAt: string | null;
+};
+
+export type CloudUserDirectory = {
+  users: CloudUser[];
+  authMigrationAvailable: boolean;
+  authMigrationProgress: { migrated: number; total: number } | null;
 };
 
 export type ResourceChange = {
@@ -366,8 +373,31 @@ export const updateMyProfile = (patch: CloudUserProfilePatch): Promise<CloudUser
 };
 
 export const fetchUsers = async (): Promise<CloudUser[]> => {
-  const data = await apiCall<{ users: CloudUser[] }>("/api/users", { method: "GET" });
-  return Array.isArray(data.users) ? data.users : [];
+  const data = await fetchUserDirectory();
+  return data.users;
+};
+
+export const fetchUserDirectory = async (): Promise<CloudUserDirectory> => {
+  const data = await apiCall<{
+    users: CloudUser[];
+    authMigrationAggregateAvailable?: boolean;
+    authMigrationProgress?: { migrated?: unknown; total?: unknown };
+  }>("/api/users", { method: "GET" });
+  const migrated = data.authMigrationProgress?.migrated;
+  const total = data.authMigrationProgress?.total;
+  const authMigrationProgress = typeof migrated === "number"
+    && Number.isFinite(migrated)
+    && migrated >= 0
+    && typeof total === "number"
+    && Number.isFinite(total)
+    && total >= migrated
+    ? { migrated, total }
+    : null;
+  return {
+    users: Array.isArray(data.users) ? data.users : [],
+    authMigrationAvailable: data.authMigrationAggregateAvailable === true && authMigrationProgress !== null,
+    authMigrationProgress,
+  };
 };
 
 export const fetchCollaboratorDirectory = async (): Promise<CollaboratorDirectoryUser[]> => {

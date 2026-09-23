@@ -354,7 +354,7 @@ class FakeDb {
       const table = pragmaMatch[1] ?? "";
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
     }
-    if (sql.includes("FROM users ORDER BY created_at DESC")) return this.users;
+    if (sql.includes("FROM users") && sql.includes("ORDER BY created_at DESC")) return this.users;
     if (sql.includes("CASE WHEN email_public = 1") && sql.includes("FROM users")) {
       return this.users.map((row) => ({
         id: row.id,

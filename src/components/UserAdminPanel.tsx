@@ -6,6 +6,7 @@ import {
   fetchAuthDiagnostics,
   deleteUser,
   fetchDeletedUsers,
+  fetchUserDirectory,
   fetchMe,
   fetchSchemaDiagnostics,
   fetchUsers,
@@ -115,6 +116,9 @@ export function UserAdminPanel({
   const currentUser = useAppStore((state) => state.currentUser);
   const me = authState === "signed_in" ? currentUser : null;
   const [users, setUsers] = useState<CloudUser[]>([]);
+  const [userDirectoryState, setUserDirectoryState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [authMigrationAvailable, setAuthMigrationAvailable] = useState(false);
+  const [authMigrationProgress, setAuthMigrationProgress] = useState<{ migrated: number; total: number } | null>(null);
   const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
   const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnostics | null>(null);
   const [schemaDiagnostics, setSchemaDiagnostics] = useState<SchemaDiagnostics | null>(null);
@@ -167,36 +171,49 @@ export function UserAdminPanel({
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
+    setUserDirectoryState("loading");
     let allUsers: CloudUser[] = [];
-    if (canAdmin) {
-      const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
-      allUsers = all;
-      setUsers(allUsers);
-      setDeletedUsers(deleted);
-    } else {
-      const all = await fetchUsers();
-      allUsers = all;
-      setUsers(allUsers);
-      setDeletedUsers([]);
+    try {
+      if (canAdmin) {
+        const [directory, deleted] = await Promise.all([fetchUserDirectory(), fetchDeletedUsers()]);
+        allUsers = directory.users;
+        setUsers(allUsers);
+        setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
+        setDeletedUsers(deleted);
+      } else {
+        const all = await fetchUsers();
+        allUsers = all;
+        setUsers(allUsers);
+        setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
+        setDeletedUsers([]);
+      }
+      if (canAdmin) {
+        const [authDiag, schemaDiag, events] = await Promise.all([
+          fetchAuthDiagnostics(),
+          fetchSchemaDiagnostics(),
+          fetchAdminAuditEvents(80),
+        ]);
+        setAuthDiagnostics(authDiag);
+        setSchemaDiagnostics(schemaDiag);
+        setAuditEvents(events);
+      } else {
+        setAuthDiagnostics(null);
+        setSchemaDiagnostics(null);
+        setAuditEvents([]);
+      }
+      setManagedUser((current) => {
+        if (!current) return null;
+        return allUsers.find((user) => user.id === current.id) ?? null;
+      });
+      setUserDirectoryState("loaded");
+    } catch (error) {
+      setAuthMigrationAvailable(false);
+      setAuthMigrationProgress(null);
+      setUserDirectoryState("error");
+      throw error;
     }
-    if (canAdmin) {
-      const [authDiag, schemaDiag, events] = await Promise.all([
-        fetchAuthDiagnostics(),
-        fetchSchemaDiagnostics(),
-        fetchAdminAuditEvents(80),
-      ]);
-      setAuthDiagnostics(authDiag);
-      setSchemaDiagnostics(schemaDiag);
-      setAuditEvents(events);
-    } else {
-      setAuthDiagnostics(null);
-      setSchemaDiagnostics(null);
-      setAuditEvents([]);
-    }
-    setManagedUser((current) => {
-      if (!current) return null;
-      return allUsers.find((user) => user.id === current.id) ?? null;
-    });
   };
 
   const repairMetadata = async () => {
@@ -249,42 +266,57 @@ export function UserAdminPanel({
     const scope = accountScopeRef.current;
     setBusy(true);
     setStatus("");
+    setUserDirectoryState("loading");
     try {
       const current = refreshProfile ? await fetchMe() : currentUser;
       if (!current || scope !== accountScopeRef.current) return;
       if (refreshProfile) setCurrentUser(current);
       if (current.isAdmin) {
-        const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
-          fetchUsers(),
+        const [directory, deleted, authDiag, schemaDiag, events] = await Promise.all([
+          fetchUserDirectory(),
           fetchDeletedUsers(),
           fetchAuthDiagnostics(),
           fetchSchemaDiagnostics(),
           fetchAdminAuditEvents(80),
         ]);
         if (scope !== accountScopeRef.current) return;
-        setUsers(all);
+        setUsers(directory.users);
+        setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers(deleted);
         setAuthDiagnostics(authDiag);
         setSchemaDiagnostics(schemaDiag);
         setAuditEvents(events);
+        setUserDirectoryState("loaded");
       } else if (current.isModerator) {
         const all = await fetchUsers();
         if (scope !== accountScopeRef.current) return;
         setUsers(all);
+        setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
         setAuditEvents([]);
+        setUserDirectoryState("loaded");
       } else {
         setUsers([]);
+        setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
         setAuditEvents([]);
+        setUserDirectoryState("idle");
       }
     } catch (error) {
       const message = getUiErrorMessage(error);
-      if (scope === accountScopeRef.current) setStatus(`User load failed: ${message}`);
+      if (scope === accountScopeRef.current) {
+        setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
+        setUserDirectoryState("error");
+        setStatus(`User load failed: ${message}`);
+      }
     } finally {
       if (scope === accountScopeRef.current) setBusy(false);
     }
@@ -295,6 +327,9 @@ export function UserAdminPanel({
     setNotificationBusy(false);
     setNotificationFeed({ unreadCount: 0, items: [] });
     setUsers([]);
+    setAuthMigrationAvailable(false);
+    setAuthMigrationProgress(null);
+    setUserDirectoryState("idle");
     setDeletedUsers([]);
     setAuthDiagnostics(null);
     setSchemaDiagnostics(null);
@@ -777,6 +812,41 @@ export function UserAdminPanel({
               <p className="field-help">Users: open a profile to review and manage.</p>
               <p className="field-help">Revoked: {revokedUserCount}</p>
             </div>
+            {canAdmin && userDirectoryState === "loaded" && authMigrationAvailable && authMigrationProgress ? (
+              <div className="map-progress">
+                <div className="map-progress-label">
+                  {authMigrationProgress.migrated} of {authMigrationProgress.total} accounts migrated
+                </div>
+                <div
+                  aria-label="Authentication migration progress"
+                  aria-valuemax={Math.max(authMigrationProgress.total, 1)}
+                  aria-valuemin={0}
+                  aria-valuenow={authMigrationProgress.migrated}
+                  className="map-progress-track"
+                  role="progressbar"
+                >
+                  <div
+                    className="map-progress-fill"
+                    style={{
+                      width: `${authMigrationProgress.total > 0
+                        ? Math.round((authMigrationProgress.migrated / authMigrationProgress.total) * 100)
+                        : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {canAdmin && userDirectoryState === "loaded" && !authMigrationAvailable ? (
+              <p className="field-help">
+                Authentication migration progress unavailable until authentication setup is complete.
+              </p>
+            ) : null}
+            {canAdmin && userDirectoryState === "loading" ? (
+              <p className="field-help">Loading authentication migration progress…</p>
+            ) : null}
+            {canAdmin && userDirectoryState === "error" ? (
+              <p className="field-help">Authentication migration progress unavailable. Refresh admin data to try again.</p>
+            ) : null}
             <label className="field-grid user-field-grid">
               <span>Filter</span>
               <select
@@ -802,8 +872,17 @@ export function UserAdminPanel({
                       <strong>{user.username}</strong>
                     </p>
                     <p className="field-help">
-                      {user.accountState === "revoked" ? "Revoked" : "Approved"}
+                      {user.accountState === "revoked"
+                        ? "Revoked"
+                        : user.accountState === "pending"
+                          ? "Pending"
+                          : "Approved"}
                     </p>
+                    {canAdmin && authMigrationAvailable ? (
+                      <p className="auth-migration-state field-help">
+                        {user.authMigrationState === "migrated" ? "Migrated" : "Not migrated"}
+                      </p>
+                    ) : null}
                     <p className="field-help">{user.email ?? "-"}</p>
                   </div>
                 </div>
