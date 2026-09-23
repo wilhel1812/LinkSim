@@ -25,7 +25,11 @@ const { fetchMeMock } = vi.hoisted(() => ({
 vi.mock("../lib/cloudUser", () => ({
   fetchMe: fetchMeMock,
   fetchUsers: vi.fn().mockResolvedValue([]),
-  fetchUserDirectory: vi.fn().mockResolvedValue({ users: [], authMigrationAvailable: true }),
+  fetchUserDirectory: vi.fn().mockResolvedValue({
+    users: [],
+    authMigrationAvailable: true,
+    authMigrationProgress: { migrated: 0, total: 0 },
+  }),
   fetchAdminAuditEvents: vi.fn().mockResolvedValue([]),
   fetchAuthDiagnostics: vi.fn().mockResolvedValue({ auth: { signals: {} } }),
   fetchSchemaDiagnostics: vi.fn().mockResolvedValue({ schema: { version: "test", missing: [] } }),
@@ -97,7 +101,11 @@ vi.mock("../store/appStore", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(fetchUsers).mockResolvedValue([]);
-  vi.mocked(fetchUserDirectory).mockResolvedValue({ users: [], authMigrationAvailable: true });
+  vi.mocked(fetchUserDirectory).mockResolvedValue({
+    users: [],
+    authMigrationAvailable: true,
+    authMigrationProgress: { migrated: 0, total: 0 },
+  });
   mockStoreState.currentUser = signedInUser;
   mockStoreState.authState = "signed_in";
   fetchMeMock.mockResolvedValue(signedInUser);
@@ -191,7 +199,7 @@ it("loads administrator datasets only when admin settings open", async () => {
   expect(fetchSchemaDiagnostics).toHaveBeenCalledTimes(1);
 });
 
-it("shows administrator migration progress from the complete unfiltered user directory", async () => {
+it("shows server migration totals independently of the capped unfiltered user directory", async () => {
   mockStoreState.currentUser = {
     ...signedInUser,
     id: "admin-1",
@@ -209,26 +217,30 @@ it("shows administrator migration progress from the complete unfiltered user dir
       accountState: "pending",
       authMigrationState: "not_migrated",
     } as CloudUser,
-  ], authMigrationAvailable: true });
+  ], authMigrationAvailable: true, authMigrationProgress: { migrated: 2001, total: 2004 } });
 
   render(<UserAdminPanel renderMode="admin-inline" />);
 
-  expect(await screen.findByText("2 of 3 accounts migrated")).toBeInTheDocument();
+  expect(await screen.findByText("2001 of 2004 accounts migrated")).toBeInTheDocument();
   const progress = screen.getByRole("progressbar", { name: "Authentication migration progress" });
   expect(progress).toHaveAttribute("aria-valuemin", "0");
-  expect(progress).toHaveAttribute("aria-valuemax", "3");
-  expect(progress).toHaveAttribute("aria-valuenow", "2");
+  expect(progress).toHaveAttribute("aria-valuemax", "2004");
+  expect(progress).toHaveAttribute("aria-valuenow", "2001");
   expect(screen.getByText("Migrated", { selector: ".auth-migration-state" })).toBeInTheDocument();
   expect(screen.getByText("Not migrated", { selector: ".auth-migration-state" })).toBeInTheDocument();
   expect(screen.getByText("Pending")).toBeInTheDocument();
 
   await userEvent.type(screen.getByPlaceholderText("Name, email, or user ID"), "Waiting");
-  expect(screen.getByText("2 of 3 accounts migrated")).toBeInTheDocument();
+  expect(screen.getByText("2001 of 2004 accounts migrated")).toBeInTheDocument();
 });
 
 it("shows an empty migration denominator without dividing by zero", async () => {
   mockStoreState.currentUser = { ...signedInUser, isAdmin: true } as CloudUser;
-  vi.mocked(fetchUserDirectory).mockResolvedValue({ users: [], authMigrationAvailable: true });
+  vi.mocked(fetchUserDirectory).mockResolvedValue({
+    users: [],
+    authMigrationAvailable: true,
+    authMigrationProgress: { migrated: 0, total: 0 },
+  });
 
   render(<UserAdminPanel renderMode="admin-inline" />);
 
@@ -278,6 +290,7 @@ it("keeps the user directory usable but marks migration progress unavailable wit
   vi.mocked(fetchUserDirectory).mockResolvedValue({
     users: [{ ...signedInUser, id: "user-1" } as CloudUser],
     authMigrationAvailable: false,
+    authMigrationProgress: null,
   });
 
   render(<UserAdminPanel renderMode="admin-inline" />);

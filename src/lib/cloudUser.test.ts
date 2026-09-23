@@ -3,6 +3,7 @@ import {
   clearMeCache,
   fetchAuthStatus,
   fetchMe,
+  fetchUserDirectory,
   fetchUsers,
   mergeCloudUserProfilePatch,
   fetchResourceChanges,
@@ -151,6 +152,47 @@ describe("cloudUser client", () => {
 
     await expect(fetchUsers()).resolves.toEqual([]);
     await expect(fetchResourceChanges("site", "s1")).resolves.toEqual([]);
+  });
+
+  it("uses server-wide authentication migration totals", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      users: [{ id: "u1" }],
+      authMigrationAggregateAvailable: true,
+      authMigrationProgress: { migrated: 2001, total: 2004 },
+    }), { status: 200 }));
+
+    await expect(fetchUserDirectory()).resolves.toEqual({
+      users: [{ id: "u1" }],
+      authMigrationAvailable: true,
+      authMigrationProgress: { migrated: 2001, total: 2004 },
+    });
+  });
+
+  it("fails migration progress closed when aggregate totals are absent", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      users: [],
+      authMigrationAvailable: true,
+    }), { status: 200 }));
+
+    await expect(fetchUserDirectory()).resolves.toEqual({
+      users: [],
+      authMigrationAvailable: false,
+      authMigrationProgress: null,
+    });
+  });
+
+  it("ignores the legacy capped-directory capability even when aggregate-looking totals are present", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      users: [],
+      authMigrationAvailable: true,
+      authMigrationProgress: { migrated: 2000, total: 2000 },
+    }), { status: 200 }));
+
+    await expect(fetchUserDirectory()).resolves.toEqual({
+      users: [],
+      authMigrationAvailable: false,
+      authMigrationProgress: { migrated: 2000, total: 2000 },
+    });
   });
 
   it("fetchAdminAuditEvents defaults to empty list when payload shape is unexpected", async () => {

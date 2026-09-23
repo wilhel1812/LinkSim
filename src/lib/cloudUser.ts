@@ -28,6 +28,7 @@ export type CloudUser = {
 export type CloudUserDirectory = {
   users: CloudUser[];
   authMigrationAvailable: boolean;
+  authMigrationProgress: { migrated: number; total: number } | null;
 };
 
 export type ResourceChange = {
@@ -377,10 +378,25 @@ export const fetchUsers = async (): Promise<CloudUser[]> => {
 };
 
 export const fetchUserDirectory = async (): Promise<CloudUserDirectory> => {
-  const data = await apiCall<{ users: CloudUser[]; authMigrationAvailable?: boolean }>("/api/users", { method: "GET" });
+  const data = await apiCall<{
+    users: CloudUser[];
+    authMigrationAggregateAvailable?: boolean;
+    authMigrationProgress?: { migrated?: unknown; total?: unknown };
+  }>("/api/users", { method: "GET" });
+  const migrated = data.authMigrationProgress?.migrated;
+  const total = data.authMigrationProgress?.total;
+  const authMigrationProgress = typeof migrated === "number"
+    && Number.isFinite(migrated)
+    && migrated >= 0
+    && typeof total === "number"
+    && Number.isFinite(total)
+    && total >= migrated
+    ? { migrated, total }
+    : null;
   return {
     users: Array.isArray(data.users) ? data.users : [],
-    authMigrationAvailable: data.authMigrationAvailable === true,
+    authMigrationAvailable: data.authMigrationAggregateAvailable === true && authMigrationProgress !== null,
+    authMigrationProgress,
   };
 };
 

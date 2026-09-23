@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { authMigrationSchemaAvailable, listUsers } from "./db";
+import { authMigrationSchemaAvailable, getAuthMigrationProgress, listUsers } from "./db";
 import { SqliteD1 } from "./testSqliteD1";
 
 const applicationSchema = readFileSync(resolve(process.cwd(), "db/schema.sql"), "utf8");
@@ -92,5 +92,21 @@ describe("administrator authentication migration overview", () => {
     const applicationOnly = new SqliteD1();
     applicationOnly.db.exec(applicationSchema);
     await expect(authMigrationSchemaAvailable(applicationOnly as unknown as D1Database)).resolves.toBe(false);
+  });
+
+  it("counts migration progress beyond the capped user directory", async () => {
+    database.db.exec(`WITH RECURSIVE seq(value) AS (
+      SELECT 1
+      UNION ALL
+      SELECT value + 1 FROM seq WHERE value < 2001
+    )
+    INSERT INTO users (id, username, is_approved, created_at)
+    SELECT 'bulk-' || value, 'bulk-' || value, 1, '2026-09-22T00:00:00.000Z' FROM seq`);
+
+    const users = await listUsers({ DB: database as unknown as D1Database } as never, true);
+    const progress = await getAuthMigrationProgress(database as unknown as D1Database);
+
+    expect(users).toHaveLength(2000);
+    expect(progress).toEqual({ migrated: 2, total: 2004 });
   });
 });

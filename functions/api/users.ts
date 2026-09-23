@@ -5,6 +5,7 @@ import {
   authMigrationSchemaAvailable,
   ensureUser,
   fetchUserProfile,
+  getAuthMigrationProgress,
   listUsers,
 } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
@@ -24,10 +25,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) =
     if (!canListUsers(me)) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
     const includeAuthMigration = me.isAdmin && await authMigrationSchemaAvailable(env.DB);
-    const users = await listUsers(env, me.isAdmin, includeAuthMigration);
+    const [users, authMigrationProgress] = includeAuthMigration
+      ? await Promise.all([
+        listUsers(env, true, true),
+        getAuthMigrationProgress(env.DB),
+      ])
+      : [await listUsers(env, me.isAdmin, false), null];
     return withCors(request, json({
       users,
-      ...(me.isAdmin ? { authMigrationAvailable: includeAuthMigration } : {}),
+      ...(me.isAdmin ? { authMigrationAggregateAvailable: includeAuthMigration } : {}),
+      ...(authMigrationProgress ? { authMigrationProgress } : {}),
     }));
   } catch (error) {
     return errorResponse(request, error, 500);

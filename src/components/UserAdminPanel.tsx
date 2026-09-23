@@ -118,6 +118,7 @@ export function UserAdminPanel({
   const [users, setUsers] = useState<CloudUser[]>([]);
   const [userDirectoryState, setUserDirectoryState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [authMigrationAvailable, setAuthMigrationAvailable] = useState(false);
+  const [authMigrationProgress, setAuthMigrationProgress] = useState<{ migrated: number; total: number } | null>(null);
   const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
   const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnostics | null>(null);
   const [schemaDiagnostics, setSchemaDiagnostics] = useState<SchemaDiagnostics | null>(null);
@@ -178,12 +179,14 @@ export function UserAdminPanel({
         allUsers = directory.users;
         setUsers(allUsers);
         setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers(deleted);
       } else {
         const all = await fetchUsers();
         allUsers = all;
         setUsers(allUsers);
         setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setDeletedUsers([]);
       }
       if (canAdmin) {
@@ -207,6 +210,7 @@ export function UserAdminPanel({
       setUserDirectoryState("loaded");
     } catch (error) {
       setAuthMigrationAvailable(false);
+      setAuthMigrationProgress(null);
       setUserDirectoryState("error");
       throw error;
     }
@@ -278,6 +282,7 @@ export function UserAdminPanel({
         if (scope !== accountScopeRef.current) return;
         setUsers(directory.users);
         setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers(deleted);
         setAuthDiagnostics(authDiag);
         setSchemaDiagnostics(schemaDiag);
@@ -288,6 +293,7 @@ export function UserAdminPanel({
         if (scope !== accountScopeRef.current) return;
         setUsers(all);
         setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
@@ -296,6 +302,7 @@ export function UserAdminPanel({
       } else {
         setUsers([]);
         setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
@@ -306,6 +313,7 @@ export function UserAdminPanel({
       const message = getUiErrorMessage(error);
       if (scope === accountScopeRef.current) {
         setAuthMigrationAvailable(false);
+        setAuthMigrationProgress(null);
         setUserDirectoryState("error");
         setStatus(`User load failed: ${message}`);
       }
@@ -320,6 +328,7 @@ export function UserAdminPanel({
     setNotificationFeed({ unreadCount: 0, items: [] });
     setUsers([]);
     setAuthMigrationAvailable(false);
+    setAuthMigrationProgress(null);
     setUserDirectoryState("idle");
     setDeletedUsers([]);
     setAuthDiagnostics(null);
@@ -345,15 +354,6 @@ export function UserAdminPanel({
     () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "revoked").length,
     [userRows],
   );
-  const authMigrationProgress = useMemo(() => {
-    const total = users.length;
-    const migrated = users.filter((user) => user.authMigrationState === "migrated").length;
-    return {
-      total,
-      migrated,
-      percent: total > 0 ? Math.round((migrated / total) * 100) : 0,
-    };
-  }, [users]);
   const filteredUserRows = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     return userRows.filter((user) => {
@@ -812,7 +812,7 @@ export function UserAdminPanel({
               <p className="field-help">Users: open a profile to review and manage.</p>
               <p className="field-help">Revoked: {revokedUserCount}</p>
             </div>
-            {canAdmin && userDirectoryState === "loaded" && authMigrationAvailable ? (
+            {canAdmin && userDirectoryState === "loaded" && authMigrationAvailable && authMigrationProgress ? (
               <div className="map-progress">
                 <div className="map-progress-label">
                   {authMigrationProgress.migrated} of {authMigrationProgress.total} accounts migrated
@@ -825,7 +825,14 @@ export function UserAdminPanel({
                   className="map-progress-track"
                   role="progressbar"
                 >
-                  <div className="map-progress-fill" style={{ width: `${authMigrationProgress.percent}%` }} />
+                  <div
+                    className="map-progress-fill"
+                    style={{
+                      width: `${authMigrationProgress.total > 0
+                        ? Math.round((authMigrationProgress.migrated / authMigrationProgress.total) * 100)
+                        : 0}%`,
+                    }}
+                  />
                 </div>
               </div>
             ) : null}

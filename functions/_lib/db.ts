@@ -1563,6 +1563,22 @@ export const authMigrationSchemaAvailable = async (db: D1Database): Promise<bool
     && authUserColumns.has("id");
 };
 
+export const getAuthMigrationProgress = async (
+  db: D1Database,
+): Promise<{ migrated: number; total: number }> => {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total, COUNT(auth.id) AS migrated
+     FROM users
+     LEFT JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = users.id
+     LEFT JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+     WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE deleted_users.id = users.id)`,
+  ).first<{ migrated: number; total: number }>();
+  return {
+    migrated: Number(row?.migrated ?? 0),
+    total: Number(row?.total ?? 0),
+  };
+};
+
 export const listUsers = async (
   env: Env,
   includePrivateIdentity: boolean,
