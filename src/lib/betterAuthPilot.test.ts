@@ -16,9 +16,11 @@ import {
   getTurnstileToken,
   getGithubSignInUiErrorMessage,
   getLegacyMigrationAttempt,
+  hasPendingLegacyMigrationConflict,
   getLegacyMigrationUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
+  markPendingLegacyMigrationConflict,
   PasskeyPilotError,
   requestGithubAuthRecoveryReload,
 } from "./betterAuthPilot";
@@ -76,6 +78,20 @@ describe("Better Auth pilot client", () => {
 
     window.history.replaceState(null, "", "/?legacyMigration=not-an-attempt");
     expect(getLegacyMigrationAttempt(window.location)).toBeNull();
+  });
+
+  it("keeps an unresolved migration conflict bound to its attempt until the attempt is cleared", () => {
+    const attemptId = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    window.history.replaceState(null, "", `/?legacyMigration=${attemptId}`);
+
+    expect(hasPendingLegacyMigrationConflict(window.location, attemptId)).toBe(false);
+    markPendingLegacyMigrationConflict(window.location, window.history, attemptId);
+    expect(hasPendingLegacyMigrationConflict(window.location, attemptId)).toBe(true);
+    expect(hasPendingLegacyMigrationConflict(window.location, "178d2594f-6ef2-4d59-b8de-d42366a4c420")).toBe(false);
+
+    clearLegacyMigrationAttempt(window.location, window.history);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
+    expect(hasPendingLegacyMigrationConflict(window.location, attemptId)).toBe(false);
   });
 
   it("completes migration with an exact same-origin JSON mutation and safe failures", async () => {

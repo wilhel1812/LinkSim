@@ -7,8 +7,10 @@ export type LegacyMigrationStage = "opening-cloudflare" | "github" | "finishing"
 type LegacyMigrationModalProps = {
   autoStartGithub: boolean;
   error: string | null;
+  existingProfileUsername: string | null;
   githubBusy: boolean;
   onAutoGithub: (challengeContainer: HTMLElement) => void;
+  onContinueExistingProfile: () => void;
   onGithub: (challengeContainer: HTMLElement) => void;
   onRestart: () => void;
   stage: LegacyMigrationStage;
@@ -34,8 +36,10 @@ const statusFor = (
 export function LegacyMigrationModal({
   autoStartGithub,
   error,
+  existingProfileUsername,
   githubBusy,
   onAutoGithub,
+  onContinueExistingProfile,
   onGithub,
   onRestart,
   stage,
@@ -104,6 +108,11 @@ export function LegacyMigrationModal({
         ) : null}
         {stage === "failed" ? (
           <div className="chip-group">
+            {existingProfileUsername !== null ? (
+              <ActionButton onClick={onContinueExistingProfile} type="button">
+                {existingProfileUsername ? `Continue as ${existingProfileUsername}` : "Continue with this account"}
+              </ActionButton>
+            ) : null}
             <ActionButton onClick={onRestart} type="button">Start migration again</ActionButton>
           </div>
         ) : null}
