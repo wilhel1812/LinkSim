@@ -14,6 +14,7 @@ import type { UiColorTheme } from "../themes/types";
 import { MapControlButton } from "./ui/MapControlButton";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 import { BasemapThemeTint } from "./BasemapThemeTint";
+import { supportsWebgl2 } from "../lib/webgl";
 
 type StatsDensityMapProps = {
   bins: StatsPayload["geography"]["bins"];
@@ -70,6 +71,7 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
   const mapRef = useRef<MapRef | null>(null);
   const [hovered, setHovered] = useState<HoveredBin | null>(null);
   const [useLocalFallback, setUseLocalFallback] = useState(false);
+  const webglAvailable = useMemo(() => supportsWebgl2(), []);
   const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
   const featureCollection = useMemo<FeatureCollection<Point, DensityProperties>>(
     () => ({
@@ -98,6 +100,10 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
 
   if (!bins.length) {
     return <div className="stats-empty">Site density will appear after Sites with coordinates are created.</div>;
+  }
+
+  if (!webglAvailable) {
+    return <div className="stats-empty">Site density map unavailable because WebGL2 is required.</div>;
   }
 
   const hoverFromFeature = (event: MapLayerMouseEvent) => {

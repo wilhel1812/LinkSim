@@ -115,6 +115,7 @@ import { PanelToolbar } from "./ui/PanelToolbar";
 import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
 import { BasemapThemeTint } from "./BasemapThemeTint";
 import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
+import { supportsWebgl2 } from "../lib/webgl";
 import {
   MAP_CONTRAST_DARK,
   MAP_CONTRAST_LIGHT,
@@ -286,19 +287,6 @@ const positionAreaLayer = (id: string, color: string): LayerProps => ({
     "fill-outline-color": color,
   },
 });
-
-const supportsWebgl = (): boolean => {
-  try {
-    const canvas = document.createElement("canvas");
-    return Boolean(
-      canvas.getContext("webgl2") ||
-        canvas.getContext("webgl") ||
-        canvas.getContext("experimental-webgl"),
-    );
-  } catch {
-    return false;
-  }
-};
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
@@ -2642,7 +2630,7 @@ export function MapView({
     isSimulationRecomputing,
   ]);
 
-  const webglAvailable = useMemo(() => supportsWebgl(), []);
+  const webglAvailable = useMemo(() => supportsWebgl2(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending;
   const [elapsedTerrainLoadingMs, setElapsedTerrainLoadingMs] = useState(0);
   useEffect(() => {
@@ -3242,7 +3230,7 @@ export function MapView({
     return (
       <div className="map-panel map-fallback">
         <h3>Map unavailable</h3>
-        <p>WebGL is required for map rendering. The rest of the analysis tools remain available.</p>
+        <p>WebGL2 is required for map rendering. The rest of the analysis tools remain available.</p>
       </div>
     );
   }

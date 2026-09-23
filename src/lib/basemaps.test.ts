@@ -37,7 +37,11 @@ describe("custom basemap resolution", () => {
     expect(resolveBasemapSelection("custom:style", "dark", "blue", sources)).toMatchObject({ style: "https://maps.test/dark.json", attribution: "My data", provider: "custom" });
     const raster = resolveBasemapSelection("custom:raster", "light", "blue", sources);
     expect(raster.maxZoom).toBe(17);
-    expect((raster.style as unknown as { sources: { customRaster: { tiles: string[]; tileSize: number } } }).sources.customRaster).toMatchObject({ tiles: ["https://tiles.test/{z}/{x}/{y}.png"], tileSize: 512 });
+    expect((raster.style as unknown as { sources: { customRaster: { attribution: string; tiles: string[]; tileSize: number } } }).sources.customRaster).toMatchObject({
+      attribution: "Raster data",
+      tiles: ["https://tiles.test/{z}/{x}/{y}.png"],
+      tileSize: 512,
+    });
     expect((raster.style as unknown as { layers: Array<{ maxzoom?: number }> }).layers[0]).not.toHaveProperty("maxzoom");
     expect(getStylesForCategory("custom", sources).map((entry) => entry.id)).toEqual(["custom:style", "custom:raster"]);
   });
