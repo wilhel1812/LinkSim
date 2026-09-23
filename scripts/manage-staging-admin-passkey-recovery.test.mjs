@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRecoveryAuthorization } from "./manage-staging-admin-passkey-recovery.mjs";
+import {
+  parseRecoveryAuthorization,
+  parseRecoveryRevocation,
+} from "./manage-staging-admin-passkey-recovery.mjs";
 
 describe("staging administrator passkey recovery operator output", () => {
   const authorizationId = "67eef596-ce53-4c91-918d-54f200cabee9";
@@ -26,5 +29,27 @@ describe("staging administrator passkey recovery operator output", () => {
     expect(() => parseRecoveryAuthorization(JSON.stringify([{
       results: [{ id: "78d2594f-6ef2-4d59-b8de-d42366a4c420" }], success: true,
     }]), authorizationId)).toThrow("Recovery authorization was not created");
+  });
+
+  it("returns the exact revoked authorization row", () => {
+    const row = {
+      id: authorizationId,
+      revoked_at: "2026-09-23T15:00:00.000Z",
+    };
+    expect(parseRecoveryRevocation(JSON.stringify([{
+      results: [row], success: true,
+    }]), authorizationId)).toEqual(row);
+  });
+
+  it("fails when a revocation UUID returns no row", () => {
+    expect(() => parseRecoveryRevocation(JSON.stringify([{
+      results: [], success: true,
+    }]), authorizationId)).toThrow("D1 recovery revocation returned no rows.");
+  });
+
+  it("fails when the returned authorization remains active", () => {
+    expect(() => parseRecoveryRevocation(JSON.stringify([{
+      results: [{ id: authorizationId, revoked_at: null }], success: true,
+    }]), authorizationId)).toThrow("Recovery authorization was not revoked");
   });
 });

@@ -28,6 +28,15 @@ export const parseRecoveryAuthorization = (stdout, expectedId) => {
   return row;
 };
 
+export const parseRecoveryRevocation = (stdout, expectedId) => {
+  const rows = parseWranglerRows(stdout, "D1 recovery revocation");
+  const row = rows.find(candidate => candidate?.id === expectedId);
+  if (!row?.revoked_at) {
+    throw new Error("Recovery authorization was not revoked. Verify the exact active authorization ID.");
+  }
+  return row;
+};
+
 const main = ([action, value, rawMinutes = "15"]) => {
   if (action === "list") {
     run(`SELECT users.id, users.username, users.email, users.is_admin, users.is_moderator,
@@ -62,10 +71,11 @@ const main = ([action, value, rawMinutes = "15"]) => {
     console.log(JSON.stringify(parseRecoveryAuthorization(stdout, id), null, 2));
   } else if (action === "revoke") {
     if (!UUID.test(value ?? "")) throw new Error("revoke requires the recovery authorization UUID");
-    run(`UPDATE auth_privileged_passkey_recovery SET revoked_at = '${new Date().toISOString()}'
+    const stdout = run(`UPDATE auth_privileged_passkey_recovery SET revoked_at = '${new Date().toISOString()}'
       WHERE id = '${value}' AND consumed_at IS NULL AND revoked_at IS NULL;
       SELECT id, linksim_user_id, expires_at, consumed_at, revoked_at
-      FROM auth_privileged_passkey_recovery WHERE id = '${value}';`);
+      FROM auth_privileged_passkey_recovery WHERE id = '${value}';`, true);
+    console.log(JSON.stringify(parseRecoveryRevocation(stdout, value), null, 2));
   } else {
     throw new Error("Usage: node scripts/manage-staging-admin-passkey-recovery.mjs list | authorize <LinkSim user UUID> [5-30 minutes] | revoke <authorization UUID>");
   }
