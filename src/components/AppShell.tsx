@@ -1295,8 +1295,13 @@ export function AppShell() {
             online: isOnlineNow,
           });
           if (legacyMigrationCompletedRef.current) {
-            setLegacyMigrationError("Your account was moved, but LinkSim could not finish signing in. Reload the page, then try GitHub again.");
-            setLegacyMigrationStage("github");
+            if (privilegedPasskeyRecoveryRef.current) {
+              setLegacyMigrationError("Your administrator passkey was created and the account was moved, but LinkSim could not finish signing in. Reload the page to continue with the new passkey session.");
+              setLegacyMigrationStage("finishing");
+            } else {
+              setLegacyMigrationError("Your account was moved, but LinkSim could not finish signing in. Reload the page, then try GitHub again.");
+              setLegacyMigrationStage("github");
+            }
           }
           if (legacyMigrationExistingSessionErrorRef.current) {
             setLegacyMigrationError(legacyMigrationExistingSessionErrorRef.current);

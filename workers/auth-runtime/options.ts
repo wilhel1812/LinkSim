@@ -4,6 +4,7 @@ import {
   addOAuthServerContext,
   createAuthMiddleware,
   freshSessionMiddleware,
+  getSessionFromCtx,
   getOAuthState,
 } from "better-auth/api";
 import { captcha } from "better-auth/plugins";
@@ -12,12 +13,13 @@ import { passkey } from "@better-auth/passkey";
 import {
   bindLegacyAuthMigrationAttempt,
   bindPrivilegedPasskeyRecoveryUser,
+  canDeletePasskeyWithoutLockout,
   completePrivilegedPasskeyRecovery,
   isPendingLegacyAuthMigrationAttempt,
   provisionAuthIdentity,
   resolveCurrentAuthIdentity,
+  resolvePendingPrivilegedPasskeyRecovery,
   resolvePendingPrivilegedPasskeyRecoveryForAuthUser,
-  resolvePrivilegedPasskeyRecovery,
 } from "../../functions/_lib/authIdentityMap";
 
 export type AuthRuntimeEnv = {
@@ -274,6 +276,15 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         if (FRESH_PASSKEY_MUTATION_PATHS.has(context.path)) {
           await freshSessionMiddleware(context);
         }
+        if (context.path === "/passkey/delete-passkey") {
+          const session = await getSessionFromCtx(context, { disableRefresh: true });
+          if (!session?.user.id || !await canDeletePasskeyWithoutLockout(env.DB, session.user.id)) {
+            throw new APIError("BAD_REQUEST", {
+              code: "last_authentication_method",
+              message: "Add another passkey before removing this one.",
+            });
+          }
+        }
         if (context.path === "/passkey/generate-register-options") {
           const recoveryContext = context.query?.context;
           if (typeof recoveryContext === "string" && MIGRATION_ATTEMPT_ID.test(recoveryContext)) {
@@ -283,12 +294,18 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
                 message: "Administrator passkey recovery is unavailable.",
               });
             }
-            await resolvePrivilegedPasskeyRecovery(env.DB, recoveryContext).catch(() => {
+            await resolvePendingPrivilegedPasskeyRecovery(env.DB, recoveryContext).catch(() => {
               throw new APIError("FORBIDDEN", {
                 code: "passkey_recovery_invalid",
                 message: "Administrator passkey recovery is unavailable or expired.",
               });
             });
+            if (await getSessionFromCtx(context, { disableRefresh: true })) {
+              throw new APIError("CONFLICT", {
+                code: "passkey_recovery_session_present",
+                message: "Sign out before creating the administrator passkey.",
+              });
+            }
           } else {
             await freshSessionMiddleware(context);
           }
@@ -314,7 +331,7 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
                 message: "Administrator passkey recovery is unavailable or expired.",
               });
             }
-            const recovery = await resolvePrivilegedPasskeyRecovery(env.DB, context);
+            const recovery = await resolvePendingPrivilegedPasskeyRecovery(env.DB, context);
             if (recovery.authUserId) {
               const user = await ctx.context.internalAdapter.findUserById(recovery.authUserId);
               if (!user) throw new APIError("BAD_REQUEST", {
@@ -344,6 +361,22 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
               throw error;
             }
             return { id: user.id, name: user.email, displayName: user.name };
+          },
+          afterVerification: async ({ context, user }) => {
+            if (typeof context !== "string" || !MIGRATION_ATTEMPT_ID.test(context)) {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_invalid",
+                message: "Administrator passkey recovery is unavailable or expired.",
+              });
+            }
+            const recovery = await resolvePendingPrivilegedPasskeyRecovery(env.DB, context);
+            if (recovery.authUserId !== user.id) {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_identity_mismatch",
+                message: "Administrator passkey recovery could not be continued.",
+              });
+            }
+            return { userId: user.id };
           },
         },
       }),

@@ -617,6 +617,16 @@ export async function resolvePrivilegedPasskeyRecovery(
   };
 }
 
+export async function resolvePendingPrivilegedPasskeyRecovery(
+  db: D1Database,
+  attemptId: string,
+  now = new Date().toISOString(),
+) {
+  const recovery = await resolvePrivilegedPasskeyRecovery(db, attemptId, now);
+  if (recovery.consumed) throw new LegacyAuthMigrationError("ATTEMPT_CONSUMED");
+  return recovery;
+}
+
 export async function resolvePendingPrivilegedPasskeyRecoveryForAuthUser(
   db: D1Database,
   authUserId: string,
@@ -628,7 +638,19 @@ export async function resolvePendingPrivilegedPasskeyRecoveryForAuthUser(
       AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
     LIMIT 1`).bind(authUserId, now).first<{ migration_attempt_id: string }>();
   if (!row) return null;
-  return resolvePrivilegedPasskeyRecovery(db, row.migration_attempt_id, now);
+  return resolvePendingPrivilegedPasskeyRecovery(db, row.migration_attempt_id, now);
+}
+
+export async function canDeletePasskeyWithoutLockout(
+  db: D1Database,
+  authUserId: string,
+) {
+  const row = await db.prepare(`SELECT
+      (SELECT COUNT(*) FROM auth_account WHERE userId = ?) AS account_count,
+      (SELECT COUNT(*) FROM auth_passkey WHERE userId = ?) AS passkey_count`)
+    .bind(authUserId, authUserId)
+    .first<{ account_count: number; passkey_count: number }>();
+  return Number(row?.account_count ?? 0) > 0 || Number(row?.passkey_count ?? 0) > 1;
 }
 
 export async function bindPrivilegedPasskeyRecoveryUser(

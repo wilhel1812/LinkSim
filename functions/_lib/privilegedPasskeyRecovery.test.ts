@@ -6,9 +6,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   LegacyAuthMigrationError,
   bindPrivilegedPasskeyRecoveryUser,
+  canDeletePasskeyWithoutLockout,
   claimPrivilegedPasskeyRecovery,
   completePrivilegedPasskeyRecovery,
   resolvePendingPrivilegedPasskeyRecoveryForAuthUser,
+  resolvePendingPrivilegedPasskeyRecovery,
   resolvePrivilegedPasskeyRecovery,
 } from "./authIdentityMap";
 import { SqliteD1 } from "./testSqliteD1";
@@ -62,6 +64,8 @@ describe("privileged passkey recovery", () => {
       .resolves.toEqual({ authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
     await expect(resolvePendingPrivilegedPasskeyRecoveryForAuthUser(db, "auth-passkey", now))
       .resolves.toBeNull();
+    await expect(resolvePendingPrivilegedPasskeyRecovery(db, attemptId, now))
+      .rejects.toMatchObject<LegacyAuthMigrationError>({ code: "ATTEMPT_CONSUMED" });
 
     expect(database.db.prepare("SELECT auth_user_id, linksim_user_id FROM auth_identity_map").get())
       .toEqual({ auth_user_id: "auth-passkey", linksim_user_id: "legacy-admin" });
@@ -94,5 +98,24 @@ describe("privileged passkey recovery", () => {
       .resolves.toEqual({ authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
     await expect(bindPrivilegedPasskeyRecoveryUser(db, { attemptId, authUserId: "auth-other", now }))
       .rejects.toMatchObject<LegacyAuthMigrationError>({ code: "ATTEMPT_IDENTITY_MISMATCH" });
+  });
+
+  it("prevents a passkey-only identity from deleting its final sign-in method", async () => {
+    database.db.prepare(`INSERT INTO auth_user
+      (id, name, email, emailVerified, createdAt, updatedAt)
+      VALUES ('auth-passkey', 'legacy-admin', 'auth-passkey@passkey.linksim.invalid', 0, ?, ?)`).run(now, now);
+    const addPasskey = (id: string) => database.db.prepare(`INSERT INTO auth_passkey
+      (id, name, publicKey, userId, credentialID, counter, deviceType, backedUp)
+      VALUES (?, ?, 'public-key', 'auth-passkey', ?, 0, 'singleDevice', 0)`)
+      .run(id, id, `credential-${id}`);
+    addPasskey("passkey-one");
+    await expect(canDeletePasskeyWithoutLockout(db, "auth-passkey")).resolves.toBe(false);
+    addPasskey("passkey-two");
+    await expect(canDeletePasskeyWithoutLockout(db, "auth-passkey")).resolves.toBe(true);
+    database.db.prepare("DELETE FROM auth_passkey WHERE id = 'passkey-two'").run();
+    database.db.prepare(`INSERT INTO auth_account
+      (id, accountId, providerId, userId, createdAt, updatedAt)
+      VALUES ('github-account', '12345', 'github', 'auth-passkey', ?, ?)`).run(now, now);
+    await expect(canDeletePasskeyWithoutLockout(db, "auth-passkey")).resolves.toBe(true);
   });
 });

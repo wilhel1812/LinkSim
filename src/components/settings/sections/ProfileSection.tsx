@@ -188,7 +188,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
               <p>Use a fingerprint, face, PIN, or screen lock to sign in without a password.</p>
               <p>
                 Your passkey is saved by your device or password manager and may sync to your other devices.
-                Signing in from another device may show a QR code. GitHub remains your account-creation and recovery method.
+                Signing in from another device may show a QR code. Keep more than one passkey if GitHub is not linked to your account.
               </p>
               <p>
                 Adding, renaming, or removing a passkey requires a recent sign-in. Availability depends on your browser,

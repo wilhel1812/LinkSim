@@ -23,12 +23,12 @@ const statusFor = (
   step: "cloudflare" | "github" | "linksim",
   stage: LegacyMigrationStage,
   hasError: boolean,
-  githubBusy: boolean,
+  methodBusy: boolean,
 ): string => {
   if (step === "cloudflare") return stage === "opening-cloudflare" ? "Opening…" : "Confirmed";
   if (step === "github") {
     if (stage === "opening-cloudflare") return "Waiting";
-    if (stage === "github" || stage === "passkey") return hasError ? "Needs attention" : githubBusy ? "In progress" : "Ready";
+    if (stage === "github" || stage === "passkey") return hasError ? "Needs attention" : methodBusy ? "In progress" : "Ready";
     return "Confirmed";
   }
   if (stage === "finishing") return "Connecting…";
@@ -52,6 +52,7 @@ export function LegacyMigrationModal({
 }: LegacyMigrationModalProps) {
   const [challengeContainer, setChallengeContainer] = useState<HTMLDivElement | null>(null);
   const autoStartRequestedRef = useRef(false);
+  const methodBusy = passkeyRecovery ? passkeyBusy : githubBusy;
 
   useEffect(() => {
     if (!autoStartGithub || stage !== "github" || error || !challengeContainer || autoStartRequestedRef.current) return;
@@ -73,15 +74,15 @@ export function LegacyMigrationModal({
         <ol aria-label="Migration progress" className="legacy-migration-progress">
           <li>
             <span><span aria-hidden="true">1. </span>Cloudflare account</span>
-            <strong>{statusFor("cloudflare", stage, Boolean(error), githubBusy)}</strong>
+            <strong>{statusFor("cloudflare", stage, Boolean(error), methodBusy)}</strong>
           </li>
           <li>
             <span><span aria-hidden="true">2. </span>{passkeyRecovery ? "Passkey" : "GitHub"}</span>
-            <strong>{statusFor("github", stage, Boolean(error), githubBusy)}</strong>
+            <strong>{statusFor("github", stage, Boolean(error), methodBusy)}</strong>
           </li>
           <li>
             <span><span aria-hidden="true">3. </span>LinkSim account</span>
-            <strong>{statusFor("linksim", stage, Boolean(error), githubBusy)}</strong>
+            <strong>{statusFor("linksim", stage, Boolean(error), methodBusy)}</strong>
           </li>
         </ol>
         <div

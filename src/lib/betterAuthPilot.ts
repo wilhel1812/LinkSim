@@ -109,10 +109,13 @@ export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOpera
         : `LinkSim could not ${passkeyAction(operation)}. Check your connection, reload the page, and try again.`;
   }
   if (/session is not fresh/iu.test(message)) {
-    return `Your sign-in is too old to ${passkeyAction(operation)}. Sign out, sign in with GitHub again, and retry within five minutes.`;
+    return `Your sign-in is too old to ${passkeyAction(operation)}. Sign out, sign in again, and retry within five minutes.`;
+  }
+  if (operation === "remove" && code === "last_authentication_method") {
+    return "You cannot remove your only passkey because this account has no other sign-in method. Add another passkey first.";
   }
   if (status === 401 && operation !== "sign-in") {
-    return `You are no longer signed in, so LinkSim could not ${passkeyAction(operation)}. Sign in with GitHub and try again.`;
+    return `You are no longer signed in, so LinkSim could not ${passkeyAction(operation)}. Sign in again and retry.`;
   }
   if (operation === "sign-in" && (
     code === "ERROR_CEREMONY_ABORTED"
@@ -135,7 +138,7 @@ export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOpera
   if (operation === "sign-in") {
     return "LinkSim could not sign in with the passkey. Try again, or sign in with GitHub.";
   }
-  return `LinkSim could not ${passkeyAction(operation)}. Try again. If the problem continues, sign out and sign in with GitHub.`;
+  return `LinkSim could not ${passkeyAction(operation)}. Try again. If the problem continues, sign out and sign in again.`;
 };
 
 let turnstileLoading: Promise<TurnstileApi> | undefined;
@@ -532,11 +535,19 @@ const passkeyManagement = () => createPasskeyManagement(getAuthClient().passkey)
 
 export const listBetterAuthPasskeys = () => passkeyManagement().list();
 export const addBetterAuthPasskey = (name: string) => passkeyManagement().add(name);
-export const bootstrapPrivilegedPasskey = async (attemptId: string, name: string): Promise<void> => {
+export const bootstrapPrivilegedPasskey = async (
+  attemptId: string,
+  name: string,
+  dependencies: {
+    signOut?: () => Promise<AuthResponse<unknown>>;
+    addPasskey?: PasskeyActions["addPasskey"];
+  } = {},
+): Promise<void> => {
   if (!LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId)) {
     throw new PasskeyPilotError("Administrator passkey recovery is invalid.", "PASSKEY_RECOVERY_INVALID", 400);
   }
-  checked(await getAuthClient().passkey.addPasskey({
+  checked(await (dependencies.signOut ?? (() => getAuthClient().signOut()))());
+  checked(await (dependencies.addPasskey ?? ((input) => getAuthClient().passkey.addPasskey(input)))({
     name: name.trim(),
     context: attemptId,
     createSession: true,
