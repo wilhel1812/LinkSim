@@ -13,6 +13,9 @@ const betterAuthMigration = readFileSync(
 const attemptMigration = readFileSync(
   resolve(process.cwd(), "db/migrations/2026-09-21_auth_migration_attempt.sql"), "utf8",
 );
+const privilegedRecoveryMigration = readFileSync(
+  resolve(process.cwd(), "db/migrations/2026-09-23_privileged_passkey_recovery.sql"), "utf8",
+);
 const attemptId = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
 
 describe("legacy Access migration routes", () => {
@@ -22,6 +25,7 @@ describe("legacy Access migration routes", () => {
     database = new SqliteD1();
     database.db.exec(betterAuthMigration);
     database.db.exec(attemptMigration);
+    database.db.exec(privilegedRecoveryMigration);
     database.db.prepare(`INSERT INTO users
       (id, username, is_admin, is_approved, created_at, updated_at)
       VALUES ('legacy-admin', 'admin', 1, 1, ?, ?)`).run(
@@ -87,6 +91,45 @@ describe("legacy Access migration routes", () => {
     }, dependencies);
     expect(second.status).toBe(401);
     await expect(second.json()).resolves.toMatchObject({ code: "MIGRATION_STALE" });
+  });
+
+  it("forces account selection and starts only an operator-authorized passkey recovery", async () => {
+    database.db.prepare(`INSERT INTO auth_privileged_passkey_recovery
+      (id, linksim_user_id, expected_access_subject, created_by, created_at, expires_at)
+      VALUES ('67eef596-ce53-4c91-918d-54f200cabee9', 'legacy-admin', 'legacy-admin',
+        'operator:wilhel1812', '2026-09-21T10:00:00.000Z', '2026-09-21T10:20:00.000Z')`).run();
+    const dependencies = {
+      now: () => new Date("2026-09-21T10:05:00.000Z"),
+      randomUUID: () => attemptId,
+      verifyFreshAccessJwt: vi.fn(async () => ({
+        userId: "legacy-admin", issuedAt: "2026-09-21T10:04:00.000Z",
+      })),
+    };
+    const first = await handleLegacyAccessStart({
+      request: new Request("https://staging.linksim.link/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fsettings%2Fprofile"),
+      env: {
+        DB: database as unknown as D1Database,
+        AUTH_DUAL_LOGIN_MIGRATION_ENABLED: "true",
+        AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED: "true",
+      },
+    }, dependencies);
+    expect(first.status).toBe(303);
+    expect(new URL(first.headers.get("location")!).pathname).toBe("/cdn-cgi/access/logout");
+    expect(dependencies.verifyFreshAccessJwt).not.toHaveBeenCalled();
+
+    const second = await handleLegacyAccessStart({
+      request: new Request("https://staging.linksim.link/api/auth/legacy-access/start?recovery=passkey&reauth=1&returnTo=%2Fsettings%2Fprofile"),
+      env: {
+        DB: database as unknown as D1Database,
+        AUTH_DUAL_LOGIN_MIGRATION_ENABLED: "true",
+        AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED: "true",
+      },
+    }, dependencies);
+    expect(second.status).toBe(303);
+    const returned = new URL(second.headers.get("location")!);
+    expect(returned.pathname).toBe("/settings/profile");
+    expect(returned.searchParams.get("legacyMigration")).toBe(attemptId);
+    expect(returned.searchParams.get("legacyRecovery")).toBe("passkey");
   });
 
   it("binds a fresh Better Auth session and consumes the attempt once", async () => {

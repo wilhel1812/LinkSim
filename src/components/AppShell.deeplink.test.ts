@@ -12,6 +12,7 @@ const hoisted = vi.hoisted(() => {
   const loadDemoScenario = vi.fn();
   const signInWithGithubPilot = vi.fn();
   const signInWithPasskeyPilot = vi.fn();
+  const bootstrapPrivilegedPasskey = vi.fn();
   const signOutBetterAuthPilot = vi.fn();
   const completeLegacyMigration = vi.fn();
   const clearLegacyMigrationAttempt = vi.fn(() => {
@@ -25,6 +26,7 @@ const hoisted = vi.hoisted(() => {
     hoistedState.legacyMigrationConflictAttempt = attemptId;
   });
   const startLegacyAccessMigration = vi.fn();
+  const startPrivilegedPasskeyRecovery = vi.fn();
   const requestGithubAuthRecoveryReload = vi.fn(() => true);
 
   const hoistedState = { legacyMigrationConflictAttempt: null as string | null };
@@ -93,17 +95,20 @@ const hoisted = vi.hoisted(() => {
     loadDemoScenario,
     signInWithGithubPilot,
     signInWithPasskeyPilot,
+    bootstrapPrivilegedPasskey,
     signOutBetterAuthPilot,
     completeLegacyMigration,
     clearLegacyMigrationAttempt,
     markPendingLegacyMigrationConflict,
     startLegacyAccessMigration,
+    startPrivilegedPasskeyRecovery,
     requestGithubAuthRecoveryReload,
     betterAuthPilotEnabled: false,
     authCallbackError: false,
     githubAuthReturn: false,
     githubAuthRecoveryReturn: false,
     legacyMigrationAttempt: null as string | null,
+    privilegedPasskeyRecovery: false,
     hoistedState,
     sidebarTriggerVersion: 0,
     runtimeEnvironment: "production",
@@ -158,7 +163,10 @@ vi.mock("../lib/betterAuthPilot", () => ({
   consumeGithubAuthReturn: vi.fn(() => hoisted.githubAuthReturn),
   consumeGithubAuthRecovery: vi.fn(() => hoisted.githubAuthRecoveryReturn),
   getLegacyMigrationAttempt: vi.fn(() => hoisted.legacyMigrationAttempt),
+  isPrivilegedPasskeyRecovery: vi.fn(() => hoisted.privilegedPasskeyRecovery),
   startLegacyAccessMigration: hoisted.startLegacyAccessMigration,
+  startPrivilegedPasskeyRecovery: hoisted.startPrivilegedPasskeyRecovery,
+  bootstrapPrivilegedPasskey: hoisted.bootstrapPrivilegedPasskey,
   completeLegacyMigration: hoisted.completeLegacyMigration,
   clearLegacyMigrationAttempt: hoisted.clearLegacyMigrationAttempt,
   hasPendingLegacyMigrationConflict: (_location: Location, attemptId: string) =>
@@ -306,11 +314,13 @@ describe("AppShell deeplink cold-load flow", () => {
     hoisted.githubAuthReturn = false;
     hoisted.githubAuthRecoveryReturn = false;
     hoisted.legacyMigrationAttempt = null;
+    hoisted.privilegedPasskeyRecovery = false;
     hoisted.hoistedState.legacyMigrationConflictAttempt = null;
     hoisted.sidebarTriggerVersion = 0;
     hoisted.requestGithubAuthRecoveryReload.mockReturnValue(true);
     hoisted.signInWithGithubPilot.mockResolvedValue("started");
     hoisted.signInWithPasskeyPilot.mockResolvedValue("signed-in");
+    hoisted.bootstrapPrivilegedPasskey.mockResolvedValue(undefined);
     hoisted.signOutBetterAuthPilot.mockResolvedValue(undefined);
     hoisted.completeLegacyMigration.mockResolvedValue(undefined);
     hoisted.loadDemoScenario.mockReset();
@@ -462,6 +472,43 @@ describe("AppShell deeplink cold-load flow", () => {
         .find((entry) => entry.textContent === "Continue with GitHub");
       expect(continueButton).toBeTruthy();
       expect(continueButton).not.toBeDisabled();
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("creates the authorized administrator passkey without starting GitHub", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    hoisted.legacyMigrationAttempt = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+    hoisted.privilegedPasskeyRecovery = true;
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: true,
+      authState: "authenticated",
+      authSource: "better-auth",
+    });
+    hoisted.fetchMe.mockResolvedValue({
+      id: "legacy-admin",
+      username: "admin",
+      email: "",
+      role: "admin",
+      accountState: "active",
+      needsUsername: false,
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(hoisted.signInWithGithubPilot).not.toHaveBeenCalled();
+      const button = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Create administrator passkey");
+      expect(button).toBeTruthy();
+      fireEvent.click(button as HTMLButtonElement);
+      await waitForCondition(() => hoisted.bootstrapPrivilegedPasskey.mock.calls.length === 1);
+      expect(hoisted.bootstrapPrivilegedPasskey).toHaveBeenCalledWith(
+        "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+        "Primary administrator passkey",
+      );
+      expect(hoisted.clearLegacyMigrationAttempt).toHaveBeenCalled();
+      expect(hoisted.completeLegacyMigration).not.toHaveBeenCalled();
     } finally {
       unmountAppShell(view);
     }

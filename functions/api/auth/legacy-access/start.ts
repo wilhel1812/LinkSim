@@ -1,6 +1,7 @@
 import { verifyFreshAccessJwt } from "../../../_lib/auth";
 import {
   LegacyAuthMigrationError,
+  claimPrivilegedPasskeyRecovery,
   createLegacyAuthMigrationAttempt,
 } from "../../../_lib/authIdentityMap";
 import { json } from "../../../_lib/http";
@@ -48,6 +49,17 @@ export const handleLegacyAccessStart = async (
   }
   const requestURL = new URL(request.url);
   const returnTo = safeReturnTo(requestURL.searchParams.get("returnTo"), requestURL.origin);
+  const passkeyRecovery = requestURL.searchParams.get("recovery") === "passkey";
+  if (passkeyRecovery && env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true") {
+    return hardened(json({ code: "RECOVERY_DISABLED", error: "Administrator passkey recovery is unavailable." }, { status: 404 }));
+  }
+  if (passkeyRecovery && requestURL.searchParams.get("reauth") !== "1") {
+    const retry = new URL(requestURL);
+    retry.searchParams.set("reauth", "1");
+    const logout = new URL("/cdn-cgi/access/logout", requestURL.origin);
+    logout.searchParams.set("returnTo", retry.toString());
+    return hardened(Response.redirect(logout.toString(), 303));
+  }
   const now = dependencies.now();
   const proof = await dependencies.verifyFreshAccessJwt(request, env, now.getTime());
   if (!proof) {
@@ -75,7 +87,14 @@ export const handleLegacyAccessStart = async (
       now: now.toISOString(),
       expiresAt,
     });
+    if (passkeyRecovery) {
+      await claimPrivilegedPasskeyRecovery(env.DB, { attemptId, now: now.toISOString() });
+    }
   } catch (error) {
+    if (passkeyRecovery) {
+      await env.DB.prepare("DELETE FROM auth_migration_attempt WHERE id = ? AND consumed_at IS NULL")
+        .bind(attemptId).run().catch(() => undefined);
+    }
     if (error instanceof LegacyAuthMigrationError) {
       return hardened(json({
         code: "MIGRATION_INELIGIBLE",
@@ -89,6 +108,7 @@ export const handleLegacyAccessStart = async (
   }
 
   returnTo.searchParams.set("legacyMigration", attemptId);
+  if (passkeyRecovery) returnTo.searchParams.set("legacyRecovery", "passkey");
   return hardened(Response.redirect(returnTo.toString(), 303));
 };
 

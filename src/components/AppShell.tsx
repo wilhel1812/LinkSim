@@ -18,6 +18,7 @@ import { getUiErrorMessage } from "../lib/uiError";
 import {
   clearGithubAuthRecovery,
   clearLegacyMigrationAttempt,
+  bootstrapPrivilegedPasskey,
   completeLegacyMigration,
   consumeAuthCallbackError,
   consumeGithubAuthRecovery,
@@ -28,9 +29,11 @@ import {
   getPasskeyUiErrorMessage,
   hasPendingLegacyMigrationConflict,
   isBetterAuthPilotEnabled,
+  isPrivilegedPasskeyRecovery,
   markPendingLegacyMigrationConflict,
   requestGithubAuthRecoveryReload,
   startLegacyAccessMigration,
+  startPrivilegedPasskeyRecovery,
   signInWithGithubPilot,
   signInWithPasskeyPilot,
 } from "../lib/betterAuthPilot";
@@ -281,6 +284,7 @@ export function AppShell() {
   const [presetImportStatus, setPresetImportStatus] = useState("");
   const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const legacyMigrationAttemptRef = useRef(getLegacyMigrationAttempt(window.location));
+  const privilegedPasskeyRecoveryRef = useRef(isPrivilegedPasskeyRecovery(window.location));
   const legacyMigrationConflictPendingRef = useRef(Boolean(
     legacyMigrationAttemptRef.current
     && hasPendingLegacyMigrationConflict(window.location, legacyMigrationAttemptRef.current),
@@ -292,7 +296,9 @@ export function AppShell() {
   const [legacyMigrationStage, setLegacyMigrationStage] = useState<LegacyMigrationStage>(
     legacyMigrationConflictPendingRef.current
       ? "failed"
-      : legacyMigrationAttemptRef.current ? "github" : "opening-cloudflare",
+      : legacyMigrationAttemptRef.current
+        ? privilegedPasskeyRecoveryRef.current ? "passkey" : "github"
+        : "opening-cloudflare",
   );
   const [legacyMigrationError, setLegacyMigrationError] = useState<string | null>(
     legacyMigrationConflictPendingRef.current ? LEGACY_MIGRATION_CONFLICT_MESSAGE : null,
@@ -424,7 +430,9 @@ export function AppShell() {
       setLegacyMigrationStage(
         legacyMigrationConflictPendingRef.current
           ? "failed"
-          : returnedFromGithub || returnedFromRecoveryReload ? "finishing" : "github",
+          : privilegedPasskeyRecoveryRef.current
+            ? "passkey"
+            : returnedFromGithub || returnedFromRecoveryReload ? "finishing" : "github",
       );
     }
     if (callbackFailed && legacyMigrationAttemptRef.current && !legacyMigrationConflictPendingRef.current) {
@@ -765,7 +773,33 @@ export function AppShell() {
     setLegacyMigrationError(null);
     setLegacyMigrationExistingProfile(null);
     setLegacyMigrationStage("opening-cloudflare");
-    window.requestAnimationFrame(() => startLegacyAccessMigration(window.location));
+    window.requestAnimationFrame(() => (
+      privilegedPasskeyRecoveryRef.current
+        ? startPrivilegedPasskeyRecovery(window.location)
+        : startLegacyAccessMigration(window.location)
+    ));
+  }, []);
+
+  const handlePrivilegedPasskeyRecovery = useCallback(async () => {
+    const attemptId = legacyMigrationAttemptRef.current;
+    if (!attemptId) return;
+    setAuthSignInBusyMethod("passkey");
+    setLegacyMigrationError(null);
+    try {
+      await bootstrapPrivilegedPasskey(attemptId, "Primary administrator passkey");
+      setLegacyMigrationStage("finishing");
+      clearLegacyMigrationAttempt(window.location, window.history);
+      legacyMigrationAttemptRef.current = null;
+      legacyMigrationCompletedRef.current = true;
+      runAccessCheckRef.current("retry");
+    } catch {
+      setLegacyMigrationError(
+        "LinkSim could not create the administrator passkey. Keep this window open and try again. If it continues, ask the operator to issue a new recovery.",
+      );
+      setLegacyMigrationStage("passkey");
+    } finally {
+      setAuthSignInBusyMethod(null);
+    }
   }, []);
 
   const handlePasskeySignInRequested = useCallback(async () => {
@@ -3039,6 +3073,7 @@ export function AppShell() {
         <LegacyMigrationModal
           autoStartGithub={Boolean(
             legacyMigrationAttemptRef.current
+            && !privilegedPasskeyRecoveryRef.current
             && githubAuthReturnInitialized
             && !githubAuthReturnPendingRef.current
             && !githubAuthCallbackFailedRef.current
@@ -3046,9 +3081,12 @@ export function AppShell() {
           error={legacyMigrationError}
           existingProfileUsername={legacyMigrationExistingProfile?.profile.username ?? null}
           githubBusy={authSignInBusyMethod === "github"}
+          passkeyBusy={authSignInBusyMethod === "passkey"}
+          passkeyRecovery={privilegedPasskeyRecoveryRef.current}
           onAutoGithub={handleLegacyMigrationGithubAutoStart}
           onContinueExistingProfile={handleLegacyMigrationContinueExistingProfile}
           onGithub={(challengeContainer) => void handleGithubSignInRequested(challengeContainer)}
+          onPasskey={() => void handlePrivilegedPasskeyRecovery()}
           onRestart={handleLegacyMigrationRestart}
           stage={legacyMigrationStage}
         />

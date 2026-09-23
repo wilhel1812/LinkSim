@@ -10,6 +10,7 @@ export const excludedTables = [
   'calculation_jobs', // Transient inputs/results stay in their original environment.
   'auth_user', 'auth_account', 'auth_session', 'auth_verification', 'auth_passkey',
   'auth_rate_limit', 'auth_identity_map', 'auth_migration_attempt',
+  'auth_privileged_passkey_recovery',
 ];
 export function selectExportTables(names) {
   for (const name of names) {

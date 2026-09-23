@@ -16,7 +16,7 @@ describe("Better Auth Pages gateway", () => {
     ["POST", "/api/auth/sign-out"],
     ["GET", "/api/auth/passkey/generate-authenticate-options"],
     ["POST", "/api/auth/passkey/verify-authentication"],
-    ["GET", "/api/auth/passkey/generate-register-options"],
+    ["GET", "/api/auth/passkey/generate-register-options?context=78d2594f-6ef2-4d59-b8de-d42366a4c420"],
     ["POST", "/api/auth/passkey/verify-registration"],
     ["GET", "/api/auth/passkey/list-user-passkeys"],
     ["POST", "/api/auth/passkey/update-passkey"],

@@ -523,6 +523,208 @@ export async function isPendingLegacyAuthMigrationAttempt(
   return !attemptStateError(row, now);
 }
 
+type PrivilegedPasskeyRecoveryRow = {
+  attempt_id: string;
+  linksim_user_id: string;
+  auth_user_id: string | null;
+  attempt_auth_user_id: string | null;
+  attempt_expires_at: string;
+  authorization_expires_at: string;
+  consumed_at: string | null;
+  revoked_at: string | null;
+};
+
+const readPrivilegedPasskeyRecovery = async (db: D1Database, attemptId: string) =>
+  db.prepare(`
+    SELECT attempt.id AS attempt_id, recovery.linksim_user_id,
+      recovery.auth_user_id, attempt.auth_user_id AS attempt_auth_user_id,
+      attempt.expires_at AS attempt_expires_at,
+      recovery.expires_at AS authorization_expires_at,
+      recovery.consumed_at, recovery.revoked_at
+    FROM auth_privileged_passkey_recovery AS recovery
+    JOIN auth_migration_attempt AS attempt
+      ON attempt.id = recovery.migration_attempt_id
+      AND attempt.legacy_user_id = recovery.linksim_user_id
+      AND attempt.access_subject = recovery.expected_access_subject
+    JOIN users AS user ON user.id = recovery.linksim_user_id
+    JOIN identity_subject_states AS state ON state.user_id = user.id
+    LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+    WHERE attempt.id = ?
+      AND recovery.expected_access_subject = recovery.linksim_user_id
+      AND deleted.id IS NULL
+      AND state.status = 'current' AND state.canonical_user_id = user.id
+      AND (user.is_admin = 1 OR user.is_moderator = 1)
+      AND user.is_approved = 1
+      AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+  `).bind(attemptId).first<PrivilegedPasskeyRecoveryRow>();
+
+export async function claimPrivilegedPasskeyRecovery(
+  db: D1Database,
+  input: { attemptId: string; now?: string },
+) {
+  const now = input.now ?? new Date().toISOString();
+  const row = await db.prepare(`
+    UPDATE auth_privileged_passkey_recovery
+    SET migration_attempt_id = ?, started_at = COALESCE(started_at, ?)
+    WHERE id = (
+      SELECT recovery.id
+      FROM auth_privileged_passkey_recovery AS recovery
+      JOIN auth_migration_attempt AS attempt
+        ON attempt.id = ?
+        AND attempt.legacy_user_id = recovery.linksim_user_id
+        AND attempt.access_subject = recovery.expected_access_subject
+      JOIN users AS user ON user.id = recovery.linksim_user_id
+      JOIN identity_subject_states AS state ON state.user_id = user.id
+      LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
+      LEFT JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = user.id
+      WHERE recovery.migration_attempt_id IS NULL
+        AND recovery.expected_access_subject = recovery.linksim_user_id
+        AND recovery.consumed_at IS NULL AND recovery.revoked_at IS NULL
+        AND recovery.expires_at > ? AND attempt.expires_at > ?
+        AND deleted.id IS NULL AND mapping.linksim_user_id IS NULL
+        AND state.status = 'current' AND state.canonical_user_id = user.id
+        AND (user.is_admin = 1 OR user.is_moderator = 1)
+        AND user.is_approved = 1
+        AND COALESCE(user.approved_by_user_id, '') NOT LIKE 'revoked:%'
+      ORDER BY recovery.created_at DESC
+      LIMIT 1
+    )
+    RETURNING linksim_user_id
+  `).bind(input.attemptId, now, input.attemptId, now, now)
+    .first<{ linksim_user_id: string }>();
+  if (!row) throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
+  return { attemptId: input.attemptId, linksimUserId: row.linksim_user_id };
+}
+
+export async function resolvePrivilegedPasskeyRecovery(
+  db: D1Database,
+  attemptId: string,
+  now = new Date().toISOString(),
+) {
+  const row = await readPrivilegedPasskeyRecovery(db, attemptId);
+  if (!row || row.revoked_at) throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
+  if (row.attempt_expires_at <= now || row.authorization_expires_at <= now) {
+    throw new LegacyAuthMigrationError("ATTEMPT_EXPIRED");
+  }
+  if (row.auth_user_id && row.attempt_auth_user_id && row.auth_user_id !== row.attempt_auth_user_id) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+  return {
+    attemptId,
+    linksimUserId: row.linksim_user_id,
+    authUserId: row.auth_user_id ?? row.attempt_auth_user_id,
+    consumed: Boolean(row.consumed_at),
+  };
+}
+
+export async function resolvePendingPrivilegedPasskeyRecoveryForAuthUser(
+  db: D1Database,
+  authUserId: string,
+  now = new Date().toISOString(),
+) {
+  const row = await db.prepare(`SELECT migration_attempt_id
+    FROM auth_privileged_passkey_recovery
+    WHERE auth_user_id = ? AND migration_attempt_id IS NOT NULL
+      AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+    LIMIT 1`).bind(authUserId, now).first<{ migration_attempt_id: string }>();
+  if (!row) return null;
+  return resolvePrivilegedPasskeyRecovery(db, row.migration_attempt_id, now);
+}
+
+export async function bindPrivilegedPasskeyRecoveryUser(
+  db: D1Database,
+  input: { attemptId: string; authUserId: string; now?: string },
+) {
+  const now = input.now ?? new Date().toISOString();
+  const recovery = await resolvePrivilegedPasskeyRecovery(db, input.attemptId, now);
+  if (recovery.authUserId && recovery.authUserId !== input.authUserId) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+  if (recovery.consumed) {
+    const mapped = await findAuthIdentityByAuthUserId(db, input.authUserId);
+    if (mapped?.linksimUserId === recovery.linksimUserId) return { ...recovery, authUserId: input.authUserId };
+    throw new LegacyAuthMigrationError("ATTEMPT_CONSUMED");
+  }
+  const conflict = await db.prepare(`SELECT auth_user_id, linksim_user_id FROM auth_identity_map
+    WHERE auth_user_id = ? OR linksim_user_id = ?`).bind(input.authUserId, recovery.linksimUserId).all<MappingRow>();
+  if (conflict.results.length) throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
+  const results = await db.batch([
+    db.prepare(`UPDATE auth_privileged_passkey_recovery SET auth_user_id = ?
+      WHERE migration_attempt_id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+        AND expires_at > ? AND (auth_user_id IS NULL OR auth_user_id = ?)
+        AND EXISTS (SELECT 1 FROM auth_user WHERE id = ?)`)
+      .bind(input.authUserId, input.attemptId, now, input.authUserId, input.authUserId),
+    db.prepare(`UPDATE auth_migration_attempt SET auth_user_id = ?
+      WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
+        AND (auth_user_id IS NULL OR auth_user_id = ?)`)
+      .bind(input.authUserId, input.attemptId, now, input.authUserId),
+  ]);
+  if (results.some(result => (result.meta?.changes ?? 0) !== 1)) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+  return { attemptId: input.attemptId, authUserId: input.authUserId, linksimUserId: recovery.linksimUserId };
+}
+
+export async function completePrivilegedPasskeyRecovery(
+  db: D1Database,
+  input: { attemptId: string; authUserId: string; now?: string },
+) {
+  const now = input.now ?? new Date().toISOString();
+  const recovery = await resolvePrivilegedPasskeyRecovery(db, input.attemptId, now);
+  if (recovery.authUserId !== input.authUserId) {
+    throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  }
+  const existing = await db.prepare(`SELECT auth_user_id, linksim_user_id FROM auth_identity_map
+    WHERE auth_user_id = ? OR linksim_user_id = ?`).bind(input.authUserId, recovery.linksimUserId).all<MappingRow>();
+  const exact = existing.results.some(row => row.auth_user_id === input.authUserId
+    && row.linksim_user_id === recovery.linksimUserId);
+  if (existing.results.some(row => row.auth_user_id !== input.authUserId
+    || row.linksim_user_id !== recovery.linksimUserId)) {
+    throw new LegacyAuthMigrationError("IDENTITY_CONFLICT");
+  }
+  if (recovery.consumed && exact) {
+    return { authUserId: input.authUserId, linksimUserId: recovery.linksimUserId };
+  }
+  const completionToken = crypto.randomUUID();
+  const results = await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO auth_identity_map (auth_user_id, linksim_user_id, created_at)
+      SELECT ?, recovery.linksim_user_id, ?
+      FROM auth_privileged_passkey_recovery AS recovery
+      JOIN auth_user AS auth ON auth.id = recovery.auth_user_id
+      WHERE recovery.migration_attempt_id = ? AND recovery.auth_user_id = ?
+        AND recovery.consumed_at IS NULL AND recovery.revoked_at IS NULL
+        AND recovery.expires_at > ?`)
+      .bind(input.authUserId, now, input.attemptId, input.authUserId, now),
+    db.prepare(`UPDATE auth_privileged_passkey_recovery SET consumed_at = ?
+      WHERE migration_attempt_id = ? AND auth_user_id = ?
+        AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+        AND EXISTS (SELECT 1 FROM auth_identity_map
+          WHERE auth_user_id = ? AND linksim_user_id = auth_privileged_passkey_recovery.linksim_user_id)`)
+      .bind(now, input.attemptId, input.authUserId, now, input.authUserId),
+    db.prepare(`UPDATE auth_migration_attempt SET consumed_at = ?, completion_token = ?
+      WHERE id = ? AND auth_user_id = ? AND consumed_at IS NULL AND expires_at > ?`)
+      .bind(now, completionToken, input.attemptId, input.authUserId, now),
+    db.prepare(`INSERT INTO user_identity_audit
+      (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+      SELECT 'better_auth_privileged_passkey_recovery', recovery.linksim_user_id, NULL,
+        recovery.linksim_user_id, NULL, ?, ?
+      FROM auth_privileged_passkey_recovery AS recovery
+      WHERE recovery.migration_attempt_id = ? AND recovery.auth_user_id = ?
+        AND recovery.consumed_at = ?
+        AND NOT EXISTS (SELECT 1 FROM user_identity_audit
+          WHERE event_type = 'better_auth_privileged_passkey_recovery'
+            AND target_user_id = recovery.linksim_user_id)`)
+      .bind(JSON.stringify({ attemptId: input.attemptId, authUserId: input.authUserId, provider: "passkey" }),
+        now, input.attemptId, input.authUserId, now),
+  ]);
+  if ((results[1].meta?.changes ?? 0) !== 1
+    || (results[2].meta?.changes ?? 0) !== 1
+    || (results[3].meta?.changes ?? 0) !== 1) {
+    throw new LegacyAuthMigrationError("MIGRATION_FAILED");
+  }
+  return { authUserId: input.authUserId, linksimUserId: recovery.linksimUserId };
+}
+
 export async function bindLegacyAuthMigrationAttempt(
   db: D1Database,
   attemptId: string,

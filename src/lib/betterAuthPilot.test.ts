@@ -4,6 +4,7 @@ import {
   buildAuthReturnPath,
   buildGithubAuthReturnPath,
   buildLegacyMigrationStartPath,
+  buildPrivilegedPasskeyRecoveryStartPath,
   clearLegacyMigrationAttempt,
   clearGithubAuthRecovery,
   completeLegacyMigration,
@@ -20,6 +21,7 @@ import {
   getLegacyMigrationUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
+  isPrivilegedPasskeyRecovery,
   markPendingLegacyMigrationConflict,
   PasskeyPilotError,
   requestGithubAuthRecoveryReload,
@@ -62,6 +64,16 @@ describe("Better Auth pilot client", () => {
     expect(buildLegacyMigrationStartPath(window.location)).toBe(
       "/api/auth/legacy-access/start?returnTo=%2Fwilhelm%2FSvalbard%2FPyramiden%3Flayer%3Dterrain%23profile",
     );
+  });
+
+  it("marks the one-time privileged passkey recovery without dropping route state", () => {
+    expect(buildPrivilegedPasskeyRecoveryStartPath(window.location)).toBe(
+      "/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fwilhelm%2FSvalbard%2FPyramiden%3Flayer%3Dterrain%23profile",
+    );
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&legacyRecovery=passkey");
+    expect(isPrivilegedPasskeyRecovery(window.location)).toBe(true);
+    clearLegacyMigrationAttempt(window.location, window.history);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
   });
 
   it("reads and clears only a valid server migration attempt", () => {

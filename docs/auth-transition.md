@@ -202,6 +202,14 @@ require assisted resolution; never overwrite a mapping. Keep GitHub linked.
 Recovery uses GitHub or an enrolled passkey; loss of all methods requires audited
 manual ownership review and is not guaranteed. Email alone is not sufficient.
 
+One staging-only exception handles a privileged legacy account that has no
+independent GitHub identity. An operator creates a short-lived authorization for
+the exact LinkSim ID and Access subject. Fresh Access proof can then bootstrap a
+Better Auth-managed passkey and session through an opaque, single-use context.
+No email matching, password, permanent Access session, ordinary registration or
+custom WebAuthn/session primitive is introduced. The recovered privileged user
+must enroll a second passkey before sign-off.
+
 ## Security, staging and cutover
 
 Preserve exact origins, secure host-only cookies, OAuth state/CSRF, application

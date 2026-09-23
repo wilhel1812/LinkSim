@@ -156,4 +156,26 @@ describe("LegacyMigrationModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open Cloudflare sign-in again" }));
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
+
+  it("reuses the migration surface for the authorized administrator passkey", async () => {
+    const onPasskey = vi.fn();
+    render(
+      <LegacyMigrationModal
+        autoStartGithub={false}
+        error={null}
+        existingProfileUsername={null}
+        githubBusy={false}
+        onAutoGithub={vi.fn()}
+        onContinueExistingProfile={vi.fn()}
+        onGithub={vi.fn()}
+        onPasskey={onPasskey}
+        onRestart={vi.fn()}
+        passkeyRecovery
+        stage="passkey"
+      />,
+    );
+    expect(screen.getByText("Passkey")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Create administrator passkey" }));
+    expect(onPasskey).toHaveBeenCalledTimes(1);
+  });
 });

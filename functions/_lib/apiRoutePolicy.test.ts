@@ -16,6 +16,8 @@ describe("API authentication policy", () => {
     ["POST", "/api/auth/sign-out"],
     ["GET", "/api/auth/passkey/generate-authenticate-options"],
     ["POST", "/api/auth/passkey/verify-authentication"],
+    ["GET", "/api/auth/passkey/generate-register-options"],
+    ["POST", "/api/auth/passkey/verify-registration"],
     ["GET", "/api/auth/legacy-access/start"],
     ["POST", "/api/auth/legacy-access/complete"],
   ])("keeps the intentional public exception %s %s", (method, path) => {
@@ -37,8 +39,6 @@ describe("API authentication policy", () => {
     ["POST", "/api/dev-role"],
     ["POST", "/api/path-leaderboard"],
     ["POST", "/api/public-simulation"],
-    ["GET", "/api/auth/passkey/generate-register-options"],
-    ["POST", "/api/auth/passkey/verify-registration"],
     ["GET", "/api/auth/passkey/list-user-passkeys"],
     ["POST", "/api/auth/passkey/update-passkey"],
     ["POST", "/api/auth/passkey/delete-passkey"],

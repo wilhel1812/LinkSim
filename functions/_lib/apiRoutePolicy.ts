@@ -15,6 +15,8 @@ const PUBLIC_AUTH_ROUTES = new Set([
   "POST /api/auth/sign-out",
   "GET /api/auth/passkey/generate-authenticate-options",
   "POST /api/auth/passkey/verify-authentication",
+  "GET /api/auth/passkey/generate-register-options",
+  "POST /api/auth/passkey/verify-registration",
 ]);
 
 const APPLICATION_MANAGED_PUBLIC_AUTH_ROUTES = new Set([
@@ -24,8 +26,6 @@ const APPLICATION_MANAGED_PUBLIC_AUTH_ROUTES = new Set([
 
 const AUTH_GATEWAY_ROUTES = new Set([
   ...PUBLIC_AUTH_ROUTES,
-  "GET /api/auth/passkey/generate-register-options",
-  "POST /api/auth/passkey/verify-registration",
   "GET /api/auth/passkey/list-user-passkeys",
   "POST /api/auth/passkey/update-passkey",
   "POST /api/auth/passkey/delete-passkey",

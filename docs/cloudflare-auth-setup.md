@@ -63,6 +63,12 @@ Notes:
   session. `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true` must be present in both the
   stable-staging Pages and auth-runtime configurations. Preview and production
   must omit it until their separately reviewed rollout phase.
+- A separately gated privileged passkey recovery exists only for an
+  operator-authorized, unmigrated administrator or moderator. It always logs
+  out of the cached Access identity first, requires a fresh exact-subject Access
+  proof, and lets Better Auth create the first passkey and session. It never
+  matches email or registers an ordinary user. Production omits
+  `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED`.
 
 ## 4) Registration Behavior
 
@@ -95,6 +101,7 @@ gates in checked-in Wrangler configuration:
 - `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true`
 - `AUTH_LEGACY_CLAIM_ENABLED=true`
 - `AUTH_REGISTRATION_ENABLED=true`
+- `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED=true`
 
 Omitting or setting a gate to any value other than the exact string `true`
 disables that path. Existing auth mappings continue to work when claim or

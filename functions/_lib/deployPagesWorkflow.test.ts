@@ -100,20 +100,24 @@ describe("Deploy LinkSim Pages workflow", () => {
   it("applies and probes the Better Auth schema on staging only", () => {
     const migration = "db/migrations/2026-09-19_better_auth_schema.sql";
     const migrationAttempt = "db/migrations/2026-09-21_auth_migration_attempt.sql";
+    const privilegedRecovery = "db/migrations/2026-09-23_privileged_passkey_recovery.sql";
     const probe = "db/probes/better-auth-schema.sql";
     const step = "- name: Apply and verify staging Better Auth schema";
     const deploy = "- name: Deploy staging with guardrails";
     expect(previewJob).toContain(migration);
     expect(previewJob).toContain(migrationAttempt);
+    expect(previewJob).toContain(privilegedRecovery);
     expect(stagingJob).toContain(step);
     const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
     expect(migrationStep).toContain(`--file ${migration} --yes`);
     expect(migrationStep).toContain(`--file ${migrationAttempt} --yes`);
+    expect(migrationStep).toContain(`--file ${privilegedRecovery} --yes`);
     expect(migrationStep.indexOf(`--file ${migrationAttempt} --yes`))
       .toBeLessThan(migrationStep.lastIndexOf(`--file ${probe}`));
     expect(migrationStep).toContain(`--file ${probe}`);
     expect(productionJob).not.toContain(migration);
     expect(productionJob).not.toContain(migrationAttempt);
+    expect(productionJob).not.toContain(privilegedRecovery);
     expect(productionJob).not.toContain(probe);
   });
 

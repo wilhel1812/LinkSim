@@ -17,3 +17,8 @@ SELECT expires_at, consumed_at FROM auth_migration_attempt
   INDEXED BY auth_migration_attempt_expiry_idx LIMIT 0;
 SELECT auth_user_id, expires_at FROM auth_migration_attempt
   INDEXED BY auth_migration_attempt_auth_user_idx LIMIT 0;
+SELECT id, linksim_user_id, expected_access_subject, migration_attempt_id, auth_user_id,
+  created_by, created_at, expires_at, started_at, consumed_at, revoked_at
+  FROM auth_privileged_passkey_recovery LIMIT 0;
+SELECT expires_at, consumed_at, revoked_at FROM auth_privileged_passkey_recovery
+  INDEXED BY auth_privileged_passkey_recovery_expiry_idx LIMIT 0;
