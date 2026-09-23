@@ -8,6 +8,7 @@ const TURNSTILE_INTERACTION_TIMEOUT_MS = 120_000;
 const GITHUB_AUTH_RETURN_PARAM = "auth-return";
 const LEGACY_MIGRATION_PARAM = "legacyMigration";
 const LEGACY_MIGRATION_CONFLICT_PARAM = "legacyMigrationConflict";
+const LEGACY_RECOVERY_PARAM = "legacyRecovery";
 const GITHUB_AUTH_RECOVERY_KEY = "linksim:github-auth-return-reload:v1";
 const LEGACY_MIGRATION_ATTEMPT_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -53,7 +54,7 @@ type AuthResponse<T> = {
 type PasskeySignIn = () => Promise<AuthResponse<{ user: { id: string } }>>;
 type PasskeyActions = {
   listUserPasskeys: () => Promise<AuthResponse<Passkey[]>>;
-  addPasskey: (input: { name: string }) => Promise<AuthResponse<unknown>>;
+  addPasskey: (input: { name: string; context?: string; createSession?: boolean }) => Promise<AuthResponse<unknown>>;
   updatePasskey: (input: { id: string; name: string }) => Promise<AuthResponse<unknown>>;
   deletePasskey: (input: { id: string }) => Promise<AuthResponse<unknown>>;
 };
@@ -108,10 +109,13 @@ export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOpera
         : `LinkSim could not ${passkeyAction(operation)}. Check your connection, reload the page, and try again.`;
   }
   if (/session is not fresh/iu.test(message)) {
-    return `Your sign-in is too old to ${passkeyAction(operation)}. Sign out, sign in with GitHub again, and retry within five minutes.`;
+    return `Your sign-in is too old to ${passkeyAction(operation)}. Sign out, sign in again, and retry within five minutes.`;
+  }
+  if (operation === "remove" && code === "last_authentication_method") {
+    return "You cannot remove your only passkey because this account has no other sign-in method. Add another passkey first.";
   }
   if (status === 401 && operation !== "sign-in") {
-    return `You are no longer signed in, so LinkSim could not ${passkeyAction(operation)}. Sign in with GitHub and try again.`;
+    return `You are no longer signed in, so LinkSim could not ${passkeyAction(operation)}. Sign in again and retry.`;
   }
   if (operation === "sign-in" && (
     code === "ERROR_CEREMONY_ABORTED"
@@ -134,7 +138,7 @@ export const getPasskeyUiErrorMessage = (error: unknown, operation: PasskeyOpera
   if (operation === "sign-in") {
     return "LinkSim could not sign in with the passkey. Try again, or sign in with GitHub.";
   }
-  return `LinkSim could not ${passkeyAction(operation)}. Try again. If the problem continues, sign out and sign in with GitHub.`;
+  return `LinkSim could not ${passkeyAction(operation)}. Try again. If the problem continues, sign out and sign in again.`;
 };
 
 let turnstileLoading: Promise<TurnstileApi> | undefined;
@@ -176,12 +180,25 @@ export const startLegacyAccessMigration = (
   navigate: (path: string) => void = (path) => window.location.assign(path),
 ): void => navigate(buildLegacyMigrationStartPath(location));
 
+export const buildPrivilegedPasskeyRecoveryStartPath = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+): string => `/api/auth/legacy-access/start?recovery=passkey&returnTo=${encodeURIComponent(buildAuthReturnPath(location))}`;
+
+export const startPrivilegedPasskeyRecovery = (
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  navigate: (path: string) => void = (path) => window.location.assign(path),
+): void => navigate(buildPrivilegedPasskeyRecoveryStartPath(location));
+
 export const getLegacyMigrationAttempt = (
   location: Pick<Location, "href" | "origin">,
 ): string | null => {
   const attemptId = new URL(location.href, location.origin).searchParams.get(LEGACY_MIGRATION_PARAM)?.trim() ?? "";
   return LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId) ? attemptId : null;
 };
+
+export const isPrivilegedPasskeyRecovery = (
+  location: Pick<Location, "href" | "origin">,
+): boolean => new URL(location.href, location.origin).searchParams.get(LEGACY_RECOVERY_PARAM) === "passkey";
 
 export const hasPendingLegacyMigrationConflict = (
   location: Pick<Location, "href" | "origin">,
@@ -209,6 +226,7 @@ export const clearLegacyMigrationAttempt = (
   const url = new URL(location.href, location.origin);
   url.searchParams.delete(LEGACY_MIGRATION_PARAM);
   url.searchParams.delete(LEGACY_MIGRATION_CONFLICT_PARAM);
+  url.searchParams.delete(LEGACY_RECOVERY_PARAM);
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
@@ -517,6 +535,24 @@ const passkeyManagement = () => createPasskeyManagement(getAuthClient().passkey)
 
 export const listBetterAuthPasskeys = () => passkeyManagement().list();
 export const addBetterAuthPasskey = (name: string) => passkeyManagement().add(name);
+export const bootstrapPrivilegedPasskey = async (
+  attemptId: string,
+  name: string,
+  dependencies: {
+    signOut?: () => Promise<AuthResponse<unknown>>;
+    addPasskey?: PasskeyActions["addPasskey"];
+  } = {},
+): Promise<void> => {
+  if (!LEGACY_MIGRATION_ATTEMPT_PATTERN.test(attemptId)) {
+    throw new PasskeyPilotError("Administrator passkey recovery is invalid.", "PASSKEY_RECOVERY_INVALID", 400);
+  }
+  checked(await (dependencies.signOut ?? (() => getAuthClient().signOut()))());
+  checked(await (dependencies.addPasskey ?? ((input) => getAuthClient().passkey.addPasskey(input)))({
+    name: name.trim(),
+    context: attemptId,
+    createSession: true,
+  }));
+};
 export const renameBetterAuthPasskey = (id: string, name: string) => passkeyManagement().rename(id, name);
 export const removeBetterAuthPasskey = (id: string) => passkeyManagement().remove(id);
 

@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { ModalOverlay } from "./ModalOverlay";
 
-export type LegacyMigrationStage = "opening-cloudflare" | "github" | "finishing" | "failed";
+export type LegacyMigrationStage = "opening-cloudflare" | "github" | "passkey" | "finishing" | "failed";
 
 type LegacyMigrationModalProps = {
   autoStartGithub: boolean;
   error: string | null;
   existingProfileUsername: string | null;
   githubBusy: boolean;
+  passkeyBusy?: boolean;
+  passkeyRecovery?: boolean;
   onAutoGithub: (challengeContainer: HTMLElement) => void;
   onContinueExistingProfile: () => void;
   onGithub: (challengeContainer: HTMLElement) => void;
+  onPasskey?: () => void;
   onRestart: () => void;
   stage: LegacyMigrationStage;
 };
@@ -20,12 +23,12 @@ const statusFor = (
   step: "cloudflare" | "github" | "linksim",
   stage: LegacyMigrationStage,
   hasError: boolean,
-  githubBusy: boolean,
+  methodBusy: boolean,
 ): string => {
   if (step === "cloudflare") return stage === "opening-cloudflare" ? "Opening…" : "Confirmed";
   if (step === "github") {
     if (stage === "opening-cloudflare") return "Waiting";
-    if (stage === "github") return hasError ? "Needs attention" : githubBusy ? "In progress" : "Ready";
+    if (stage === "github" || stage === "passkey") return hasError ? "Needs attention" : methodBusy ? "In progress" : "Ready";
     return "Confirmed";
   }
   if (stage === "finishing") return "Connecting…";
@@ -38,14 +41,18 @@ export function LegacyMigrationModal({
   error,
   existingProfileUsername,
   githubBusy,
+  passkeyBusy = false,
+  passkeyRecovery = false,
   onAutoGithub,
   onContinueExistingProfile,
   onGithub,
+  onPasskey,
   onRestart,
   stage,
 }: LegacyMigrationModalProps) {
   const [challengeContainer, setChallengeContainer] = useState<HTMLDivElement | null>(null);
   const autoStartRequestedRef = useRef(false);
+  const methodBusy = passkeyRecovery ? passkeyBusy : githubBusy;
 
   useEffect(() => {
     if (!autoStartGithub || stage !== "github" || error || !challengeContainer || autoStartRequestedRef.current) return;
@@ -60,20 +67,22 @@ export function LegacyMigrationModal({
           <h2>Move your LinkSim account</h2>
         </div>
         <p className="field-help">
-          Keep this window open while LinkSim confirms your previous Cloudflare account, connects GitHub, and preserves your existing profile and saved work.
+          {passkeyRecovery
+            ? "Keep this window open while LinkSim confirms the authorized administrator account, creates its passkey, and preserves its existing profile and saved work."
+            : "Keep this window open while LinkSim confirms your previous Cloudflare account, connects GitHub, and preserves your existing profile and saved work."}
         </p>
         <ol aria-label="Migration progress" className="legacy-migration-progress">
           <li>
             <span><span aria-hidden="true">1. </span>Cloudflare account</span>
-            <strong>{statusFor("cloudflare", stage, Boolean(error), githubBusy)}</strong>
+            <strong>{statusFor("cloudflare", stage, Boolean(error), methodBusy)}</strong>
           </li>
           <li>
-            <span><span aria-hidden="true">2. </span>GitHub</span>
-            <strong>{statusFor("github", stage, Boolean(error), githubBusy)}</strong>
+            <span><span aria-hidden="true">2. </span>{passkeyRecovery ? "Passkey" : "GitHub"}</span>
+            <strong>{statusFor("github", stage, Boolean(error), methodBusy)}</strong>
           </li>
           <li>
             <span><span aria-hidden="true">3. </span>LinkSim account</span>
-            <strong>{statusFor("linksim", stage, Boolean(error), githubBusy)}</strong>
+            <strong>{statusFor("linksim", stage, Boolean(error), methodBusy)}</strong>
           </li>
         </ol>
         <div
@@ -103,8 +112,19 @@ export function LegacyMigrationModal({
             </ActionButton>
           </div>
         ) : null}
+        {stage === "passkey" ? (
+          <div className="chip-group">
+            <ActionButton disabled={passkeyBusy} onClick={onPasskey} type="button">
+              {passkeyBusy ? "Creating passkey…" : error ? "Try passkey again" : "Create administrator passkey"}
+            </ActionButton>
+          </div>
+        ) : null}
         {stage === "finishing" ? (
-          <p aria-live="polite" className="field-help" role="status">Connecting GitHub to your existing LinkSim account…</p>
+          <p aria-live="polite" className="field-help" role="status">
+            {passkeyRecovery
+              ? "Connecting the passkey to your existing administrator account…"
+              : "Connecting GitHub to your existing LinkSim account…"}
+          </p>
         ) : null}
         {stage === "failed" ? (
           <div className="chip-group">

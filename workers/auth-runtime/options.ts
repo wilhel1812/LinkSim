@@ -4,6 +4,7 @@ import {
   addOAuthServerContext,
   createAuthMiddleware,
   freshSessionMiddleware,
+  getSessionFromCtx,
   getOAuthState,
 } from "better-auth/api";
 import { captcha } from "better-auth/plugins";
@@ -11,9 +12,15 @@ import { passkey } from "@better-auth/passkey";
 
 import {
   bindLegacyAuthMigrationAttempt,
+  bindPrivilegedPasskeyRecoveryUser,
+  canDeletePasskeyWithoutLockout,
+  completePrivilegedPasskeyRecovery,
   isPendingLegacyAuthMigrationAttempt,
+  privilegedPasskeyRecoveryToken,
   provisionAuthIdentity,
+  resolveBrowserBoundPrivilegedPasskeyRecovery,
   resolveCurrentAuthIdentity,
+  resolvePendingPrivilegedPasskeyRecoveryForAuthUser,
 } from "../../functions/_lib/authIdentityMap";
 
 export type AuthRuntimeEnv = {
@@ -26,6 +33,7 @@ export type AuthRuntimeEnv = {
   TURNSTILE_SECRET_KEY: string;
   AUTH_LEGACY_CLAIM_DEADLINE: string;
   AUTH_DUAL_LOGIN_MIGRATION_ENABLED?: string;
+  AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED?: string;
   AUTH_LEGACY_CLAIM_ENABLED?: string;
   AUTH_REGISTRATION_ENABLED?: string;
 };
@@ -36,6 +44,11 @@ const required = (value: unknown): value is string =>
 export const FRESH_PASSKEY_MUTATION_PATHS = new Set([
   "/passkey/delete-passkey",
   "/passkey/update-passkey",
+]);
+
+export const PASSKEY_REGISTRATION_PATHS = new Set([
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
 ]);
 
 const MIGRATION_ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -60,6 +73,8 @@ export const prepareAuthSessionIdentity = async (
   authUserId: string,
   migrationAttemptId?: string,
 ): Promise<boolean> => {
+  const existing = await resolveCurrentAuthIdentity(env.DB, authUserId).catch(() => null);
+  if (existing?.authUserId === authUserId) return true;
   if (migrationAttemptId) {
     if (env.AUTH_DUAL_LOGIN_MIGRATION_ENABLED !== "true") return false;
     try {
@@ -145,6 +160,12 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
       validateUserInfo: ({ user, source }) => {
         const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
         if (
+          String(source.method) === "passkey-recovery"
+          && env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED === "true"
+          && user.emailVerified !== true
+          && email.endsWith("@passkey.linksim.invalid")
+        ) return;
+        if (
           source.method !== "oauth"
           || source.oauth?.providerId !== "github"
           || user.emailVerified !== true
@@ -193,6 +214,13 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
       session: {
         create: {
           before: async (session) => {
+            if (env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED === "true") {
+              const recovery = await resolvePendingPrivilegedPasskeyRecoveryForAuthUser(
+                env.DB,
+                session.userId,
+              ).catch(() => null);
+              if (recovery?.authUserId === session.userId) return true;
+            }
             const oauthState = await getOAuthState();
             const migrationAttemptId = oauthState?.serverContext?.legacyMigrationAttemptId;
             return await prepareAuthSessionIdentity(
@@ -200,6 +228,18 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
               session.userId,
               typeof migrationAttemptId === "string" ? migrationAttemptId : undefined,
             ) || false;
+          },
+          after: async (session) => {
+            if (env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true") return;
+            const recovery = await resolvePendingPrivilegedPasskeyRecoveryForAuthUser(
+              env.DB,
+              session.userId,
+            ).catch(() => null);
+            if (!recovery?.authUserId) return;
+            await completePrivilegedPasskeyRecovery(env.DB, {
+              attemptId: recovery.attemptId,
+              authUserId: session.userId,
+            });
           },
         },
       },
@@ -237,6 +277,44 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         if (FRESH_PASSKEY_MUTATION_PATHS.has(context.path)) {
           await freshSessionMiddleware(context);
         }
+        if (context.path === "/passkey/delete-passkey") {
+          const session = await getSessionFromCtx(context, { disableRefresh: true });
+          if (!session?.user.id || !await canDeletePasskeyWithoutLockout(env.DB, session.user.id)) {
+            throw new APIError("BAD_REQUEST", {
+              code: "last_authentication_method",
+              message: "Add another passkey before removing this one.",
+            });
+          }
+        }
+        if (context.path === "/passkey/generate-register-options") {
+          const recoveryContext = context.query?.context;
+          if (typeof recoveryContext === "string" && MIGRATION_ATTEMPT_ID.test(recoveryContext)) {
+            if (env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true") {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_disabled",
+                message: "Administrator passkey recovery is unavailable.",
+              });
+            }
+            await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              recoveryContext,
+              privilegedPasskeyRecoveryToken(context.headers),
+            ).catch(() => {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_invalid",
+                message: "Administrator passkey recovery is unavailable or expired.",
+              });
+            });
+            if (await getSessionFromCtx(context, { disableRefresh: true })) {
+              throw new APIError("CONFLICT", {
+                code: "passkey_recovery_session_present",
+                message: "Sign out before creating the administrator passkey.",
+              });
+            }
+          } else {
+            await freshSessionMiddleware(context);
+          }
+        }
       }),
     },
     plugins: [
@@ -245,6 +323,80 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
         rpName: "LinkSim",
         origin,
         schema: { passkey: { modelName: "auth_passkey" } },
+        registration: {
+          requireSession: false,
+          resolveUser: async ({ ctx, context }) => {
+            if (
+              env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true"
+              || typeof context !== "string"
+              || !MIGRATION_ATTEMPT_ID.test(context)
+            ) {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_invalid",
+                message: "Administrator passkey recovery is unavailable or expired.",
+              });
+            }
+            const recovery = await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              context,
+              privilegedPasskeyRecoveryToken(ctx.headers),
+            );
+            if (recovery.authUserId) {
+              const user = await ctx.context.internalAdapter.findUserById(recovery.authUserId);
+              if (!user) throw new APIError("BAD_REQUEST", {
+                code: "passkey_recovery_invalid",
+                message: "Administrator passkey recovery could not be continued.",
+              });
+              return { id: user.id, name: user.email || user.id, displayName: user.name || "LinkSim administrator" };
+            }
+            const authUserId = crypto.randomUUID();
+            const user = await ctx.context.internalAdapter.createUser({
+              id: authUserId,
+              name: "LinkSim administrator",
+              email: `${authUserId}@passkey.linksim.invalid`,
+              emailVerified: false,
+            }, { method: "passkey-recovery" } as never);
+            if (!user) throw new APIError("INTERNAL_SERVER_ERROR", {
+              code: "passkey_recovery_failed",
+              message: "Administrator passkey recovery could not create an identity.",
+            });
+            try {
+              await bindPrivilegedPasskeyRecoveryUser(env.DB, {
+                attemptId: context,
+                authUserId: user.id,
+              });
+            } catch (error) {
+              await ctx.context.internalAdapter.deleteUser(user.id).catch(() => undefined);
+              throw error;
+            }
+            return { id: user.id, name: user.email, displayName: user.name };
+          },
+          afterVerification: async ({ ctx, context, user }) => {
+            if (context == null) return { userId: user.id };
+            if (
+              env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true"
+              || typeof context !== "string"
+              || !MIGRATION_ATTEMPT_ID.test(context)
+            ) {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_invalid",
+                message: "Administrator passkey recovery is unavailable or expired.",
+              });
+            }
+            const recovery = await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              context,
+              privilegedPasskeyRecoveryToken(ctx.headers),
+            );
+            if (recovery.authUserId !== user.id) {
+              throw new APIError("FORBIDDEN", {
+                code: "passkey_recovery_identity_mismatch",
+                message: "Administrator passkey recovery could not be continued.",
+              });
+            }
+            return { userId: user.id };
+          },
+        },
       }),
       captcha({
         provider: "cloudflare-turnstile",

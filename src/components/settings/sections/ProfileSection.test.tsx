@@ -72,7 +72,7 @@ describe("Profile passkey management", () => {
     expect(screen.getByText(/fingerprint, face, PIN, or screen lock/i)).toBeInTheDocument();
     expect(screen.getByText(/saved by your device or password manager/i)).toBeInTheDocument();
     expect(screen.getByText(/another device may show a QR code/i)).toBeInTheDocument();
-    expect(screen.getByText(/GitHub remains your .*recovery method/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep more than one passkey if GitHub is not linked/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Learn more about passkeys" })).toHaveAttribute(
       "href",
       "https://www.passkeycentral.org/introduction-to-passkeys/",

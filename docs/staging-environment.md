@@ -63,6 +63,31 @@ sign-in popover. The migration modal then owns the Access proof, GitHub proof,
 Turnstile challenge and final binding until completion. Ordinary GitHub remains
 the registration path and must not silently send new users through Access.
 
+### One-time privileged passkey recovery
+
+Use this only when a legacy administrator or moderator has no independent
+GitHub identity. It is not a general sign-in path.
+
+1. List eligible privileged staging accounts:
+   `node scripts/manage-staging-admin-passkey-recovery.mjs list`
+2. Authorize the exact unmigrated LinkSim user for 15 minutes:
+   `node scripts/manage-staging-admin-passkey-recovery.mjs authorize <user-uuid> 15`
+3. Open
+   `https://staging.linksim.link/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fsettings%2Fprofile`.
+   The route clears the cached Access session before asking for the legacy
+   administrator identity.
+4. Keep the raised recovery window open and select **Create administrator
+   passkey**. After LinkSim signs in to the preserved administrator profile, add
+   a second passkey in Profile settings and verify both sign-in methods.
+5. If the attempt is abandoned, revoke the authorization shown by Wrangler:
+   `node scripts/manage-staging-admin-passkey-recovery.mjs revoke <authorization-uuid>`.
+
+The authorization and migration attempt are single-use and expire independently.
+The return URL carries only a correlation ID; a separate Secure, HttpOnly cookie
+is required to continue the passkey ceremony, so copying the URL is insufficient.
+Disabling `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED` stops new and incomplete
+recoveries. Successful Better Auth mappings and audit records remain valid.
+
 Disabling `AUTH_DUAL_LOGIN_MIGRATION_ENABLED` in both staging Wrangler configs
 is the rollback switch for new attempts and assisted recovery. Existing mappings
 remain valid. `AUTH_LEGACY_CLAIM_ENABLED` and `AUTH_REGISTRATION_ENABLED` can be

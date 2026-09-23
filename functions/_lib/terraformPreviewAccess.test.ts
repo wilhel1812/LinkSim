@@ -135,6 +135,7 @@ describe("authenticated Pages preview Terraform intent", () => {
       .replace('\nHISTORY_SCOPE = "staging"', "")
       .replace('\nAUTH_SESSION_SOURCE = "better-auth"', "")
       .replace('\nAUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"', "")
+      .replace('\nAUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"', "")
       .replace('\nAUTH_LEGACY_CLAIM_ENABLED = "true"', "")
       .replace('\nAUTH_REGISTRATION_ENABLED = "true"', ""));
   });

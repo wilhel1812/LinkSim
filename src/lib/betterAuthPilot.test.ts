@@ -4,6 +4,8 @@ import {
   buildAuthReturnPath,
   buildGithubAuthReturnPath,
   buildLegacyMigrationStartPath,
+  buildPrivilegedPasskeyRecoveryStartPath,
+  bootstrapPrivilegedPasskey,
   clearLegacyMigrationAttempt,
   clearGithubAuthRecovery,
   completeLegacyMigration,
@@ -20,6 +22,7 @@ import {
   getLegacyMigrationUiErrorMessage,
   getPasskeyUiErrorMessage,
   isBetterAuthPilotEnabled,
+  isPrivilegedPasskeyRecovery,
   markPendingLegacyMigrationConflict,
   PasskeyPilotError,
   requestGithubAuthRecoveryReload,
@@ -62,6 +65,16 @@ describe("Better Auth pilot client", () => {
     expect(buildLegacyMigrationStartPath(window.location)).toBe(
       "/api/auth/legacy-access/start?returnTo=%2Fwilhelm%2FSvalbard%2FPyramiden%3Flayer%3Dterrain%23profile",
     );
+  });
+
+  it("marks the one-time privileged passkey recovery without dropping route state", () => {
+    expect(buildPrivilegedPasskeyRecoveryStartPath(window.location)).toBe(
+      "/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fwilhelm%2FSvalbard%2FPyramiden%3Flayer%3Dterrain%23profile",
+    );
+    window.history.replaceState(null, "", "/?legacyMigration=78d2594f-6ef2-4d59-b8de-d42366a4c420&legacyRecovery=passkey");
+    expect(isPrivilegedPasskeyRecovery(window.location)).toBe(true);
+    clearLegacyMigrationAttempt(window.location, window.history);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
   });
 
   it("reads and clears only a valid server migration attempt", () => {
@@ -301,7 +314,7 @@ describe("Better Auth pilot client", () => {
 
   it("explains stale sessions and cancelled passkey ceremonies", () => {
     expect(getPasskeyUiErrorMessage(new PasskeyPilotError("Session is not fresh", undefined, 403), "remove")).toBe(
-      "Your sign-in is too old to remove the passkey. Sign out, sign in with GitHub again, and retry within five minutes.",
+      "Your sign-in is too old to remove the passkey. Sign out, sign in again, and retry within five minutes.",
     );
     expect(getPasskeyUiErrorMessage(
       new PasskeyPilotError("Auth cancelled", "ERROR_CEREMONY_ABORTED", 400),
@@ -323,7 +336,39 @@ describe("Better Auth pilot client", () => {
 
   it("keeps unknown passkey failures useful without exposing internal text", () => {
     expect(getPasskeyUiErrorMessage(new Error("database connection string leaked"), "add")).toBe(
-      "LinkSim could not add the passkey. Try again. If the problem continues, sign out and sign in with GitHub.",
+      "LinkSim could not add the passkey. Try again. If the problem continues, sign out and sign in again.",
+    );
+  });
+
+  it("signs out an existing account before creating the authorized administrator passkey", async () => {
+    const calls: string[] = [];
+    const signOut = vi.fn(async () => {
+      calls.push("sign-out");
+      return { data: {}, error: null };
+    });
+    const addPasskey = vi.fn(async () => {
+      calls.push("add-passkey");
+      return { data: {}, error: null };
+    });
+    await bootstrapPrivilegedPasskey(
+      "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      " Administrator key ",
+      { signOut, addPasskey },
+    );
+    expect(calls).toEqual(["sign-out", "add-passkey"]);
+    expect(addPasskey).toHaveBeenCalledWith({
+      name: "Administrator key",
+      context: "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      createSession: true,
+    });
+  });
+
+  it("explains why a passkey-only account cannot remove its final passkey", () => {
+    expect(getPasskeyUiErrorMessage(
+      new PasskeyPilotError("internal", "last_authentication_method", 400),
+      "remove",
+    )).toBe(
+      "You cannot remove your only passkey because this account has no other sign-in method. Add another passkey first.",
     );
   });
 

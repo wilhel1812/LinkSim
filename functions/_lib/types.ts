@@ -44,6 +44,7 @@ export type Env = {
   AUTH?: AuthRuntimeNamespace;
   AUTH_SESSION_SOURCE?: "access" | "transition" | "better-auth";
   AUTH_DUAL_LOGIN_MIGRATION_ENABLED?: string;
+  AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED?: string;
   AUTH_LEGACY_CLAIM_ENABLED?: string;
   AUTH_REGISTRATION_ENABLED?: string;
   // Disabled unless explicitly enabled after runtime/storage validation.
