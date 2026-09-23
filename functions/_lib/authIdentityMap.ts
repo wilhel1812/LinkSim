@@ -534,6 +534,8 @@ type PrivilegedPasskeyRecoveryRow = {
   revoked_at: string | null;
 };
 
+export const PRIVILEGED_PASSKEY_RECOVERY_COOKIE = "__Host-linksim-privileged-recovery";
+
 const readPrivilegedPasskeyRecovery = async (db: D1Database, attemptId: string) =>
   db.prepare(`
     SELECT attempt.id AS attempt_id, recovery.linksim_user_id,
@@ -560,12 +562,12 @@ const readPrivilegedPasskeyRecovery = async (db: D1Database, attemptId: string) 
 
 export async function claimPrivilegedPasskeyRecovery(
   db: D1Database,
-  input: { attemptId: string; now?: string },
+  input: { attemptId: string; browserToken: string; now?: string },
 ) {
   const now = input.now ?? new Date().toISOString();
   const row = await db.prepare(`
     UPDATE auth_privileged_passkey_recovery
-    SET migration_attempt_id = ?, started_at = COALESCE(started_at, ?)
+    SET migration_attempt_id = ?, browser_token = ?, started_at = COALESCE(started_at, ?)
     WHERE id = (
       SELECT recovery.id
       FROM auth_privileged_passkey_recovery AS recovery
@@ -590,10 +592,34 @@ export async function claimPrivilegedPasskeyRecovery(
       LIMIT 1
     )
     RETURNING linksim_user_id
-  `).bind(input.attemptId, now, input.attemptId, now, now)
+  `).bind(input.attemptId, input.browserToken, now, input.attemptId, now, now)
     .first<{ linksim_user_id: string }>();
   if (!row) throw new LegacyAuthMigrationError("LEGACY_IDENTITY_INELIGIBLE");
   return { attemptId: input.attemptId, linksimUserId: row.linksim_user_id };
+}
+
+export async function resolveBrowserBoundPrivilegedPasskeyRecovery(
+  db: D1Database,
+  attemptId: string,
+  browserToken: string | null,
+  now = new Date().toISOString(),
+) {
+  if (!browserToken) throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  const bound = await db.prepare(`SELECT 1 AS bound
+    FROM auth_privileged_passkey_recovery
+    WHERE migration_attempt_id = ? AND browser_token = ?`)
+    .bind(attemptId, browserToken).first<{ bound: number }>();
+  if (!bound) throw new LegacyAuthMigrationError("ATTEMPT_IDENTITY_MISMATCH");
+  return resolvePendingPrivilegedPasskeyRecovery(db, attemptId, now);
+}
+
+export function privilegedPasskeyRecoveryToken(headers: Headers | undefined): string | null {
+  const cookie = headers?.get("cookie") ?? "";
+  for (const part of cookie.split(";")) {
+    const [name, ...value] = part.trim().split("=");
+    if (name === PRIVILEGED_PASSKEY_RECOVERY_COOKIE) return value.join("=") || null;
+  }
+  return null;
 }
 
 export async function resolvePrivilegedPasskeyRecovery(

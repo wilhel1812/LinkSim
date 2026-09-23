@@ -17,6 +17,7 @@ const privilegedRecoveryMigration = readFileSync(
   resolve(process.cwd(), "db/migrations/2026-09-23_privileged_passkey_recovery.sql"), "utf8",
 );
 const attemptId = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
+const browserToken = "4bf8f550-f6b4-428e-98bc-6f8a1ccf4efa";
 
 describe("legacy Access migration routes", () => {
   let database: SqliteD1;
@@ -100,7 +101,9 @@ describe("legacy Access migration routes", () => {
         'operator:wilhel1812', '2026-09-21T10:00:00.000Z', '2026-09-21T10:20:00.000Z')`).run();
     const dependencies = {
       now: () => new Date("2026-09-21T10:05:00.000Z"),
-      randomUUID: () => attemptId,
+      randomUUID: vi.fn()
+        .mockReturnValueOnce(attemptId)
+        .mockReturnValueOnce(browserToken),
       verifyFreshAccessJwt: vi.fn(async () => ({
         userId: "legacy-admin", issuedAt: "2026-09-21T10:04:00.000Z",
       })),
@@ -130,6 +133,10 @@ describe("legacy Access migration routes", () => {
     expect(returned.pathname).toBe("/settings/profile");
     expect(returned.searchParams.get("legacyMigration")).toBe(attemptId);
     expect(returned.searchParams.get("legacyRecovery")).toBe("passkey");
+    expect(second.headers.get("set-cookie")).toContain(`__Host-linksim-privileged-recovery=${browserToken}`);
+    expect(second.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(database.db.prepare(`SELECT browser_token FROM auth_privileged_passkey_recovery
+      WHERE migration_attempt_id = ?`).get(attemptId)).toEqual({ browser_token: browserToken });
   });
 
   it("binds a fresh Better Auth session and consumes the attempt once", async () => {

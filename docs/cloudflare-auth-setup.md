@@ -66,7 +66,8 @@ Notes:
 - A separately gated privileged passkey recovery exists only for an
   operator-authorized, unmigrated administrator or moderator. It always logs
   out of the cached Access identity first, requires a fresh exact-subject Access
-  proof, and lets Better Auth create the first passkey and session. It never
+  proof, binds the public attempt reference to a separate short-lived Secure and
+  HttpOnly browser cookie, and lets Better Auth create the first passkey and session. It never
   matches email or registers an ordinary user. Production omits
   `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED`.
 

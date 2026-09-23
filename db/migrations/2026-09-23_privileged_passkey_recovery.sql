@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS auth_privileged_passkey_recovery (
   expected_access_subject TEXT NOT NULL,
   migration_attempt_id TEXT UNIQUE REFERENCES auth_migration_attempt(id) ON DELETE CASCADE,
   auth_user_id TEXT REFERENCES auth_user(id) ON DELETE CASCADE,
+  browser_token TEXT UNIQUE,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,

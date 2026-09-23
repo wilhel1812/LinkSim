@@ -16,9 +16,10 @@ import {
   canDeletePasskeyWithoutLockout,
   completePrivilegedPasskeyRecovery,
   isPendingLegacyAuthMigrationAttempt,
+  privilegedPasskeyRecoveryToken,
   provisionAuthIdentity,
+  resolveBrowserBoundPrivilegedPasskeyRecovery,
   resolveCurrentAuthIdentity,
-  resolvePendingPrivilegedPasskeyRecovery,
   resolvePendingPrivilegedPasskeyRecoveryForAuthUser,
 } from "../../functions/_lib/authIdentityMap";
 
@@ -294,7 +295,11 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
                 message: "Administrator passkey recovery is unavailable.",
               });
             }
-            await resolvePendingPrivilegedPasskeyRecovery(env.DB, recoveryContext).catch(() => {
+            await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              recoveryContext,
+              privilegedPasskeyRecoveryToken(context.headers),
+            ).catch(() => {
               throw new APIError("FORBIDDEN", {
                 code: "passkey_recovery_invalid",
                 message: "Administrator passkey recovery is unavailable or expired.",
@@ -331,7 +336,11 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
                 message: "Administrator passkey recovery is unavailable or expired.",
               });
             }
-            const recovery = await resolvePendingPrivilegedPasskeyRecovery(env.DB, context);
+            const recovery = await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              context,
+              privilegedPasskeyRecoveryToken(ctx.headers),
+            );
             if (recovery.authUserId) {
               const user = await ctx.context.internalAdapter.findUserById(recovery.authUserId);
               if (!user) throw new APIError("BAD_REQUEST", {
@@ -362,7 +371,7 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
             }
             return { id: user.id, name: user.email, displayName: user.name };
           },
-          afterVerification: async ({ context, user }) => {
+          afterVerification: async ({ ctx, context, user }) => {
             if (context == null) return { userId: user.id };
             if (
               env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true"
@@ -374,7 +383,11 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
                 message: "Administrator passkey recovery is unavailable or expired.",
               });
             }
-            const recovery = await resolvePendingPrivilegedPasskeyRecovery(env.DB, context);
+            const recovery = await resolveBrowserBoundPrivilegedPasskeyRecovery(
+              env.DB,
+              context,
+              privilegedPasskeyRecoveryToken(ctx.headers),
+            );
             if (recovery.authUserId !== user.id) {
               throw new APIError("FORBIDDEN", {
                 code: "passkey_recovery_identity_mismatch",

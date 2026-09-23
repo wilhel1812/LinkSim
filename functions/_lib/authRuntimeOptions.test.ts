@@ -266,6 +266,7 @@ describe("auth runtime options", () => {
     const db = database as unknown as D1Database;
     await claimPrivilegedPasskeyRecovery(db, {
       attemptId: "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      browserToken: "4bf8f550-f6b4-428e-98bc-6f8a1ccf4efa",
       now: now.toISOString(),
     });
     await bindPrivilegedPasskeyRecoveryUser(db, {

@@ -5,6 +5,7 @@ import { makeAuthSessionLog, type AuthSessionResultCategory } from "./logging";
 import { authRuntimeOptions, type AuthRuntimeEnv } from "./options";
 import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
 import { getSetCookieHeaders } from "../../functions/_lib/http";
+import { SerialExecutor } from "./serialExecutor";
 
 const SESSION_HEADERS = [
   "cookie",
@@ -19,6 +20,7 @@ const AUTH_HEADERS = [...SESSION_HEADERS, "x-captcha-response"] as const;
 
 export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
   private readonly auth;
+  private readonly passkeyDeletion = new SerialExecutor();
 
   constructor(ctx: DurableObjectState, env: AuthRuntimeEnv) {
     super(ctx, env);
@@ -72,11 +74,15 @@ export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
     const origin = new URL(this.env.AUTH_ORIGIN).origin;
     const incoming = new URL(request.url);
     const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
-    return this.auth.handler(new Request(url, {
+    const body = requiresMutationOrigin(request) ? await request.arrayBuffer() : undefined;
+    const handle = () => this.auth.handler(new Request(url, {
       method: request.method,
       headers,
-      body: requiresMutationOrigin(request) ? await request.arrayBuffer() : undefined,
+      body,
     }));
+    return incoming.pathname === "/api/auth/passkey/delete-passkey"
+      ? this.passkeyDeletion.run(handle)
+      : handle();
   }
 
 }

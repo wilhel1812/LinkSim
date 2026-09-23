@@ -1,6 +1,7 @@
 import { verifyFreshAccessJwt } from "../../../_lib/auth";
 import {
   LegacyAuthMigrationError,
+  PRIVILEGED_PASSKEY_RECOVERY_COOKIE,
   claimPrivilegedPasskeyRecovery,
   createLegacyAuthMigrationAttempt,
 } from "../../../_lib/authIdentityMap";
@@ -77,6 +78,7 @@ export const handleLegacyAccessStart = async (
   }
 
   const attemptId = dependencies.randomUUID();
+  const browserToken = passkeyRecovery ? dependencies.randomUUID() : null;
   const expiresAt = new Date(now.getTime() + ATTEMPT_TTL_MS).toISOString();
   try {
     await createLegacyAuthMigrationAttempt(env.DB, {
@@ -88,7 +90,11 @@ export const handleLegacyAccessStart = async (
       expiresAt,
     });
     if (passkeyRecovery) {
-      await claimPrivilegedPasskeyRecovery(env.DB, { attemptId, now: now.toISOString() });
+      await claimPrivilegedPasskeyRecovery(env.DB, {
+        attemptId,
+        browserToken: browserToken!,
+        now: now.toISOString(),
+      });
     }
   } catch (error) {
     if (passkeyRecovery) {
@@ -109,7 +115,11 @@ export const handleLegacyAccessStart = async (
 
   returnTo.searchParams.set("legacyMigration", attemptId);
   if (passkeyRecovery) returnTo.searchParams.set("legacyRecovery", "passkey");
-  return hardened(Response.redirect(returnTo.toString(), 303));
+  const redirect = hardened(Response.redirect(returnTo.toString(), 303));
+  if (!browserToken) return redirect;
+  const headers = new Headers(redirect.headers);
+  headers.append("set-cookie", `${PRIVILEGED_PASSKEY_RECOVERY_COOKIE}=${browserToken}; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Strict`);
+  return new Response(redirect.body, { status: redirect.status, headers });
 };
 
 export const onRequestGet: PagesFunction<Env> = async (context) =>

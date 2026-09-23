@@ -9,16 +9,19 @@ import {
   canDeletePasskeyWithoutLockout,
   claimPrivilegedPasskeyRecovery,
   completePrivilegedPasskeyRecovery,
+  resolveBrowserBoundPrivilegedPasskeyRecovery,
   resolvePendingPrivilegedPasskeyRecoveryForAuthUser,
   resolvePendingPrivilegedPasskeyRecovery,
   resolvePrivilegedPasskeyRecovery,
 } from "./authIdentityMap";
 import { SqliteD1 } from "./testSqliteD1";
+import { SerialExecutor } from "../../workers/auth-runtime/serialExecutor";
 
 const readMigration = (name: string) => readFileSync(resolve(process.cwd(), `db/migrations/${name}`), "utf8");
 const attemptId = "78d2594f-6ef2-4d59-b8de-d42366a4c420";
 const authorizationId = "67eef596-ce53-4c91-918d-54f200cabee9";
 const now = "2026-09-23T10:05:00.000Z";
+const browserToken = "4bf8f550-f6b4-428e-98bc-6f8a1ccf4efa";
 
 describe("privileged passkey recovery", () => {
   let database: SqliteD1;
@@ -47,7 +50,7 @@ describe("privileged passkey recovery", () => {
   });
 
   it("claims the exact authorized Access attempt and completes one passkey identity", async () => {
-    await expect(claimPrivilegedPasskeyRecovery(db, { attemptId, now }))
+    await expect(claimPrivilegedPasskeyRecovery(db, { attemptId, browserToken, now }))
       .resolves.toEqual({ attemptId, linksimUserId: "legacy-admin" });
 
     database.db.prepare(`INSERT INTO auth_user
@@ -58,6 +61,10 @@ describe("privileged passkey recovery", () => {
       .resolves.toEqual({ attemptId, authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
     await expect(resolvePrivilegedPasskeyRecovery(db, attemptId, now))
       .resolves.toMatchObject({ authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
+    await expect(resolveBrowserBoundPrivilegedPasskeyRecovery(db, attemptId, browserToken, now))
+      .resolves.toMatchObject({ authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
+    await expect(resolveBrowserBoundPrivilegedPasskeyRecovery(db, attemptId, "copied-url", now))
+      .rejects.toMatchObject<LegacyAuthMigrationError>({ code: "ATTEMPT_IDENTITY_MISMATCH" });
     await expect(resolvePendingPrivilegedPasskeyRecoveryForAuthUser(db, "auth-passkey", now))
       .resolves.toMatchObject({ attemptId, authUserId: "auth-passkey", linksimUserId: "legacy-admin" });
     await expect(completePrivilegedPasskeyRecovery(db, { attemptId, authUserId: "auth-passkey", now }))
@@ -79,13 +86,13 @@ describe("privileged passkey recovery", () => {
   it("rejects a revoked authorization before creating an auth identity", async () => {
     database.db.prepare(`UPDATE auth_privileged_passkey_recovery
       SET revoked_at = ? WHERE id = ?`).run(now, authorizationId);
-    await expect(claimPrivilegedPasskeyRecovery(db, { attemptId, now }))
+    await expect(claimPrivilegedPasskeyRecovery(db, { attemptId, browserToken, now }))
       .rejects.toMatchObject<LegacyAuthMigrationError>({ code: "LEGACY_IDENTITY_INELIGIBLE" });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 0 });
   });
 
   it("is idempotent only for the exact recovered pair and rejects replay with another identity", async () => {
-    await claimPrivilegedPasskeyRecovery(db, { attemptId, now });
+    await claimPrivilegedPasskeyRecovery(db, { attemptId, browserToken, now });
     for (const id of ["auth-passkey", "auth-other"]) {
       database.db.prepare(`INSERT INTO auth_user
         (id, name, email, emailVerified, createdAt, updatedAt)
@@ -117,5 +124,27 @@ describe("privileged passkey recovery", () => {
       (id, accountId, providerId, userId, createdAt, updatedAt)
       VALUES ('github-account', '12345', 'github', 'auth-passkey', ?, ?)`).run(now, now);
     await expect(canDeletePasskeyWithoutLockout(db, "auth-passkey")).resolves.toBe(true);
+  });
+
+  it("serializes concurrent removals so one passkey remains", async () => {
+    database.db.prepare(`INSERT INTO auth_user
+      (id, name, email, emailVerified, createdAt, updatedAt)
+      VALUES ('auth-passkey', 'legacy-admin', 'auth-passkey@passkey.linksim.invalid', 0, ?, ?)`).run(now, now);
+    for (const id of ["passkey-one", "passkey-two"]) {
+      database.db.prepare(`INSERT INTO auth_passkey
+        (id, name, publicKey, userId, credentialID, counter, deviceType, backedUp)
+        VALUES (?, ?, 'public-key', 'auth-passkey', ?, 0, 'singleDevice', 0)`)
+        .run(id, id, `credential-${id}`);
+    }
+    const executor = new SerialExecutor();
+    const remove = (id: string) => executor.run(async () => {
+      if (!await canDeletePasskeyWithoutLockout(db, "auth-passkey")) return false;
+      database.db.prepare("DELETE FROM auth_passkey WHERE id = ? AND userId = 'auth-passkey'").run(id);
+      return true;
+    });
+    await expect(Promise.all([remove("passkey-one"), remove("passkey-two")]))
+      .resolves.toEqual([true, false]);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_passkey WHERE userId = 'auth-passkey'").get())
+      .toEqual({ count: 1 });
   });
 });

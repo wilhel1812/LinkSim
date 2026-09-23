@@ -83,6 +83,8 @@ GitHub identity. It is not a general sign-in path.
    `node scripts/manage-staging-admin-passkey-recovery.mjs revoke <authorization-uuid>`.
 
 The authorization and migration attempt are single-use and expire independently.
+The return URL carries only a correlation ID; a separate Secure, HttpOnly cookie
+is required to continue the passkey ceremony, so copying the URL is insufficient.
 Disabling `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED` stops new and incomplete
 recoveries. Successful Better Auth mappings and audit records remain valid.
 
