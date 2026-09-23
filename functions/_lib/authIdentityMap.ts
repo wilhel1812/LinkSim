@@ -463,6 +463,7 @@ export async function attachAuthIdentity(
 type MigrationAttemptRow = {
   id: string;
   legacy_user_id: string;
+  privileged_recovery: number;
   auth_user_id: string | null;
   expires_at: string;
   consumed_at: string | null;
@@ -470,13 +471,18 @@ type MigrationAttemptRow = {
 };
 
 const readMigrationAttempt = async (db: D1Database, attemptId: string) =>
-  db.prepare(`SELECT id, legacy_user_id, auth_user_id, expires_at, consumed_at, completion_token
+  db.prepare(`SELECT id, legacy_user_id, auth_user_id, expires_at, consumed_at, completion_token,
+      EXISTS (SELECT 1 FROM auth_privileged_passkey_recovery AS recovery
+        WHERE recovery.migration_attempt_id = auth_migration_attempt.id) AS privileged_recovery
     FROM auth_migration_attempt WHERE id = ?`).bind(attemptId).first<MigrationAttemptRow>();
 
 const attemptStateError = (row: MigrationAttemptRow | null, now: string) => {
   if (!row) return new LegacyAuthMigrationError("ATTEMPT_NOT_FOUND");
   if (row.consumed_at) return new LegacyAuthMigrationError("ATTEMPT_CONSUMED");
   if (row.expires_at <= now) return new LegacyAuthMigrationError("ATTEMPT_EXPIRED");
+  if (row.privileged_recovery) {
+    return new LegacyAuthMigrationError("AUTH_IDENTITY_INELIGIBLE");
+  }
   return null;
 };
 
@@ -783,6 +789,8 @@ export async function bindLegacyAuthMigrationAttempt(
     UPDATE auth_migration_attempt
     SET auth_user_id = ?
     WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
+      AND NOT EXISTS (SELECT 1 FROM auth_privileged_passkey_recovery AS recovery
+        WHERE recovery.migration_attempt_id = auth_migration_attempt.id)
       AND (auth_user_id IS NULL OR auth_user_id = ?)
       AND EXISTS (
         SELECT 1 FROM auth_user AS auth
@@ -835,6 +843,8 @@ export async function completeLegacyAuthMigrationAttempt(
         JOIN identity_subject_states AS state ON state.user_id = user.id
         LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
         WHERE attempt.id = ? AND attempt.auth_user_id = ?
+          AND NOT EXISTS (SELECT 1 FROM auth_privileged_passkey_recovery AS recovery
+            WHERE recovery.migration_attempt_id = attempt.id)
           AND attempt.consumed_at IS NULL
           AND attempt.expires_at > ? AND attempt.access_subject = attempt.legacy_user_id
           AND deleted.id IS NULL
@@ -847,6 +857,8 @@ export async function completeLegacyAuthMigrationAttempt(
       `).bind(now, input.attemptId, input.authUserId, now),
       db.prepare(`UPDATE auth_migration_attempt SET consumed_at = ?, completion_token = ?
         WHERE id = ? AND auth_user_id = ? AND consumed_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM auth_privileged_passkey_recovery AS recovery
+            WHERE recovery.migration_attempt_id = auth_migration_attempt.id)
           AND expires_at > ?
           AND access_subject = legacy_user_id
           AND EXISTS (
@@ -917,6 +929,8 @@ export async function resolveCompletedLegacyAuthMigrationAttempt(
     JOIN identity_subject_states AS state ON state.user_id = user.id
     LEFT JOIN deleted_users AS deleted ON deleted.id = user.id
     WHERE attempt.id = ? AND attempt.auth_user_id = ?
+      AND NOT EXISTS (SELECT 1 FROM auth_privileged_passkey_recovery AS recovery
+        WHERE recovery.migration_attempt_id = attempt.id)
       AND attempt.consumed_at IS NOT NULL AND attempt.completion_token IS NOT NULL
       AND attempt.access_subject = attempt.legacy_user_id
       AND deleted.id IS NULL

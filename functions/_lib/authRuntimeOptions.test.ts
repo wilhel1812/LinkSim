@@ -61,6 +61,9 @@ describe("auth runtime options", () => {
     database.db.exec(readFileSync(resolve(
       process.cwd(), "db/migrations/2026-09-21_auth_migration_attempt.sql",
     ), "utf8"));
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-23_privileged_passkey_recovery.sql",
+    ), "utf8"));
     database.db.prepare(`INSERT INTO users
       (id, username, is_admin, is_approved, created_at, updated_at)
       VALUES ('legacy-admin', 'admin', 1, 1, datetime('now'), datetime('now'))`).run();
@@ -89,6 +92,54 @@ describe("auth runtime options", () => {
       .toEqual({ auth_user_id: "auth-new" });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get()).toEqual({ count: 0 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 1 });
+  });
+
+  it("does not bind a privileged recovery correlation through the GitHub OAuth path", async () => {
+    const database = new SqliteD1();
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-19_better_auth_schema.sql",
+    ), "utf8"));
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-21_auth_migration_attempt.sql",
+    ), "utf8"));
+    database.db.exec(readFileSync(resolve(
+      process.cwd(), "db/migrations/2026-09-23_privileged_passkey_recovery.sql",
+    ), "utf8"));
+    database.db.prepare(`INSERT INTO users
+      (id, username, is_admin, is_approved, created_at, updated_at)
+      VALUES ('legacy-admin', 'admin', 1, 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('legacy-admin', 'current', 'legacy-admin', 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO auth_user
+      (id, name, email, emailVerified, createdAt, updatedAt)
+      VALUES ('auth-attacker', 'GitHub User', 'attacker@example.org', 1, datetime('now'), datetime('now'))`).run();
+    database.db.prepare(`INSERT INTO auth_account
+      (id, accountId, providerId, userId, createdAt, updatedAt)
+      VALUES ('account-attacker', '67890', 'github', 'auth-attacker', datetime('now'), datetime('now'))`).run();
+    const attemptId = "4bf8f550-f6b4-428e-98bc-6f8a1ccf4efa";
+    database.db.prepare(`INSERT INTO auth_migration_attempt
+      (id, legacy_user_id, access_subject, access_issued_at, created_at, expires_at)
+      VALUES (?, 'legacy-admin', 'legacy-admin', ?, ?, ?)`)
+      .run(attemptId, new Date().toISOString(), new Date().toISOString(),
+        new Date(Date.now() + 600_000).toISOString());
+    database.db.prepare(`INSERT INTO auth_privileged_passkey_recovery
+      (id, linksim_user_id, expected_access_subject, migration_attempt_id,
+        browser_token, created_by, created_at, expires_at, started_at)
+      VALUES ('recovery-authorization', 'legacy-admin', 'legacy-admin', ?,
+        'browser-token', 'test', datetime('now'), ?, datetime('now'))`)
+      .run(attemptId, new Date(Date.now() + 600_000).toISOString());
+
+    await expect(prepareAuthSessionIdentity({
+      ...envWithSecret("x".repeat(32)),
+      DB: database as unknown as D1Database,
+      AUTH_LEGACY_CLAIM_ENABLED: "false",
+      AUTH_REGISTRATION_ENABLED: "false",
+    }, "auth-attacker", attemptId)).resolves.toBe(false);
+    expect(database.db.prepare(`SELECT auth_user_id FROM auth_migration_attempt WHERE id = ?`)
+      .get(attemptId)).toEqual({ auth_user_id: null });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get())
+      .toEqual({ count: 0 });
   });
   it("fails closed when the Better Auth secret is shorter than 32 characters", () => {
     expect(() => authRuntimeOptions(envWithSecret("x".repeat(31))))

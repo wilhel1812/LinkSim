@@ -27,6 +27,10 @@ const attemptMigration = readFileSync(
   resolve(process.cwd(), "db/migrations/2026-09-21_auth_migration_attempt.sql"),
   "utf8",
 );
+const privilegedRecoveryMigration = readFileSync(
+  resolve(process.cwd(), "db/migrations/2026-09-23_privileged_passkey_recovery.sql"),
+  "utf8",
+);
 
 describe("auth identity mapping", () => {
   let database: SqliteD1;
@@ -35,6 +39,7 @@ describe("auth identity mapping", () => {
     database = new SqliteD1();
     database.db.exec(migration);
     database.db.exec(attemptMigration);
+    database.db.exec(privilegedRecoveryMigration);
     database.db.prepare(
       "INSERT INTO users (id, username, is_approved, created_at) VALUES (?, ?, 1, ?)",
     ).run("linksim-1", "first", "2026-09-19T00:00:00.000Z");
@@ -60,7 +65,8 @@ describe("auth identity mapping", () => {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'auth_%' ORDER BY name",
     ).all().map(row => row.name);
     expect(tables).toEqual([
-      "auth_account", "auth_identity_map", "auth_migration_attempt", "auth_passkey", "auth_rate_limit",
+      "auth_account", "auth_identity_map", "auth_migration_attempt", "auth_passkey",
+      "auth_privileged_passkey_recovery", "auth_rate_limit",
       "auth_session", "auth_user", "auth_verification",
     ]);
     database.db.prepare(
@@ -252,6 +258,47 @@ describe("auth identity mapping", () => {
       FROM user_identity_audit WHERE event_type = 'better_auth_dual_login'`).get()).toEqual({
         event_type: "better_auth_dual_login", target_user_id: "linksim-1", actor_user_id: "linksim-1",
       });
+  });
+
+  it("rejects privileged passkey recovery attempts from every GitHub migration operation", async () => {
+    const db = database as unknown as D1Database;
+    database.db.prepare(`INSERT INTO identity_subject_states
+      (user_id, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES ('linksim-1', 'current', 'linksim-1', 1, ?, ?)`).run(
+        "2026-09-21T10:00:00.000Z", "2026-09-21T10:00:00.000Z",
+      );
+    await createLegacyAuthMigrationAttempt(db, {
+      attemptId: "recovery-attempt",
+      legacyUserId: "linksim-1",
+      accessSubject: "linksim-1",
+      accessIssuedAt: "2026-09-21T10:00:00.000Z",
+      now: "2026-09-21T10:00:01.000Z",
+      expiresAt: "2026-09-21T10:10:01.000Z",
+    });
+    database.db.prepare(`INSERT INTO auth_privileged_passkey_recovery
+      (id, linksim_user_id, expected_access_subject, migration_attempt_id,
+        browser_token, created_by, created_at, expires_at, started_at)
+      VALUES ('recovery-authorization', 'linksim-1', 'linksim-1', 'recovery-attempt',
+        'browser-token', 'test', '2026-09-21T10:00:00.000Z',
+        '2026-09-21T10:10:01.000Z', '2026-09-21T10:00:01.000Z')`).run();
+
+    await expect(isPendingLegacyAuthMigrationAttempt(
+      db, "recovery-attempt", "2026-09-21T10:05:00.000Z",
+    )).resolves.toBe(false);
+    await expect(bindLegacyAuthMigrationAttempt(
+      db, "recovery-attempt", "auth-1", "2026-09-21T10:05:00.000Z",
+    )).rejects.toMatchObject({ code: "AUTH_IDENTITY_INELIGIBLE" });
+    await expect(completeLegacyAuthMigrationAttempt(db, {
+      attemptId: "recovery-attempt",
+      authUserId: "auth-1",
+      now: "2026-09-21T10:06:00.000Z",
+    })).rejects.toMatchObject({ code: "AUTH_IDENTITY_INELIGIBLE" });
+    expect(database.db.prepare(`SELECT auth_user_id, consumed_at, completion_token
+      FROM auth_migration_attempt WHERE id = 'recovery-attempt'`).get()).toEqual({
+        auth_user_id: null, consumed_at: null, completion_token: null,
+      });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM auth_identity_map").get())
+      .toEqual({ count: 0 });
   });
 
   it("replays the attempt migration without changing its schema", () => {
