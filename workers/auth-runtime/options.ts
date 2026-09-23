@@ -363,7 +363,12 @@ export const authRuntimeOptions = (env: AuthRuntimeEnv): BetterAuthOptions => {
             return { id: user.id, name: user.email, displayName: user.name };
           },
           afterVerification: async ({ context, user }) => {
-            if (typeof context !== "string" || !MIGRATION_ATTEMPT_ID.test(context)) {
+            if (context == null) return { userId: user.id };
+            if (
+              env.AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED !== "true"
+              || typeof context !== "string"
+              || !MIGRATION_ATTEMPT_ID.test(context)
+            ) {
               throw new APIError("FORBIDDEN", {
                 code: "passkey_recovery_invalid",
                 message: "Administrator passkey recovery is unavailable or expired.",

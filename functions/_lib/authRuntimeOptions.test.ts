@@ -163,6 +163,26 @@ describe("auth runtime options", () => {
       "/passkey/generate-register-options",
       "/passkey/verify-registration",
     ]));
+    const afterVerification = (passkey?.options as {
+      registration?: {
+        afterVerification?: (input: { context: string | null; user: { id: string } }) => Promise<unknown>;
+      };
+    })?.registration?.afterVerification;
+    await expect(afterVerification?.({ context: null, user: { id: "auth-existing" } }))
+      .resolves.toEqual({ userId: "auth-existing" });
+    const disabledPasskey = authRuntimeOptions({
+      ...envWithSecret("x".repeat(32)),
+      AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED: "false",
+    }).plugins?.find((plugin) => plugin.id === "passkey");
+    const disabledAfterVerification = (disabledPasskey?.options as {
+      registration?: {
+        afterVerification?: (input: { context: string | null; user: { id: string } }) => Promise<unknown>;
+      };
+    })?.registration?.afterVerification;
+    await expect(disabledAfterVerification?.({
+      context: "78d2594f-6ef2-4d59-b8de-d42366a4c420",
+      user: { id: "auth-recovery" },
+    })).rejects.toMatchObject({ body: { code: "passkey_recovery_invalid" } });
 
     const github = options.socialProviders?.github as {
       requireEmailVerification?: boolean;
