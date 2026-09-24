@@ -810,7 +810,7 @@ export function useMapEditorFormState() {
       } else if (mapEditor?.resourceId) {
         updateSiteLibraryEntry(mapEditor.resourceId, {
           name: trimmedName,
-          description: descriptionDraft.trim() || undefined,
+          description: descriptionDraft.trim(),
           position: { lat: saveLat, lon: saveLon },
           groundElevationM: saveGround,
           antennaHeightM: antennaDraft,
@@ -945,7 +945,7 @@ export function useMapEditorFormState() {
     try {
       updateSimulationPresetEntry(mapEditor.resourceId, {
         name: trimmedName,
-        description: descriptionDraft.trim() || undefined,
+        description: descriptionDraft.trim(),
         visibility: normalizedVisibility,
         sharedWith,
         simulationDefaultsOverrideEnabled,

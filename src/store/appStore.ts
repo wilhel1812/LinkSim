@@ -153,6 +153,14 @@ const markDirtySim = (id: string): void => {
   dirtySimIds.add(id);
 };
 
+const resolveDescriptionUpdate = (
+  currentDescription: string | undefined,
+  descriptionPatch: string | undefined,
+): string | undefined =>
+  typeof descriptionPatch === "string"
+    ? descriptionPatch.trim() || undefined
+    : currentDescription;
+
 const resetSyncRevisions = (): void => {
   localMutationRevision = 0;
   syncedMutationRevision = 0;
@@ -2675,6 +2683,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           return {
             ...entry,
             ...patch,
+            description: resolveDescriptionUpdate(entry.description, patch.description),
             position: {
               ...entry.position,
               ...(patch.position ?? {}),
@@ -3350,8 +3359,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
         const nextName = typeof patch.name === "string" ? patch.name.trim() : preset.name;
-        const nextDescription =
-          typeof patch.description === "string" ? patch.description.trim() || undefined : preset.description;
+        const nextDescription = resolveDescriptionUpdate(preset.description, patch.description);
         const nextSlug = slugifyValue(nextName || preset.name);
         const aliasSet = new Set([
           ...(preset.slug ? [slugifyValue(preset.slug)] : []),
