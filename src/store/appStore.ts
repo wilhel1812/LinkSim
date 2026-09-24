@@ -347,13 +347,16 @@ const detachDeletedSiteLibraryReferences = <T extends { libraryEntryId?: string 
 const detachDeletedSiteReferencesFromPresets = (
   presets: SimulationPreset[],
   deletedIds: ReadonlySet<string>,
-): SimulationPreset[] => presets.map((preset) => ({
-  ...preset,
-  snapshot: {
-    ...preset.snapshot,
-    sites: detachDeletedSiteLibraryReferences(preset.snapshot.sites, deletedIds),
-  },
-}));
+): SimulationPreset[] => presets.map((preset) => {
+  if (!Array.isArray(preset.snapshot?.sites)) return preset;
+  return {
+    ...preset,
+    snapshot: {
+      ...preset.snapshot,
+      sites: detachDeletedSiteLibraryReferences(preset.snapshot.sites, deletedIds),
+    },
+  };
+});
 
 type EditableSyncPayloadInfo = {
   payload: SyncPayload;
@@ -745,6 +748,18 @@ const quarantineLibraryRecords = (rejected: RejectedLibraryRecord[], source: str
   } catch (error) {
     console.error("[appStore] Failed to quarantine malformed Library records:", error);
   }
+};
+
+const partitionTrustedCloudLibrary = (bundle: {
+  siteLibrary: unknown[];
+  simulationPresets: unknown[];
+}): SyncPayload => {
+  const partitioned = partitionLibraryPayload(bundle);
+  quarantineLibraryRecords(partitioned.rejected, "trusted-cloud");
+  return {
+    siteLibrary: partitioned.siteLibrary as SiteLibraryEntry[],
+    simulationPresets: partitioned.simulationPresets as SimulationPreset[],
+  };
 };
 
 
@@ -1438,9 +1453,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       })();
       console.log("[appStore] Fetching cloud library...", lastFetchedAt ? `(delta since ${lastFetchedAt})` : "(full)");
       const cloud = await fetchCloudLibrary(lastFetchedAt ? { since: lastFetchedAt } : undefined);
+      const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
-        sites: cloud.siteLibrary.length,
-        simulations: cloud.simulationPresets.length,
+        sites: trustedCloud.siteLibrary.length,
+        simulations: trustedCloud.simulationPresets.length,
         isDelta: cloud.isDelta,
       });
 
@@ -1449,9 +1465,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const deletedSiteIds = new Set([...cloud.deletedSiteIds, ...cloud.removedSiteIds]);
         get().applyDeletedSiteTombstones([...cloud.deletedSiteIds, ...cloud.removedSiteIds]);
         get().applyDeletedSimulationTombstones([...cloud.deletedSimulationIds, ...cloud.removedSimulationIds]);
-        const deltaSites = cloud.siteLibrary as SiteLibraryEntry[];
+        const deltaSites = trustedCloud.siteLibrary;
         const deltaSims = detachDeletedSiteReferencesFromPresets(
-          cloud.simulationPresets as SimulationPreset[],
+          trustedCloud.simulationPresets,
           deletedSiteIds,
         );
         get().importLibraryData({ siteLibrary: deltaSites, simulationPresets: deltaSims }, "merge");
@@ -1484,10 +1500,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { currentUser, importLibraryData, loadSimulationPreset, selectScenario } = get();
       let remotePayloadDigest: string | null = null;
 
-      const cloudSites = Array.isArray(cloud.siteLibrary) ? cloud.siteLibrary as SiteLibraryEntry[] : [];
+      const cloudSites = trustedCloud.siteLibrary;
       const deletedSiteIds = new Set([...cloud.deletedSiteIds, ...cloud.removedSiteIds]);
       const cloudSims = detachDeletedSiteReferencesFromPresets(
-        Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [],
+        trustedCloud.simulationPresets,
         deletedSiteIds,
       );
       get().applyDeletedSiteTombstones([...cloud.deletedSiteIds, ...cloud.removedSiteIds]);
@@ -1530,8 +1546,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           buildEditableSyncPayloadInfo(fixedCloudSites, fixedCloudSims, currentUser).payload,
         );
       } else {
-        const cloudPresets =
-          (cloud.simulationPresets as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"] | undefined) ?? [];
+        const cloudPresets = trustedCloud.simulationPresets;
 
         console.log("[appStore] Merging cloud data with local...");
         const result = importLibraryData(
@@ -1816,12 +1831,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SYNC_DIGEST_KEY, payloadDigest);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
+      const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
-        sites: cloud.siteLibrary.length,
-        simulations: cloud.simulationPresets.length,
+        sites: trustedCloud.siteLibrary.length,
+        simulations: trustedCloud.simulationPresets.length,
       });
       const cloudPresets = detachDeletedSiteReferencesFromPresets(
-        (cloud.simulationPresets as SimulationPreset[] | undefined) ?? [],
+        trustedCloud.simulationPresets,
         new Set([...cloud.deletedSiteIds, ...cloud.removedSiteIds]),
       ) as Parameters<typeof importLibraryData>[0]["simulationPresets"];
       get().applyDeletedSiteTombstones([...cloud.deletedSiteIds, ...cloud.removedSiteIds]);
@@ -1842,7 +1858,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log("[appStore] Merging cloud data with local...");
       const result = importLibraryData(
         {
-          siteLibrary: (cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"])
+          siteLibrary: (trustedCloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"])
             ?.filter((entry) => !locallyChangedSiteIds.has(entry.id)),
           simulationPresets: cloudPresets?.filter((entry) => !locallyChangedSimulationIds.has(entry.id)),
         },

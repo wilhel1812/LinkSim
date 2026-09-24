@@ -200,6 +200,19 @@ describe("MapView user location flow", () => {
     });
   });
 
+  it("uses the existing unavailable state when only WebGL 1 is available", () => {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: vi.fn((contextId: string) => contextId === "webgl" ? {} : null),
+    });
+
+    renderMapView();
+
+    expect(screen.getByRole("heading", { name: "Map unavailable" })).toBeInTheDocument();
+    expect(screen.getByText(/WebGL2 is required/)).toBeInTheDocument();
+    expect(screen.queryByTestId("mock-map")).not.toBeInTheDocument();
+  });
+
   it("switches between automatic, manual start, and manual stop controls", () => {
     const cancelTerrainLoad = vi.fn();
     useAppStore.setState({ cancelTerrainLoad });
