@@ -765,9 +765,28 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     const db = new FakeDb();
     const env = { DB: db, HISTORY_DETAILS_COMPRESSION: compression } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
     const actor = { id: "owner-1", isAdmin: false, isModerator: false };
-    const before = { id: "sim-compact", name: "Compact", visibility: "private" as const, snapshot: { sites: Array.from({ length: 40 }, (_, id) => ({ id, name: "Synthetic site", position: { lat: 60, lon: 10 } })) } };
+    const before = {
+      id: "sim-compact",
+      name: "Compact",
+      visibility: "private" as const,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        sites: Array.from({ length: 40 }, (_, id) => ({
+          id: `site-${id}`,
+          name: "Synthetic site",
+          position: { lat: 60, lon: 10 },
+          groundElevationM: 100,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        })),
+        links: [],
+      },
+    };
     await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [before] });
-    const after = { ...before, name: "Compact renamed", snapshot: { sites: [] } };
+    const after = { ...before, name: "Compact renamed", snapshot: { sites: [], links: [] } };
     await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [after] });
     const change = db.resourceChanges.at(-1)!;
     const stored = String(change.details_json);
@@ -1533,6 +1552,14 @@ describe("resource change authorization", () => {
           { userId: "viewer-1", role: "viewer" },
           { userId: "editor-1", role: "editor" },
         ],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        position: { lat: 60, lon: 10 },
+        groundElevationM: 100,
+        antennaHeightM: 10,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
       }),
     });
     db.siteRoles.set("site-1:viewer-1", "viewer");
@@ -1549,6 +1576,8 @@ describe("resource change authorization", () => {
         name: "Private Simulation",
         visibility: "private",
         sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        snapshot: { sites: [], links: [], systems: [], networks: [] },
       }),
     });
     db.simulationRoles.set("sim-1:viewer-1", "viewer");
@@ -1599,6 +1628,13 @@ describe("resource change authorization", () => {
             { userId: "editor-1", role: "editor" },
           ],
           position: { lat: 60, lon: 10 },
+          createdAt: "2026-01-01T00:00:00.000Z",
+          groundElevationM: 100,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
         }),
       },
       {
@@ -1615,6 +1651,8 @@ describe("resource change authorization", () => {
           name: "Private Simulation",
           visibility: "private",
           sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: { sites: [], links: [], systems: [], networks: [] },
         }),
       },
     );
@@ -1722,6 +1760,44 @@ describe("resource change authorization", () => {
     await expect(revertResourceFromChangeCopy(env, "site", "site-1", 1, actor("editor-1")))
       .resolves.toEqual({ ok: true });
     expect(db.resourceChanges.at(-1)?.note).toBe("Revert copy from change #1");
+  });
+
+  it.each([
+    ["site", "site-1", 1],
+    ["simulation", "sim-1", 2],
+  ] as const)("fails a %s revert closed when history only contains metadata", async (kind, resourceId, changeId) => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof revertResourceFromChangeCopy>[0];
+    const rows = kind === "site" ? db.sites : db.simulations;
+    const change = db.resourceChanges.find((candidate) => candidate.id === changeId);
+    change!.snapshot_json = JSON.stringify({
+      id: resourceId,
+      name: kind === "site" ? "Private Site" : "Private Simulation",
+      visibility: "private",
+      sharedWith: [],
+    });
+    const beforePayload = rows.get(resourceId)?.payload_json;
+    const beforeHistory = structuredClone(db.resourceChanges);
+
+    await expect(revertResourceFromChangeCopy(env, kind, resourceId, changeId, actor("owner-1")))
+      .resolves.toEqual({ ok: false, reason: "snapshot_incomplete" });
+
+    expect(rows.get(resourceId)?.payload_json).toBe(beforePayload);
+    expect(db.resourceChanges).toEqual(beforeHistory);
+  });
+
+  it("fails a non-object history snapshot closed without writing", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof revertResourceFromChangeCopy>[0];
+    db.resourceChanges[1]!.snapshot_json = "null";
+    const beforeResource = structuredClone(db.simulations.get("sim-1"));
+    const beforeHistory = structuredClone(db.resourceChanges);
+
+    await expect(revertResourceFromChangeCopy(env, "simulation", "sim-1", 2, actor("owner-1")))
+      .resolves.toEqual({ ok: false, reason: "snapshot_invalid" });
+
+    expect(db.simulations.get("sim-1")).toEqual(beforeResource);
+    expect(db.resourceChanges).toEqual(beforeHistory);
   });
 
   it("does not disclose whether a missing resource has historical rows", async () => {

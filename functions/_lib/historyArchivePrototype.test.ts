@@ -18,7 +18,11 @@ class Bucket {
 const setup = () => {
   const db = new SqliteD1();
   db.db.exec('ALTER TABLE resource_changes ADD COLUMN archive_key TEXT; ALTER TABLE resource_changes ADD COLUMN archive_digest TEXT');
-  const snapshot = JSON.stringify({ id:'sim', name:'Synthetic', ownerUserId:'owner', visibility:'private', sharedWith:[], snapshot:{sites:[], padding:'x'.repeat(4096)} });
+  const snapshot = JSON.stringify({
+    id:'sim', name:'Synthetic', ownerUserId:'owner', visibility:'private', sharedWith:[],
+    updatedAt:'2026-09-17T00:00:00.000Z',
+    snapshot:{sites:[],links:[],padding:'x'.repeat(4096)},
+  });
   const details = JSON.stringify({ changedFields:['snapshot','visibility'], diff:{snapshot:{before:{old:true},after:JSON.parse(snapshot).snapshot},visibility:{before:'public',after:'private'},sharedWith:{before:[{userId:'reader',role:'viewer'}],after:[]}} });
   db.db.exec("INSERT INTO users(id,username) VALUES('owner','owner'),('reader','reader')");
   db.db.prepare("INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,note,details_json,snapshot_json) VALUES(1,'simulation','sim','updated','owner','2026-09-17','Updated',?,?)").run(details,snapshot);
@@ -100,6 +104,10 @@ it('preserves real Library recovery and authorized history listing, and reverts 
     expect(await revertResourceFromChangeCopy(archiveEnabledEnv,'simulation','sim',1,actor)).toMatchObject({ok:true});
     const reverted=f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get() as {payload_json:string};
     expect(JSON.parse(reverted.payload_json).snapshot.padding).toBe('x'.repeat(4096));
+    const freshLibrary=await fetchLibraryForUser(env,'owner');
+    expect(freshLibrary.simulationPresets).toEqual([
+      expect.objectContaining({id:'sim',snapshot:expect.objectContaining({padding:'x'.repeat(4096)})}),
+    ]);
     expect(f.row().archive_key).not.toBeNull();
     expect(await restoreHistoryRow(f.env,1)).toBe(true);
   }finally{f.db.db.close();}
@@ -109,9 +117,15 @@ it('keeps full Library recovery and both revert paths usable with mixed archived
   const f=setup();try{
     const actor={id:'owner',isAdmin:false,isModerator:false};
     const env={DB:f.env.DB,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'} as Parameters<typeof upsertLibrarySnapshot>[0];
-    const inline=JSON.stringify({id:'sim',name:'Inline revision',ownerUserId:'owner',visibility:'private',sharedWith:[],snapshot:{sites:[]}});
+    const inline=JSON.stringify({
+      id:'sim',name:'Inline revision',ownerUserId:'owner',visibility:'private',sharedWith:[],
+      updatedAt:'2026-09-18T00:00:00.000Z',snapshot:{sites:[],links:[]},
+    });
     f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Current','private','active',?,'2026-09-18')")
-      .run(JSON.stringify({id:'sim',name:'Current',ownerUserId:'owner',visibility:'private',sharedWith:[],snapshot:{sites:[]}}));
+      .run(JSON.stringify({
+        id:'sim',name:'Current',ownerUserId:'owner',visibility:'private',sharedWith:[],
+        updatedAt:'2026-09-18T00:00:00.000Z',snapshot:{sites:[],links:[]},
+      }));
     f.db.db.prepare("INSERT INTO resource_changes(id,resource_kind,resource_id,action,actor_user_id,changed_at,snapshot_json) VALUES(2,'simulation','sim','updated','owner','2026-09-18',?)")
       .run(inline);
     await archiveHistoryPage(f.env,{apply:true});
@@ -137,6 +151,29 @@ it('keeps full Library recovery and both revert paths usable with mixed archived
     expect(f.bucket.gets).toBe(getsAfterArchivedRevert,'inline revert must not need R2');
     expect(JSON.parse(String(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()!.payload_json)).name).toBe('Inline revision');
     expect((await fetchLibraryForUser(env,'owner')).simulationPresets.map((entry)=>entry.id)).toEqual(['sim']);
+  }finally{f.db.db.close();}
+});
+it('fails an archived metadata-only revision closed without changing the resource or history', async()=>{
+  const {revertResourceFromChangeCopy}=await import('./db');
+  const f=setup();try{
+    f.db.db.prepare("INSERT INTO simulations(id,owner_user_id,name,visibility,status,payload_json,updated_at) VALUES('sim','owner','Current','private','active',?,'2026-09-18')")
+      .run(f.snapshot);
+    await archiveHistoryPage(f.env,{apply:true});
+    const archived=f.row() as {archive_key:string;details_json:string;snapshot_json:string};
+    const metadata=JSON.stringify({id:'sim',name:'Synthetic',ownerUserId:'owner',visibility:'private',sharedWith:[]});
+    const raw=JSON.stringify({version:1,scope:'synthetic-staging',id:1,snapshot_json:metadata,details_json:archived.details_json});
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw))),
+      (byte)=>byte.toString(16).padStart(2,'0')).join('');
+    f.bucket.objects.set(archived.archive_key,raw);
+    f.db.db.prepare('UPDATE resource_changes SET snapshot_json=?,archive_digest=? WHERE id=1').run(metadata,digest);
+    const beforeResource=f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get();
+    const beforeHistory=f.db.db.prepare('SELECT COUNT(*) AS count FROM resource_changes').get();
+    const env={DB:f.env.DB,HISTORY_BUCKET:f.env.BUCKET,HISTORY_SCOPE:'synthetic-staging'} as Parameters<typeof revertResourceFromChangeCopy>[0];
+
+    expect(await revertResourceFromChangeCopy(env,'simulation','sim',1,{id:'owner',isAdmin:false,isModerator:false}))
+      .toEqual({ok:false,reason:'snapshot_incomplete'});
+    expect(f.db.db.prepare("SELECT payload_json FROM simulations WHERE id='sim'").get()).toEqual(beforeResource);
+    expect(f.db.db.prepare('SELECT COUNT(*) AS count FROM resource_changes').get()).toEqual(beforeHistory);
   }finally{f.db.db.close();}
 });
 it('one concurrent archiver wins and an ambiguous committed update keeps its object',async()=>{
