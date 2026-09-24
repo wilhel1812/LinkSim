@@ -28,6 +28,7 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
+import { configureMapLibreWorker } from "../lib/maplibreWorker";
 import {
   antennaPatternSignature,
   resolvePreviewSiteOrientations,
@@ -126,6 +127,8 @@ import {
   initialSimulationOverlayHandoffState,
   reduceSimulationOverlayHandoff,
 } from "../lib/simulationOverlayHandoff";
+
+configureMapLibreWorker();
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",

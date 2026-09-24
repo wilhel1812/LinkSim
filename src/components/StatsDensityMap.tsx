@@ -15,6 +15,9 @@ import { MapControlButton } from "./ui/MapControlButton";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 import { BasemapThemeTint } from "./BasemapThemeTint";
 import { supportsWebgl2 } from "../lib/webgl";
+import { configureMapLibreWorker } from "../lib/maplibreWorker";
+
+configureMapLibreWorker();
 
 type StatsDensityMapProps = {
   bins: StatsPayload["geography"]["bins"];
