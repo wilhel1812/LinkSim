@@ -124,6 +124,46 @@ describe("appStore delta sync", () => {
     vi.useRealTimers();
   });
 
+  it("quarantines a malformed cloud Simulation before detaching deleted Site references", async () => {
+    const malformedSimulation = {
+      id: "sim-malformed",
+      name: "Malformed Simulation",
+      visibility: "private",
+      sharedWith: [],
+      ownerUserId: "owner-1",
+      effectiveRole: "owner",
+      status: "active",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: { padding: {} },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({
+      siteLibrary: [],
+      simulationPresets: [malformedSimulation, ...cloneJson(baselinePayload.simulationPresets)],
+    })));
+
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(),
+      authState: "signed_in",
+      isOnline: true,
+      siteLibrary: [],
+      simulationPresets: [],
+      syncStatus: "synced",
+      syncPending: false,
+      syncBusy: false,
+      syncErrorMessage: null,
+      isInitializing: false,
+    });
+
+    await useAppStore.getState().initializeCloudSync();
+
+    expect(useAppStore.getState().syncErrorMessage).toBeNull();
+    expect(useAppStore.getState().simulationPresets.map((preset) => preset.id)).toEqual(["sim-1"]);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-quarantine-v1") ?? "[]")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "sim-malformed" })]),
+    );
+  });
+
   it("includes a newly added site in the next delta sync payload", async () => {
     const fetchBodies: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
