@@ -101,6 +101,18 @@ const baselinePayload: any = {
   ],
 };
 
+const malformedSimulation = {
+  id: "sim-malformed",
+  name: "Malformed Simulation",
+  visibility: "private",
+  sharedWith: [],
+  ownerUserId: "owner-1",
+  effectiveRole: "owner",
+  status: "active",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  snapshot: { padding: {} },
+};
+
 const makeResponse = (body: unknown) =>
   ({
     ok: true,
@@ -125,17 +137,6 @@ describe("appStore delta sync", () => {
   });
 
   it("quarantines a malformed cloud Simulation before detaching deleted Site references", async () => {
-    const malformedSimulation = {
-      id: "sim-malformed",
-      name: "Malformed Simulation",
-      visibility: "private",
-      sharedWith: [],
-      ownerUserId: "owner-1",
-      effectiveRole: "owner",
-      status: "active",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      snapshot: { padding: {} },
-    };
     vi.stubGlobal("fetch", vi.fn(async () => makeResponse({
       siteLibrary: [],
       simulationPresets: [malformedSimulation, ...cloneJson(baselinePayload.simulationPresets)],
@@ -159,6 +160,91 @@ describe("appStore delta sync", () => {
 
     expect(useAppStore.getState().syncErrorMessage).toBeNull();
     expect(useAppStore.getState().simulationPresets.map((preset) => preset.id)).toEqual(["sim-1"]);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-quarantine-v1") ?? "[]")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "sim-malformed" })]),
+    );
+  });
+
+  it("quarantines malformed delta records while preserving valid records and tombstones", async () => {
+    const deletedSite = {
+      id: "site-deleted", name: "Deleted Site", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({
+      siteLibrary: [],
+      simulationPresets: [malformedSimulation, ...cloneJson(baselinePayload.simulationPresets)],
+      deletedSiteIds: [deletedSite.id],
+      deletedSimulationIds: [],
+      removedSiteIds: [],
+      removedSimulationIds: [],
+      isDelta: true,
+    })));
+
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [deletedSite], simulationPresets: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, syncErrorMessage: null, isInitializing: false,
+    });
+
+    await useAppStore.getState().initializeCloudSync();
+
+    expect(useAppStore.getState().syncErrorMessage).toBeNull();
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(useAppStore.getState().simulationPresets.map((preset) => preset.id)).toEqual(["sim-1"]);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-quarantine-v1") ?? "[]")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "sim-malformed" })]),
+    );
+  });
+
+  it("quarantines malformed post-push records without losing valid manual-sync data", async () => {
+    const deletedSite = {
+      id: "site-deleted", name: "Deleted Site", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const localSimulation = { ...cloneJson(baselinePayload.simulationPresets[0]), name: "Locally edited" };
+    const remoteSimulation = {
+      ...cloneJson(baselinePayload.simulationPresets[0]),
+      id: "sim-remote",
+      name: "Remote Simulation",
+      slug: "remote-simulation",
+    };
+    let getCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET").toUpperCase() === "PUT") {
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      getCount += 1;
+      if (getCount === 3) {
+        return makeResponse({
+          siteLibrary: [],
+          simulationPresets: [malformedSimulation, localSimulation, remoteSimulation],
+          deletedSiteIds: [deletedSite.id], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+        });
+      }
+      return makeResponse({
+        ...cloneJson(baselinePayload),
+        deletedSiteIds: [], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+      });
+    }));
+
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, syncErrorMessage: null, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.setState({ siteLibrary: [deletedSite], simulationPresets: [localSimulation] });
+
+    await useAppStore.getState().performManualCloudSync();
+
+    expect(useAppStore.getState().syncErrorMessage).toBeNull();
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(useAppStore.getState().simulationPresets.map((preset) => preset.id).sort()).toEqual(["sim-1", "sim-remote"]);
+    expect(useAppStore.getState().simulationPresets.find((preset) => preset.id === "sim-1")?.name).toBe("Locally edited");
     expect(JSON.parse(storage.mock.getItem("linksim-library-quarantine-v1") ?? "[]")).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "sim-malformed" })]),
     );
