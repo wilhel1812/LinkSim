@@ -85,7 +85,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -95,8 +95,8 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
     "vite": "^7.3.5",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.120.1"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.131.0"
   },
   "overrides": {
     "@better-auth/core": "1.7.3",

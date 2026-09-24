@@ -168,12 +168,11 @@ client comes from the pinned Better Auth passkey plugin; it reuses LinkSim's
 does not prove humanity. Delete test passkeys, the Worker, D1 database and test
 OAuth application after completing validation; expiry does not delete records.
 
-Dependency audit on 2026-09-10 found the new high-severity
-[sharp/libheif advisory](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) through
-Wrangler/Miniflare. Image processing is not used by this probe and those tools are
-not deployed in the auth Worker. The auth dependencies had no audit findings.
-Keep this toolchain advisory visible and do not use image-transformation tooling
-with untrusted images; do not blindly apply the suggested Wrangler downgrade.
+Dependency audit on 2026-09-24 is clean after updating the experiment to the
+first patched Wrangler release for the high-severity
+[sharp/libheif advisory](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c).
+Image processing remains unused by this probe, and the toolchain is not deployed
+in the auth Worker.
 
 ## Measured result: 2026-09-08
 
