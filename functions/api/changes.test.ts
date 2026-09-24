@@ -124,4 +124,35 @@ describe("api/changes", () => {
 
     expect(res.status).toBe(status);
   });
+
+  it.each(["snapshot_missing", "snapshot_invalid", "snapshot_incomplete"])(
+    "returns a safe operation-specific response for %s history",
+    async (reason) => {
+      revertResourceFromChangeCopyMock.mockResolvedValueOnce({ ok: false, reason });
+
+      const res = await onRequestPost(mkPostCtx(new Request("https://example.test/api/changes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "simulation", id: "sim-1", changeId: 7 }),
+      })));
+
+      expect(res.status).toBe(422);
+      await expect(res.json()).resolves.toEqual({
+        error: "This history entry cannot safely restore a complete Simulation.",
+      });
+    },
+  );
+
+  it("does not expose internal revert failure reasons", async () => {
+    revertResourceFromChangeCopyMock.mockResolvedValueOnce({ ok: false, reason: "simulation_name_taken" });
+
+    const res = await onRequestPost(mkPostCtx(new Request("https://example.test/api/changes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "simulation", id: "sim-1", changeId: 7 }),
+    })));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: "Revert could not be completed safely." });
+  });
 });

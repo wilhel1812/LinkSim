@@ -56,7 +56,7 @@ const seedCanonicalAccount = (database: SqliteD1) => {
     INSERT INTO simulation_roles VALUES ('sim-1', 'old-subject', 'viewer', '2026-01-01');
     INSERT INTO resource_changes VALUES (
       1, 'site', 'site-1', 'updated', 'old-subject', '2026-01-01', NULL, NULL,
-      '{"id":"site-1","name":"Historical Site","visibility":"shared","ownerUserId":"old-subject","createdByUserId":"old-subject","lastEditedByUserId":"old-subject","sharedWith":[{"userId":"old-subject","role":"admin"}]}'
+      '{"id":"site-1","name":"Historical Site","visibility":"shared","ownerUserId":"old-subject","createdByUserId":"old-subject","lastEditedByUserId":"old-subject","sharedWith":[{"userId":"old-subject","role":"admin"}],"createdAt":"2026-01-01T00:00:00.000Z","position":{"lat":60,"lon":10},"groundElevationM":100,"antennaHeightM":10,"txPowerDbm":20,"txGainDbi":2,"rxGainDbi":2,"cableLossDb":1}'
     );
     INSERT INTO simulation_path_leaderboard_entries
       (simulation_id, canonical_path_key, owner_user_id) VALUES ('sim-1', 'path-1', 'old-subject');

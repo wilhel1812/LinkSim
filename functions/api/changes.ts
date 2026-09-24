@@ -62,10 +62,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       isModerator: Boolean((me as { isModerator?: boolean }).isModerator),
     });
     if (!result.ok) {
+      const historyUnsafe = result.reason === "snapshot_missing"
+        || result.reason === "snapshot_invalid"
+        || result.reason === "snapshot_incomplete";
+      if (historyUnsafe) {
+        const resourceLabel = kind === "site" ? "Site" : "Simulation";
+        return withCors(request, json(
+          { error: `This history entry cannot safely restore a complete ${resourceLabel}.` },
+          { status: 422 },
+        ));
+      }
       const missing = result.reason === "missing";
+      const forbidden = result.reason === "forbidden";
       return withCors(request, json(
-        { error: missing ? "Resource not found" : result.reason ?? "Revert failed" },
-        { status: missing ? 404 : 403 },
+        { error: missing ? "Resource not found" : forbidden ? "Forbidden" : "Revert could not be completed safely." },
+        { status: missing ? 404 : forbidden ? 403 : 409 },
       ));
     }
     return withCors(request, json({ ok: true }));

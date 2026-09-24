@@ -17,6 +17,7 @@ import {
   LIBRARY_SIMULATION_MAX_BYTES,
   LIBRARY_SITE_MAX_BYTES,
   LibraryValidationError,
+  validateLibraryPayload,
 } from "../../src/lib/libraryLimits";
 import { thumbnailAvatarUrl } from "../../src/lib/avatarLimits";
 import { normalizeUserBasemapPreferences, type UserBasemapPreferences } from "../../src/lib/basemapPreferences";
@@ -3342,15 +3343,35 @@ export const revertResourceFromChangeCopy = async (
   }
   if (!snapshotJson) return { ok: false, reason: "snapshot_missing" };
 
-  let snapshot: CloudResourceRecord;
+  let parsedSnapshot: unknown;
   try {
-    snapshot = JSON.parse(snapshotJson) as CloudResourceRecord;
+    parsedSnapshot = JSON.parse(snapshotJson) as unknown;
   } catch {
     return { ok: false, reason: "snapshot_invalid" };
   }
+  if (!parsedSnapshot || typeof parsedSnapshot !== "object" || Array.isArray(parsedSnapshot)) {
+    return { ok: false, reason: "snapshot_invalid" };
+  }
+  const snapshot = parsedSnapshot as CloudResourceRecord;
   snapshot.id = resourceId;
 
-  const result = await upsertOwnedResource(env, kind, actor, snapshot);
+  let completeSnapshot: CloudResourceRecord;
+  try {
+    const validated = validateLibraryPayload({
+      siteLibrary: kind === "site" ? [snapshot] : [],
+      simulationPresets: kind === "simulation" ? [snapshot] : [],
+    });
+    completeSnapshot = (kind === "site"
+      ? validated.siteLibrary[0]
+      : validated.simulationPresets[0]) as CloudResourceRecord;
+  } catch (error) {
+    if (error instanceof LibraryValidationError) {
+      return { ok: false, reason: "snapshot_incomplete" };
+    }
+    throw error;
+  }
+
+  const result = await upsertOwnedResource(env, kind, actor, completeSnapshot);
   if (!result.ok) return result;
 
   await createResourceChange(
@@ -3365,7 +3386,7 @@ export const revertResourceFromChangeCopy = async (
         revertedFromChangeId: changeId,
         mode: "copy",
       },
-      snapshot: snapshot as Record<string, unknown>,
+      snapshot: completeSnapshot as Record<string, unknown>,
     },
   );
   return { ok: true };
