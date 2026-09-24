@@ -315,6 +315,66 @@ describe("appStore delta sync", () => {
     expect(fetchBodies).toHaveLength(1);
   });
 
+  it("syncs cleared Site and Simulation descriptions to the cloud payload", async () => {
+    const site = {
+      id: "site-described",
+      name: "Described Site",
+      description: "Temporary Site description",
+      ownerUserId: "owner-1",
+      effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      position: { lat: 60, lon: 11 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    const simulation = {
+      ...cloneJson(baselinePayload.simulationPresets[0]),
+      description: "Temporary Simulation description",
+    };
+    const pushedBodies: Array<{
+      siteLibrary: Array<{ id: string; description?: string }>;
+      simulationPresets: Array<{ id: string; description?: string }>;
+    }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        return makeResponse({ siteLibrary: [cloneJson(site)], simulationPresets: [cloneJson(simulation)] });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    }));
+
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [cloneJson(site)], simulationPresets: [cloneJson(simulation)],
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+
+    useAppStore.getState().updateSiteLibraryEntry(site.id, { description: "" });
+    useAppStore.getState().updateSimulationPresetEntry(simulation.id, { description: "" });
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(pushedBodies).toHaveLength(1));
+
+    expect(pushedBodies[0]?.siteLibrary).toEqual([expect.objectContaining({ id: site.id })]);
+    expect(pushedBodies[0]?.siteLibrary[0]?.description).toBeUndefined();
+    expect(pushedBodies[0]?.simulationPresets).toEqual([
+      expect.objectContaining({ id: simulation.id }),
+    ]);
+    expect(pushedBodies[0]?.simulationPresets[0]?.description).toBeUndefined();
+  });
+
   it("manual recovery restores an unchanged record missing from the cloud despite no dirty changes", async () => {
     const bodies: Array<{ simulationPresets: Array<{ id: string }> }> = [];
     let gets = 0;

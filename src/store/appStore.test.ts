@@ -366,6 +366,58 @@ describe("appStore auth guards", () => {
     expect(state.simulationPresets[0]?.snapshot.sites.some((site) => site.id === "site-1")).toBe(false);
   });
 
+  it("distinguishes omitted descriptions from explicit clears for Sites and Simulations", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => ({
+        ...entry,
+        description: "Site description",
+        effectiveRole: "owner" as const,
+      })),
+      simulationPresets: state.simulationPresets.map((preset) => ({
+        ...preset,
+        description: "Simulation description",
+        effectiveRole: "owner" as const,
+      })),
+    }));
+
+    useAppStore.getState().updateSiteLibraryEntry("lib-2", { name: "Beta renamed" });
+    useAppStore.getState().updateSimulationPresetEntry("sim-1", { name: "Simulation renamed" });
+
+    expect(useAppStore.getState().siteLibrary.find((entry) => entry.id === "lib-2")?.description).toBe(
+      "Site description",
+    );
+    expect(useAppStore.getState().simulationPresets[0]?.description).toBe("Simulation description");
+
+    useAppStore.getState().updateSiteLibraryEntry("lib-2", { description: "" });
+    useAppStore.getState().updateSimulationPresetEntry("sim-1", { description: "" });
+
+    expect(useAppStore.getState().siteLibrary.find((entry) => entry.id === "lib-2")?.description).toBeUndefined();
+    expect(useAppStore.getState().simulationPresets[0]?.description).toBeUndefined();
+    expect(
+      JSON.parse(storage.mock.getItem("rmw-site-library-v1") ?? "[]").find(
+        (entry: { id: string }) => entry.id === "lib-2",
+      )?.description,
+    ).toBeUndefined();
+    expect(JSON.parse(storage.mock.getItem("rmw-sim-presets-v1") ?? "[]")[0]?.description).toBeUndefined();
+  });
+
   it("tracks a pointing target and detaches at the last orientation when the target is deleted", () => {
     useAppStore.getState().setCurrentUser({
       id: "owner-1",
