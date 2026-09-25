@@ -14,6 +14,8 @@ const fail = () => { throw new Error('Production history plan must create only t
 
 export function validateProductionHistoryPlan(plan) {
   if (!plan || typeof plan !== 'object' || !Array.isArray(plan.resource_changes)) fail();
+  if (plan.resource_drift !== undefined &&
+      (!Array.isArray(plan.resource_drift) || plan.resource_drift.length !== 0)) fail();
   const changes = plan.resource_changes.filter(resource =>
     JSON.stringify(resource?.change?.actions) !== JSON.stringify(['no-op']));
   if (changes.length !== 1) fail();

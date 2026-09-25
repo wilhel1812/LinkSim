@@ -71,6 +71,16 @@ describe('production history Terraform plan validation', () => {
         ...expected.resource_changes[0].change, actions: ['delete', 'create'],
       } }],
     }],
+    ['unrelated detected drift', {
+      ...expected,
+      resource_drift: [{
+        address: 'module.stack.cloudflare_pages_project.project',
+        mode: 'managed',
+        type: 'cloudflare_pages_project',
+        change: { actions: ['update'], after: { name: 'linksim' } },
+      }],
+    }],
+    ['a malformed drift report', { ...expected, resource_drift: {} }],
   ])('rejects %s', (_label, plan) => {
     expect(() => validateProductionHistoryPlan(plan)).toThrow(/production history plan/i);
   });
