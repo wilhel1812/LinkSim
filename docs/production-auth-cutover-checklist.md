@@ -36,7 +36,9 @@ the application boundary is verified.
 - [ ] Rehearse the existing production-to-staging archive copy with a read-only
   production credential and a separate staging-write credential. An empty bucket
   or inline-only export is not evidence; use the first genuine archived object
-  or obtain separate approval for one synthetic production-bucket object.
+  or obtain separate approval for one synthetic production-bucket object. Prefer
+  separately scoped short-lived R2 credentials and pass each credential's
+  session token through the documented staging-refresh environment variable.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
 - [ ] Re-run the complete account R2 inventory from the

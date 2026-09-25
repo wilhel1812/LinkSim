@@ -37,23 +37,45 @@ export async function copyArchivedRowsForStaging(sql, productionBucket, stagingB
   } finally { db.close(); }
 }
 
+export function getR2TransferCredentials(env = process.env) {
+  const accountId = env.R2_ACCOUNT_ID;
+  const sourceId = env.R2_HISTORY_SOURCE_ACCESS_KEY_ID;
+  const sourceSecret = env.R2_HISTORY_SOURCE_SECRET_ACCESS_KEY;
+  const sourceSession = env.R2_HISTORY_SOURCE_SESSION_TOKEN;
+  const stagingId = env.R2_HISTORY_STAGING_ACCESS_KEY_ID;
+  const stagingSecret = env.R2_HISTORY_STAGING_SECRET_ACCESS_KEY;
+  const stagingSession = env.R2_HISTORY_STAGING_SESSION_TOKEN;
+  const sameCredentials = sourceId === stagingId && sourceSecret === stagingSecret &&
+    (sourceSession ?? '') === (stagingSession ?? '');
+  if (!/^[a-f0-9]{32}$/.test(accountId ?? '') || !sourceId || !sourceSecret ||
+      !stagingId || !stagingSecret || sameCredentials) {
+    throw Error('Separate production-read and staging-write R2 credentials are required for archived history refresh');
+  }
+  return {
+    accountId,
+    source: {
+      accessKeyId: sourceId,
+      secretAccessKey: sourceSecret,
+      ...(sourceSession ? { sessionToken: sourceSession } : {}),
+    },
+    staging: {
+      accessKeyId: stagingId,
+      secretAccessKey: stagingSecret,
+      ...(stagingSession ? { sessionToken: stagingSession } : {}),
+    },
+  };
+}
+
 export async function copyArchivedRowsWithR2(sql) {
   let clients;
   let connectionPromise;
   const connect = () => connectionPromise ??= (async () => {
-    const accountId = process.env.R2_ACCOUNT_ID;
-    const sourceId = process.env.R2_HISTORY_SOURCE_ACCESS_KEY_ID;
-    const sourceSecret = process.env.R2_HISTORY_SOURCE_SECRET_ACCESS_KEY;
-    const stagingId = process.env.R2_HISTORY_STAGING_ACCESS_KEY_ID;
-    const stagingSecret = process.env.R2_HISTORY_STAGING_SECRET_ACCESS_KEY;
-    if (!/^[a-f0-9]{32}$/.test(accountId ?? '') || !sourceId || !sourceSecret || !stagingId || !stagingSecret) {
-      throw Error('Separate production-read and staging-write R2 credentials are required for archived history refresh');
-    }
+    const credentials = getR2TransferCredentials();
     const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3');
-    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+    const endpoint = `https://${credentials.accountId}.r2.cloudflarestorage.com`;
     clients = {
-      source: new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId: sourceId, secretAccessKey: sourceSecret } }),
-      staging: new S3Client({ region: 'auto', endpoint, credentials: { accessKeyId: stagingId, secretAccessKey: stagingSecret } }),
+      source: new S3Client({ region: 'auto', endpoint, credentials: credentials.source }),
+      staging: new S3Client({ region: 'auto', endpoint, credentials: credentials.staging }),
       GetObjectCommand, HeadObjectCommand, PutObjectCommand,
     };
     return clients;
