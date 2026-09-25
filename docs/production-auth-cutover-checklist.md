@@ -96,6 +96,46 @@ the application boundary is verified.
   auth active and changes only `accessBoundary` to `legacy`. Stage and validate
   both before the production freeze.
 
+### Protected canary configuration
+
+The dormant `.github/workflows/auth-canary.yml` workflow and
+`scripts/auth-canary.mjs` probe implement the required cadence without adding a
+Cloudflare Health Check, which is unavailable on the Free plan. The workflow
+does nothing on scheduled runs until all three protected environment values are
+present. It rejects redirects, requires the exact LinkSim user ID from
+`/api/me`, retries once, and never includes the cookie or response body in its
+logs or incident issue.
+
+Create separate `staging-canary` and `production-canary` GitHub environments.
+Each holds:
+
+- secret `AUTH_CANARY_COOKIE`: the complete Cookie header containing only the
+  Better Auth session cookie;
+- variable `AUTH_CANARY_EXPECTED_USER_ID`: the stable LinkSim ID of the ordinary
+  canary account;
+- variable `AUTH_CANARY_CUTOVER_AT`: the exact UTC cutover timestamp. For the
+  staging rehearsal, use the rehearsal start time and remove the values after
+  verification.
+
+Use a dedicated ordinary account without administrator rights or owned user
+data where practical. Create the session through a normal library-managed
+GitHub or passkey sign-in; do not manufacture a session or cookie. Confirm its
+server-side expiry covers the monitoring period. Rotation means signing in
+normally again, replacing the environment secret, verifying a single probe,
+then revoking the old session. Removing the environment secret and revoking the
+session retires the canary.
+
+Before the production window, run the probe against staging with a real
+staging session and record its workflow or command evidence. At cutover, start
+the protected `first-hour` workflow immediately after the application boundary
+is verified. The scheduled workflow supplies the five-minute and fifteen-minute
+phases from the recorded cutover timestamp. A final failure creates or updates
+one signed target-specific GitHub issue and links the protected workflow run.
+A production failure is critical and starts the ordered rollback; a staging
+failure blocks the rehearsal without declaring a production incident. Scheduled
+runs stop probing after seven days, but the workflow should be disabled or its
+protected values removed after the first-week review.
+
 ## Start the 90-day claim window
 
 At the approved cutover, record one UTC timestamp. Set
