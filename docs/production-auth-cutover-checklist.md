@@ -57,8 +57,9 @@ the application boundary is verified.
 - [ ] Configure and verify a protected post-cutover authentication canary before
   the window. Run it once per minute through the first hour, once every five
   minutes for the rest of the first day, and once every fifteen minutes through
-  the first week. A canary `401`/`403` that still fails after one retry starts
-  the ordered rollback regardless of natural request volume. Record where its
+  the first week. A canary timeout, connection failure, retryable `5xx`, or
+  unexpected `401`/`403` that still fails after one retry starts the ordered
+  rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
 - [ ] Complete and record the stable-staging VoiceOver spot-check required by
