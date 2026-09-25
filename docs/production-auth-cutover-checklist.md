@@ -61,8 +61,11 @@ the application boundary is verified.
   silent percentage reinterpretation.
 - [ ] Configure and verify a protected post-cutover authentication canary before
   the window. Run it once per minute through the first hour, once every five
-  minutes for the rest of the first day, and once every fifteen minutes through
-  the first week. A canary timeout, connection failure, retryable `5xx`, or
+  minutes for the rest of the first day, and at least once every fifteen minutes
+  through the first week. The protected workflow runs every five minutes during
+  that week to tolerate ordinary GitHub Actions queue delays and reduce the risk
+  of missing a fifteen-minute window.
+  A canary timeout, connection failure, retryable `5xx`, or
   unexpected `401`/`403` that still fails after one retry starts the ordered
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
@@ -103,10 +106,18 @@ The dormant `.github/workflows/auth-canary.yml` workflow and
 Cloudflare Health Check, which is unavailable on the Free plan. The workflow
 does nothing on scheduled runs until all three protected environment values are
 present. It rejects redirects, requires the exact LinkSim user ID from
-`/api/me`, retries once, and never includes the cookie or response body in its
-logs or incident issue.
+`/api/me`, retries rollback-qualifying failures once, and never includes the
+cookie or response body in its logs or incident issue. Other response failures
+fail the workflow for diagnosis without opening a rollback incident.
 
 Create separate `staging-canary` and `production-canary` GitHub environments.
+Under each environment's deployment branches and tags, choose **Selected
+branches and tags**. Add exactly one branch rule and no tag rules: `staging` for
+`staging-canary`, and `main` for `production-canary`. Do not choose **Protected
+branches only**, because both repository branches are protected and that option
+would expose each environment to both branches. This exact-branch protection is
+mandatory because a manually dispatched workflow definition runs from its
+selected ref before checking out the target branch.
 Each holds:
 
 - secret `AUTH_CANARY_COOKIE`: the complete Cookie header containing only the
@@ -128,9 +139,10 @@ session retires the canary.
 Before the production window, run the probe against staging with a real
 staging session and record its workflow or command evidence. At cutover, start
 the protected `first-hour` workflow immediately after the application boundary
-is verified. The scheduled workflow supplies the five-minute and fifteen-minute
-phases from the recorded cutover timestamp. A final failure creates or updates
-one signed target-specific GitHub issue and links the protected workflow run.
+is verified. The scheduled workflow runs every five minutes for the remaining
+monitoring period to tolerate queue delays. A rollback-qualifying final failure
+creates or updates one target-specific GitHub Actions issue and links the
+protected workflow run and exact checked-out revision.
 A production failure is critical and starts the ordered rollback; a staging
 failure blocks the rehearsal without declaring a production incident. Scheduled
 runs stop probing after seven days, but the workflow should be disabled or its

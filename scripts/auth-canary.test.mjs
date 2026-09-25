@@ -50,7 +50,60 @@ describe('authenticated production canary', () => {
     expect(message).not.toContain('private upstream details');
   });
 
-  it('rejects redirects, invalid JSON, and a different authenticated user', async () => {
+  it('marks unrelated client errors as non-rollback failures without retrying', async () => {
+    const fetchImpl = vi.fn(async () => new Response('not found', { status: 404 }));
+    let failure;
+    try {
+      await runAuthCanary({ ...options, fetchImpl });
+    } catch (error) {
+      failure = error;
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(failure).toMatchObject({
+      message: 'Authentication canary failed without a rollback trigger: LinkSim returned a non-rollback client error (HTTP 404).',
+      rollbackEligible: false,
+    });
+  });
+
+  it('retries a response-body transport failure without disclosing raw details', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: vi.fn(async () => { throw Error('raw transport internals'); }),
+    }));
+    let failure;
+    try {
+      await runAuthCanary({ ...options, fetchImpl });
+    } catch (error) {
+      failure = error;
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(failure).toMatchObject({
+      message: 'Authentication canary failed after retry: the authenticated profile response could not be read.',
+      rollbackEligible: true,
+    });
+    expect(failure.message).not.toContain('raw transport internals');
+  });
+
+  it('treats a cross-account identity as an immediate rollback trigger', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ user: { id: 'other-user' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    let failure;
+    try {
+      await runAuthCanary({ ...options, fetchImpl });
+    } catch (error) {
+      failure = error;
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(failure).toMatchObject({
+      message: 'Authentication canary found an immediate rollback trigger: LinkSim authenticated an unexpected LinkSim account.',
+      rollbackEligible: true,
+    });
+  });
+
+  it('rejects redirects and invalid JSON', async () => {
     await expect(runAuthCanary({
       ...options,
       fetchImpl: vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://login.example' } })),
@@ -59,13 +112,6 @@ describe('authenticated production canary', () => {
       ...options,
       fetchImpl: vi.fn(async () => new Response('not-json', { status: 200, headers: { 'content-type': 'text/plain' } })),
     })).rejects.toThrow('invalid JSON');
-    await expect(runAuthCanary({
-      ...options,
-      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ user: { id: 'other-user' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })),
-    })).rejects.toThrow('unexpected LinkSim account');
   });
 
   it('refuses an arbitrary endpoint and cookie header injection', async () => {
@@ -97,9 +143,10 @@ describe('production canary cadence', () => {
     expect(cadence(23 * 60)).toEqual({ due: true, phase: 'first-day' });
   });
 
-  it('selects one of every three five-minute ticks through day seven and then stops', () => {
+  it('runs every scheduled tick through day seven so queue delay cannot skip a fifteen-minute window', () => {
     expect(cadence(24 * 60)).toEqual({ due: true, phase: 'first-week' });
-    expect(cadence(24 * 60 + 5)).toEqual({ due: false, phase: 'first-week' });
+    expect(cadence(24 * 60 + 5)).toEqual({ due: true, phase: 'first-week' });
+    expect(cadence(24 * 60 + 10)).toEqual({ due: true, phase: 'first-week' });
     expect(cadence(24 * 60 + 15)).toEqual({ due: true, phase: 'first-week' });
     expect(cadence(7 * 24 * 60)).toEqual({ due: false, phase: 'complete' });
   });

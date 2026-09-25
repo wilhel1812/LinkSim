@@ -83,7 +83,17 @@ jobs:
           AUTH_CANARY_URL: ${{ github.event_name == 'schedule' && 'https://linksim.link/api/me' || (inputs.target == 'production' && 'https://linksim.link/api/me' || 'https://staging.linksim.link/api/me') }}
           AUTH_CANARY_COOKIE: ${{ secrets.AUTH_CANARY_COOKIE }}
           AUTH_CANARY_EXPECTED_USER_ID: ${{ vars.AUTH_CANARY_EXPECTED_USER_ID }}
-        run: node scripts/auth-canary.mjs probe
+        run: |
+          set +e
+          node scripts/auth-canary.mjs probe
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 1 ]; then
+            echo "rollback_eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$STATUS"
       - name: Monitor every minute through the first hour
         id: first_hour_probe
         if: steps.cadence.outputs.due == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'first-hour'
@@ -96,7 +106,18 @@ jobs:
           START_EPOCH=$(date +%s)
           for iteration in $(seq 1 60); do
             echo "Protected authentication canary $iteration/60"
+            set +e
             node scripts/auth-canary.mjs probe
+            STATUS=$?
+            set -e
+            if [ "$STATUS" -ne 0 ]; then
+              if [ "$STATUS" -eq 1 ]; then
+                echo "rollback_eligible=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
+              fi
+              exit "$STATUS"
+            fi
             if [ "$iteration" -lt 60 ]; then
               NEXT_EPOCH=$((START_EPOCH + iteration * 60))
               NOW_EPOCH=$(date +%s)
@@ -104,19 +125,17 @@ jobs:
               if [ "$DELAY" -gt 0 ]; then sleep "$DELAY"; fi
             fi
           done
+          echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
       - name: Open or update the canary incident
-        if: always() && steps.configuration.outputs.configured == 'true' && (steps.single_probe.outcome == 'failure' || steps.first_hour_probe.outcome == 'failure')
+        if: always() && steps.configuration.outputs.configured == 'true' && (steps.single_probe.outputs.rollback_eligible == 'true' || steps.first_hour_probe.outputs.rollback_eligible == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           CANARY_TARGET: ${{ github.event_name == 'schedule' && 'production' || inputs.target }}
           CANARY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CANARY_COMMIT: ${{ steps.revision.outputs.sha }}
         run: |
-          RUN_UUID=$(node -e 'console.log(crypto.randomUUID())')
-          node scripts/ai-provenance.mjs footer --agent Beacon --run "$RUN_UUID" --source "${CANARY_TARGET}-auth-canary-alert" --commit "$CANARY_COMMIT" > /tmp/canary-footer.json
           node - <<'NODE'
           const fs = require('fs');
-          const footer = JSON.parse(fs.readFileSync('/tmp/canary-footer.json', 'utf8'));
           const production = process.env.CANARY_TARGET === 'production';
           const title = production
             ? 'Production authentication canary failed'
@@ -128,23 +147,20 @@ jobs:
             `The protected ${process.env.CANARY_TARGET} authentication canary failed after its built-in retry.`,
             '',
             `Workflow evidence: ${process.env.CANARY_RUN_URL}`,
+            `Checked-out revision: ${process.env.CANARY_COMMIT}`,
             '',
             `${recovery} Inspect the protected workflow logs; do not paste or rotate the session cookie through this issue.`,
-            '',
-            footer.signature,
-            footer.marker,
             '',
           ].join('\n');
           fs.writeFileSync('/tmp/canary-incident.md', body, { mode: 0o600 });
           fs.writeFileSync('/tmp/canary-title.txt', `${title}\n`, { mode: 0o600 });
           NODE
-          node scripts/ai-provenance.mjs validate-artifact --agent Beacon --file /tmp/canary-incident.md
           TITLE=$(cat /tmp/canary-title.txt)
           ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$ISSUE" ]; then
             gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file /tmp/canary-incident.md
           else
-            LABELS=(--label bug --label ai-authored)
+            LABELS=(--label bug)
             if [ "$CANARY_TARGET" = "production" ]; then LABELS+=(--label critical); fi
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/canary-incident.md "${LABELS[@]}" --milestone 0.29.0
           fi

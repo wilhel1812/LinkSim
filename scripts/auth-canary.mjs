@@ -2,12 +2,19 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const FIVE_MINUTES = 5 * 60_000;
 const ONE_HOUR = 60 * 60_000;
 const ONE_DAY = 24 * ONE_HOUR;
 const ONE_WEEK = 7 * ONE_DAY;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const allowedHosts = new Set(['linksim.link', 'staging.linksim.link']);
+
+class AuthCanaryError extends Error {
+  constructor(message, rollbackEligible = false, retryable = rollbackEligible) {
+    super(message);
+    this.rollbackEligible = rollbackEligible;
+    this.retryable = retryable;
+  }
+}
 
 const canaryEndpoint = value => {
   let url;
@@ -33,26 +40,39 @@ const requestOnce = async ({ endpoint, cookie, expectedUserId, fetchImpl, timeou
       });
     } catch (error) {
       if (controller.signal.aborted || error?.name === 'AbortError') {
-        throw Error('the authenticated profile request timed out.');
+        throw new AuthCanaryError('the authenticated profile request timed out.', true);
       }
-      throw Error('the authenticated profile request could not reach LinkSim.');
+      throw new AuthCanaryError('the authenticated profile request could not reach LinkSim.', true);
     }
-    if (response.status >= 300 && response.status < 400) throw Error(`LinkSim returned an unexpected redirect (HTTP ${response.status}).`);
-    if (response.status === 401 || response.status === 403) throw Error(`the canary session was rejected (HTTP ${response.status}).`);
-    if (response.status >= 500) throw Error(`LinkSim returned a retryable server error (HTTP ${response.status}).`);
-    if (response.status !== 200) throw Error(`LinkSim returned an unexpected status (HTTP ${response.status}).`);
+    if (response.status >= 300 && response.status < 400) throw new AuthCanaryError(`LinkSim returned an unexpected redirect (HTTP ${response.status}).`);
+    if (response.status === 401 || response.status === 403) throw new AuthCanaryError(`the canary session was rejected (HTTP ${response.status}).`, true);
+    if (response.status >= 500) throw new AuthCanaryError(`LinkSim returned a retryable server error (HTTP ${response.status}).`, true);
+    if (response.status >= 400 && response.status < 500) {
+      throw new AuthCanaryError(`LinkSim returned a non-rollback client error (HTTP ${response.status}).`);
+    }
+    if (response.status !== 200) throw new AuthCanaryError(`LinkSim returned an unexpected status (HTTP ${response.status}).`);
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
-      throw Error('LinkSim returned an invalid JSON profile response.');
+      throw new AuthCanaryError('LinkSim returned an invalid JSON profile response.');
     }
     const declaredLength = Number(response.headers.get('content-length'));
     if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-      throw Error('LinkSim returned an oversized profile response.');
+      throw new AuthCanaryError('LinkSim returned an oversized profile response.');
     }
-    const raw = await response.text();
-    if (Buffer.byteLength(raw) > MAX_RESPONSE_BYTES) throw Error('LinkSim returned an oversized profile response.');
+    let raw;
+    try {
+      raw = await response.text();
+    } catch (error) {
+      if (controller.signal.aborted || error?.name === 'AbortError') {
+        throw new AuthCanaryError('the authenticated profile request timed out.', true);
+      }
+      throw new AuthCanaryError('the authenticated profile response could not be read.', true);
+    }
+    if (Buffer.byteLength(raw) > MAX_RESPONSE_BYTES) throw new AuthCanaryError('LinkSim returned an oversized profile response.');
     let body;
-    try { body = JSON.parse(raw); } catch { throw Error('LinkSim returned an invalid JSON profile response.'); }
-    if (body?.user?.id !== expectedUserId) throw Error('LinkSim authenticated an unexpected LinkSim account.');
+    try { body = JSON.parse(raw); } catch { throw new AuthCanaryError('LinkSim returned an invalid JSON profile response.'); }
+    if (body?.user?.id !== expectedUserId) {
+      throw new AuthCanaryError('LinkSim authenticated an unexpected LinkSim account.', true, false);
+    }
     return { userId: body.user.id };
   } finally {
     clearTimeout(timeout);
@@ -77,9 +97,15 @@ export async function runAuthCanary({ endpoint, cookie, expectedUserId, fetchImp
       return { attempts: attempt, ...result };
     } catch (error) {
       reason = error instanceof Error ? error.message : reason;
+      if (error instanceof AuthCanaryError && !error.retryable) {
+        if (error.rollbackEligible) {
+          throw new AuthCanaryError(`Authentication canary found an immediate rollback trigger: ${reason}`, true, false);
+        }
+        throw new AuthCanaryError(`Authentication canary failed without a rollback trigger: ${reason}`, false, false);
+      }
     }
   }
-  throw Error(`Authentication canary failed after retry: ${reason}`);
+  throw new AuthCanaryError(`Authentication canary failed after retry: ${reason}`, true);
 }
 
 export function getAuthCanaryCadence(cutoverAt, now = Date.now()) {
@@ -93,8 +119,7 @@ export function getAuthCanaryCadence(cutoverAt, now = Date.now()) {
   if (elapsed < ONE_HOUR) return { due: false, phase: 'first-hour' };
   if (elapsed < ONE_DAY) return { due: true, phase: 'first-day' };
   if (elapsed >= ONE_WEEK) return { due: false, phase: 'complete' };
-  const fiveMinuteTick = Math.floor(elapsed / FIVE_MINUTES);
-  return { due: fiveMinuteTick % 3 === 0, phase: 'first-week' };
+  return { due: true, phase: 'first-week' };
 }
 
 async function main() {
@@ -119,6 +144,6 @@ async function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {
     process.stderr.write(`${error instanceof Error ? error.message : 'Authentication canary failed.'}\n`);
-    process.exitCode = 1;
+    process.exitCode = error instanceof AuthCanaryError && error.rollbackEligible ? 1 : 2;
   });
 }
