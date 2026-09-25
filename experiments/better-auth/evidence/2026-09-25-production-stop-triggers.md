@@ -64,6 +64,14 @@ account-wide measurement and reviewed cause show adequate monthly headroom.
   three overruns occur within five minutes or the measured five-minute p95
   reaches 10 ms. Durable Object duration remains governed by the separate
   daily quota above; its resource-limit responses still trigger the rules below.
+- Measure Worker startup CPU separately from request CPU for every deployed
+  gateway version using Cloudflare's reported `startup_time_ms`, and retain a
+  known cold-isolate observation with platform startup telemetry. Warn at
+  700 ms startup CPU, keep or turn new account intake off at 800 ms, and start
+  the ordered rollback at 900 ms, preserving headroom below Cloudflare's
+  1-second startup limit. Missing startup telemetry leaves the cold-gateway
+  release gate open; warm request CPU and elapsed-time measurements cannot
+  substitute for it.
 - One confirmed Cloudflare resource-limit response attributable to LinkSim
   immediately stops new registration, automatic claims, dual-login migrations,
   and archive maintenance while the operator records the service, timestamp,
