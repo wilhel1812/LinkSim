@@ -37,6 +37,23 @@ except that the 50-request Worker/DO stress case approaches the 70% warning:
 61,700 D1 writes with archive maintenance, and 3,072 GB-s object duration.
 Those figures are models, not live measurements.
 
+## Monthly R2 operation quotas
+
+Use account-wide R2 operation metrics for the current billing month. Storage,
+Class A operations, and Class B operations are independent gates; remaining
+storage does not provide operation headroom.
+
+| Resource | Warning | Stop new account intake and non-essential R2 operations | Start rollback if use continues after the stop | Free monthly allowance |
+| --- | ---: | ---: | ---: | ---: |
+| R2 Class A operations | 700,000 (70%) | 800,000 (80%) | 900,000 (90%) | 1,000,000 |
+| R2 Class B operations | 7,000,000 (70%) | 8,000,000 (80%) | 9,000,000 (90%) | 10,000,000 |
+
+At the stop line, disable registration, claims, and migrations and stop archive
+maintenance, verification scans, retries, and other non-essential R2 work.
+Existing mapped users may continue normal reads while the operator identifies
+which buckets and operation classes are growing. Do not resume until a fresh
+account-wide measurement and reviewed cause show adequate monthly headroom.
+
 ## Resource-limit and availability failures
 
 - One successful production Pages/Worker gateway invocation above the 10 ms
@@ -55,9 +72,13 @@ Those figures are models, not live measurements.
   requests fail with resource-limit responses within five minutes after intake
   has stopped. A successful static shell response does not cancel this trigger.
 - Start the ordered rollback when at least 20 protected application or
-  session-check requests are observed in five minutes and 5% or more fail after
-  one retry, unless the failures are demonstrated to be a single user's invalid
-  credential or an unrelated upstream provider outage.
+  session-check requests are observed in five minutes and 5% or more have a
+  qualifying availability failure after one retry. A qualifying failure is a
+  timeout, connection failure, or retryable `5xx` response. Expected application
+  `4xx` responses, including authentication, authorization, not-found, conflict,
+  and rate-limit responses, do not count; a confirmed Cloudflare resource-limit
+  response follows the separate immediate-stop rule above. An unrelated upstream
+  provider outage also does not count toward this application rollback trigger.
 - Any verified authentication-boundary bypass, cross-account identity result,
   or inability to revoke a session starts rollback immediately, independent of
   quota percentages.
