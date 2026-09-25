@@ -39,6 +39,14 @@ Those figures are models, not live measurements.
 
 ## Resource-limit and availability failures
 
+- One successful production Pages/Worker gateway invocation above the 10 ms
+  Free CPU budget warns immediately; elapsed time is not CPU time. Stop new
+  account intake if three such CPU overruns occur within five minutes, or if a
+  five-minute window with at least 20 measured gateway invocations reaches
+  8 ms p95 CPU. Start the ordered rollback if, after intake stops, another
+  three overruns occur within five minutes or the measured five-minute p95
+  reaches 10 ms. Durable Object duration remains governed by the separate
+  daily quota above; its resource-limit responses still trigger the rules below.
 - One confirmed Cloudflare resource-limit response attributable to LinkSim
   immediately stops new registration, automatic claims, dual-login migrations,
   and archive maintenance while the operator records the service, timestamp,
@@ -64,17 +72,22 @@ size, not request count, for the archive caps.
 | Production D1 reaches 450 MB | Warn, verify the growth rate and archive health, and review daily until below 450 MB. |
 | Production D1 reaches 475 MB | Stop registration, claims, and migrations. Continue only already-approved bounded archive maintenance when it is healthy and D1-write headroom remains. |
 | Production D1 reaches 490 MB | Start the Access-first/read-only rollback and stop non-essential D1 mutations. |
+| Total account D1 storage reaches 4 GB | Warn, inventory every database, classify growth, and review daily until below 4 GB. |
+| Total account D1 storage reaches 4.5 GB | Stop registration, claims, migrations, archive maintenance, and other non-essential D1 writes. |
+| Total account D1 storage reaches 4.9 GB | Start the Access-first/read-only rollback before the 5 GB account ceiling. |
 | Either history bucket reaches 2.5 GB or both reach 5 GB | Warn, inventory objects, verify retention and growth, and obtain a fresh estimate. |
 | Either history bucket reaches 3 GB or both reach 6 GB | Stop archive writes and maintenance. Another maintainer decision is required before accepting more LinkSim R2 storage or cost. |
 | Non-history R2 reaches 3.5 GB | Warn, rerun the complete account inventory, classify growth by bucket, and obtain a fresh LinkSim cost estimate. |
 | Non-history R2 exceeds 4 GB | Stop archive writes and maintenance. Do not resume under a Free-tier claim until account isolation or data reduction restores the reserve; a billing exception requires another explicit maintainer decision. |
 | LinkSim-attributable R2 cost is projected above the accepted approximately $0.06/month sensitivity | Stop archive expansion and obtain another maintainer decision before accepting the higher estimate. |
 
-The D1 thresholds leave 50 MB, 25 MB, and 10 MB respectively below the
-conservative 500 MB ceiling. The 476.3 MB 1,000-account fixture is therefore a
-narrow sensitivity near the intake-stop line, not evidence that growth can go
-unobserved. Reaching the target requires the archive path to keep live D1 below
-these thresholds. For the Free envelope, reserved history capacity is
+The production-database D1 thresholds leave 50 MB, 25 MB, and 10 MB
+respectively below the conservative 500 MB ceiling. The account-wide values
+leave 1 GB, 500 MB, and 100 MB below the 5 GB ceiling. The 476.3 MB
+1,000-account fixture is therefore a narrow sensitivity near the intake-stop
+line, not evidence that growth can go unobserved. Reaching the target requires
+the archive path to keep live D1 below both sets of thresholds. For the R2 Free
+envelope, reserved history capacity is
 `10 GB − non-history R2`: the 3.5 GB warning preserves 6.5 GB and the 4 GB stop
 preserves 6 GB. Combine that calculation with the separate 3 GB per-history-
 environment and 6 GB combined-history caps; do not interpret "headroom" as
