@@ -206,6 +206,16 @@ Representative cold/full-app CPU, billable object duration, actual active
 fraction and history growth remain first-hour/day/week monitoring requirements,
 not staging-proven guarantees.
 
+The maintainer-approved
+[production stop and rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
+turn those monitoring requirements into manual operating actions. They warn at
+70% of daily compute/operation allowances, stop new account intake at 80%, and
+start the ordered rollback at 90% when use continues after intake stops. They
+also reserve 50 MB, 25 MB, and 10 MB before the conservative D1 ceiling for
+warning, intake shutdown, and read-only rollback. The named operator and
+approving maintainer are `wilhel1812`. These safeguards do not authorize the
+production cutover or revise the 1,000-registered-account target.
+
 ## Migration and recovery invariants
 
 Provider subjects identify subsequent logins. During a fixed 90-day window from

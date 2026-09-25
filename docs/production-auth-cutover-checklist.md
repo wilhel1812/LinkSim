@@ -46,13 +46,14 @@ the application boundary is verified.
   account use exceeds the allowance; record the approved account-isolation,
   data-reduction or billing decision. Recheck billing-period metrics separately
   rather than inferring the monthly average from one current-size snapshot.
-- [ ] Record and approve numeric production stop/rollback triggers in the release
-  evidence before the window. At minimum, define the thresholds for registration
-  and automatic-claim shutdown when resource-limit errors occur, daily Worker,
-  Durable Object or D1 usage approaches its accepted envelope, or D1/R2 storage
-  growth leaves insufficient headroom. Name the operator authorized to apply the
-  triggers and the reviewer who approved them. Do not begin cutover with blank,
-  qualitative or unapproved trigger values.
+- [x] Record and approve the
+  [numeric production stop/rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
+  before the window. `wilhel1812` is the authorized operator and approving
+  maintainer. The evidence defines warning, intake-stop, archive-stop and
+  Access-first/read-only rollback conditions for resource-limit errors, daily
+  Worker, Durable Object and D1 usage, and D1/R2 storage. Recheck the dated
+  platform allowances before cutover; a changed allowance requires review, not
+  silent percentage reinterpretation.
 - [ ] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
