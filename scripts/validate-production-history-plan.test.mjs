@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   copyFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -80,6 +81,52 @@ describe('production history Terraform plan validation', () => {
       });
       expect(result.status).not.toBe(0);
       expect(existsSync(stalePlan)).toBe(false);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+
+  it('removes both plan artifacts after Terraform writes a temporary plan and fails', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'linksim-prod-history-plan-'));
+    const scripts = join(fixture, 'scripts');
+    const environment = join(fixture, 'environments', 'prod');
+    const fakeBin = join(fixture, 'bin');
+    mkdirSync(scripts, { recursive: true });
+    mkdirSync(environment, { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    copyFileSync(
+      new URL('../infra/terraform/scripts/plan-production-history.sh', import.meta.url),
+      join(scripts, 'plan-production-history.sh'),
+    );
+    writeFileSync(join(environment, 'backend.hcl'), 'fixture');
+    writeFileSync(join(scripts, 'init.sh'), '#!/usr/bin/env bash\nexit 0\n');
+    chmodSync(join(scripts, 'init.sh'), 0o755);
+    writeFileSync(join(fakeBin, 'terraform'), `#!/usr/bin/env bash
+for argument in "$@"; do
+  case "$argument" in
+    -out=*) output="\${argument#-out=}" ;;
+  esac
+done
+printf 'partial plan' > "$output"
+exit 1
+`);
+    chmodSync(join(fakeBin, 'terraform'), 0o755);
+    const finalPlan = join(environment, 'prod-history.tfplan');
+    const temporaryPlan = join(environment, 'prod-history.tmp.tfplan');
+    writeFileSync(finalPlan, 'stale plan');
+
+    try {
+      const result = spawnSync('bash', [join(scripts, 'plan-production-history.sh')], {
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH}`,
+          TF_VAR_cloudflare_api_token: 'fixture-token',
+        },
+        encoding: 'utf8',
+      });
+      expect(result.status).not.toBe(0);
+      expect(existsSync(finalPlan)).toBe(false);
+      expect(existsSync(temporaryPlan)).toBe(false);
     } finally {
       rmSync(fixture, { recursive: true, force: true });
     }
