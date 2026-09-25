@@ -79,6 +79,15 @@ not CPU milliseconds; success during an occasional overrun is not headroom.
 
 ## Storage is the critical unresolved constraint
 
+This section preserves the September 18 lower-bound evidence. The later
+[R2 storage capacity decision](2026-09-25-r2-storage-capacity.md) supersedes its
+2.77 GB payload-only estimate with an envelope-inclusive 3.31 GB point
+sensitivity, a 6 GB combined operating cap, and the current account inventory.
+It qualifies the architecture for 1,000 registered accounts on an otherwise
+clean account, while finding no sustained Free headroom in this account because
+unrelated account use currently exceeds 10 GB. The billing-period average was
+not measured.
+
 The [read-only production snapshot](2026-09-18-d1-storage-reclamation.md)
 measured 50 users and a 90,234,880-byte D1. About 69,348,172 logical bytes
 in 5,426 Simulation history revisions matched the current archive
