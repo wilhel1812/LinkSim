@@ -4,7 +4,11 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { hydrateHistoryRow } from '../functions/_lib/historyArchive.ts';
 import { sanitizeExport } from './staging-export.mjs';
-import { copyArchivedRowsForStaging, copyArchivedRowsWithR2 } from './staging-history-transfer.mjs';
+import {
+  copyArchivedRowsForStaging,
+  copyArchivedRowsWithR2,
+  getR2TransferCredentials,
+} from './staging-history-transfer.mjs';
 
 const schema = readFileSync('db/schema.sql', 'utf8');
 const migration = readFileSync('db/migrations/2026-09-18_history_archive.sql', 'utf8');
@@ -35,6 +39,64 @@ class Bucket {
 }
 
 describe('archive-aware staging refresh transfer', () => {
+  it('keeps temporary source and staging session credentials separated', () => {
+    expect(getR2TransferCredentials({
+      R2_ACCOUNT_ID: '85c57e0c4da3a747a09212dc5b090f52',
+      R2_HISTORY_SOURCE_ACCESS_KEY_ID: 'source-id',
+      R2_HISTORY_SOURCE_SECRET_ACCESS_KEY: 'source-secret',
+      R2_HISTORY_SOURCE_SESSION_TOKEN: 'source-session',
+      R2_HISTORY_STAGING_ACCESS_KEY_ID: 'staging-id',
+      R2_HISTORY_STAGING_SECRET_ACCESS_KEY: 'staging-secret',
+      R2_HISTORY_STAGING_SESSION_TOKEN: 'staging-session',
+    })).toEqual({
+      accountId: '85c57e0c4da3a747a09212dc5b090f52',
+      source: {
+        accessKeyId: 'source-id',
+        secretAccessKey: 'source-secret',
+        sessionToken: 'source-session',
+      },
+      staging: {
+        accessKeyId: 'staging-id',
+        secretAccessKey: 'staging-secret',
+        sessionToken: 'staging-session',
+      },
+    });
+  });
+
+  it('keeps long-lived credential compatibility and rejects incomplete pairs', () => {
+    const permanent = {
+      R2_ACCOUNT_ID: '85c57e0c4da3a747a09212dc5b090f52',
+      R2_HISTORY_SOURCE_ACCESS_KEY_ID: 'source-id',
+      R2_HISTORY_SOURCE_SECRET_ACCESS_KEY: 'source-secret',
+      R2_HISTORY_STAGING_ACCESS_KEY_ID: 'staging-id',
+      R2_HISTORY_STAGING_SECRET_ACCESS_KEY: 'staging-secret',
+    };
+    expect(getR2TransferCredentials(permanent)).toEqual({
+      accountId: permanent.R2_ACCOUNT_ID,
+      source: { accessKeyId: 'source-id', secretAccessKey: 'source-secret' },
+      staging: { accessKeyId: 'staging-id', secretAccessKey: 'staging-secret' },
+    });
+    expect(() => getR2TransferCredentials({
+      ...permanent,
+      R2_HISTORY_STAGING_SECRET_ACCESS_KEY: '',
+    })).toThrow('Separate production-read and staging-write R2 credentials are required');
+    expect(() => getR2TransferCredentials({
+      ...permanent,
+      R2_HISTORY_STAGING_ACCESS_KEY_ID: 'source-id',
+      R2_HISTORY_STAGING_SECRET_ACCESS_KEY: 'source-secret',
+    })).toThrow('Separate production-read and staging-write R2 credentials are required');
+
+    expect(getR2TransferCredentials({
+      ...permanent,
+      R2_HISTORY_STAGING_ACCESS_KEY_ID: 'source-id',
+      R2_HISTORY_SOURCE_SESSION_TOKEN: 'source-session',
+      R2_HISTORY_STAGING_SESSION_TOKEN: 'staging-session',
+    })).toMatchObject({
+      source: { accessKeyId: 'source-id', sessionToken: 'source-session' },
+      staging: { accessKeyId: 'source-id', sessionToken: 'staging-session' },
+    });
+  });
+
   it('verifies a production object, copies it to staging and imports only a staging reference', async () => {
     const production = new Bucket(); production.objects.set(sourceKey, raw);
     const staging = new Bucket();

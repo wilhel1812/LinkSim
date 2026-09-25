@@ -139,14 +139,16 @@ credential for `linksim-history-staging`. Set `R2_ACCOUNT_ID`,
 `R2_HISTORY_SOURCE_ACCESS_KEY_ID`, `R2_HISTORY_SOURCE_SECRET_ACCESS_KEY`,
 `R2_HISTORY_STAGING_ACCESS_KEY_ID` and
 `R2_HISTORY_STAGING_SECRET_ACCESS_KEY` in the operator's shell. Do not save them
-in the repository or use the production write credential for refresh. The
-production history bucket is not yet configured, so this path has synthetic
-test coverage but no live archived-production rehearsal. The repository models
-the fixed unbound `linksim-history` bucket and includes an exact-plan validator;
-creating that bucket remains a separately approved production action. An empty
-bucket or an inline-only export short-circuits before R2 access and therefore
-does not prove the production credential or a live object transfer. Complete
-the live rehearsal only after a genuine production archive object exists, or
+in the repository or use the production write credential for refresh. Prefer
+short-lived credentials from Cloudflare's R2 Temporary Credentials API. When
+temporary credentials are used, also set their corresponding
+`R2_HISTORY_SOURCE_SESSION_TOKEN` and `R2_HISTORY_STAGING_SESSION_TOKEN`; the
+transfer keeps the source and staging credential sets separate. The fixed
+unbound `linksim-history` bucket exists, but archive writes remain disabled and
+the transfer path does not yet have a live archived-production rehearsal. An
+empty bucket or an inline-only export short-circuits before R2 access and
+therefore does not prove the production credential or a live object transfer.
+Complete the live rehearsal only after a genuine production archive object exists, or
 after separately approving a synthetic write to the otherwise isolated bucket.
 Use the existing `sanitize-with-archives` path so production is read-only and
 staging alone receives the verified copy. This is not permission to enable
