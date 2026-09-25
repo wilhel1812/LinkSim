@@ -29,6 +29,16 @@ the application boundary is verified.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
+- [ ] Re-run the complete account R2 inventory from the
+  [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
+  Classify every bucket and block archive activation if either history
+  environment would exceed 3 GB, combined history would exceed 6 GB, non-history
+  account use exceeds 4 GB, or less than 6 GB remains for history inside the
+  10 GB allowance. The 2026-09-25
+  current inventory fails this sustained Free-tier gate because unrelated
+  account use exceeds the allowance; record the approved account-isolation,
+  data-reduction or billing decision. Recheck billing-period metrics separately
+  rather than inferring the monthly average from one current-size snapshot.
 - [ ] Record and approve numeric production stop/rollback triggers in the release
   evidence before the window. At minimum, define the thresholds for registration
   and automatic-claim shutdown when resource-limit errors occur, daily Worker,

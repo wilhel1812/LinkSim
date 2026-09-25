@@ -195,6 +195,13 @@ and a conditional acceptance of the 1,000-registered-account target within the
 modeled activity envelope. The accepted storage sensitivities span roughly 958
 to 1,000 accounts, but do not establish a supported-user range; reaching 1,000
 on Free depends on bounded R2 archive operation before D1 approaches its ceiling.
+The subsequent [R2 storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md)
+models about 3.31 GB for production plus a full staging copy and sets a 6 GB
+combined operating cap. This fits an otherwise clean 10 GB account, but the
+current account's unrelated use exceeds the allowance, which leaves no
+sustained Free headroom if retained. Archive activation therefore requires
+account isolation, sufficient data reduction or explicit acceptance of R2
+billing; the current billing-period average must be checked separately.
 Representative cold/full-app CPU, billable object duration, actual active
 fraction and history growth remain first-hour/day/week monitoring requirements,
 not staging-proven guarantees.

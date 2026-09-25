@@ -88,7 +88,7 @@ These are sensitivities, not measured future usage:
 | D1 writes with bounded archive maintenance | up to 61,700/day | 61.7%; adds the 8,000/day maintenance sensitivity and requires separate operational acceptance |
 | Object duration | 3,072 GB-s/day | 23.6%; assumption-based rather than billed telemetry |
 | D1 storage | 476,303,360 bytes | 4.7% below the conservative 500,000,000-byte ceiling after the archive projection |
-| R2 storage | at least about 2.77 GB with staging copy | Lower bound only; total size and Free-tier headroom remain unresolved until envelopes, retained versions, other objects, retention and growth are bounded |
+| R2 storage | about 3.31 GB point sensitivity; 6 GB combined operating cap | Fits an otherwise clean 10 GB account; current unrelated account use exceeds the allowance |
 
 The request-only equation crosses the original 50% planning line at about
 **638 daily active users at 50 protected app requests each**, or **1,064 at 30**.
@@ -103,17 +103,25 @@ sensitivities bracket roughly **958 to 1,000 registered accounts**: 958 is the
 earlier reserve-oriented estimate, while the representative projected fixture
 fits 1,000 with only 4.7% margin. This is not a validated supported-user range.
 User history is highly skewed, so no unconditional single maximum is defensible.
-Reaching 1,000 on Free depends on completing and operating the tested R2 archive
-path before D1 approaches its ceiling, bounding retention, and monitoring actual
-growth. Inline-only linear scaling is not a 1,000-user design.
+Reaching 1,000 depends on completing and operating the tested R2 archive path
+before D1 approaches its ceiling and monitoring actual growth. The
+[R2 storage decision](2026-09-25-r2-storage-capacity.md) replaces the 2.77 GB
+payload-only lower bound with an envelope-inclusive 3.31 GB point sensitivity
+and a 6 GB combined operating cap. That fits an otherwise clean 10 GB account.
+It has no durable Free headroom in this account while unrelated use remains
+above 10 GB. The billing-period average was not measured. Inline-only linear
+scaling is not a 1,000-user design.
 
 Archive maintenance also changes the write budget. The accepted 53,700-write
 sensitivity does not include permission for the separate 8,000 maintenance
 writes/day. Their combined **61,700 writes/day** sensitivity is below the hard
 100,000 daily allowance but above the accepted narrow exception and therefore
-requires explicit operational acceptance before archive activation. Likewise,
-the 2.77 GB R2 projection is only a lower bound. It cannot establish 10 GB of
-headroom until the remaining object bytes and retention policy are measured.
+requires explicit operational acceptance before archive activation. R2 archive
+activation additionally requires a complete account inventory, at most 3 GB per
+history environment and 6 GB combined, and at most 4 GB of non-history and
+retained data. The current account fails that Free-tier gate because of the
+unrelated backup bucket; account isolation, backup reduction or explicit billing
+acceptance is required.
 
 The live 59-request auth sample measured gateway CPU averaging 1.407 ms with a
 3 ms maximum, and object CPU averaging 2.661 ms with a 47 ms maximum. It proves
@@ -154,4 +162,5 @@ reviewed before cutover.
 Sources: [registered-account decision](2026-09-18-registered-capacity-decision.md),
 [activity model](2026-09-11-revised-activity-model.md),
 [auth capacity](2026-09-11-capacity.md), and
-[representative storage](2026-09-18-representative-physical-storage.md).
+[representative storage](2026-09-18-representative-physical-storage.md), and
+[R2 storage capacity](2026-09-25-r2-storage-capacity.md).

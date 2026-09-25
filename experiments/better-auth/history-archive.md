@@ -44,6 +44,13 @@ invalid reference, R2/integrity failure, compare-and-swap conflict, or exhausted
 budget stops the run before another candidate. Successfully committed rows and
 immutable objects are retained; this primitive performs no deletion or restore.
 
+The 5 GB lifetime ceiling is a hard implementation safety ceiling rather than
+the approved operating target. Before activation, cap each environment at 3 GB
+and production plus staging at 6 GB, including retained versions and orphans.
+Those lower caps preserve approximately 4 GB of a clean 10 GB account for
+avatars, state and growth. A complete account inventory must still pass because
+unrelated buckets share the allowance.
+
 Status: **storage and separate Durable Object runtime demonstrated; not approved
 for application activation. Pages maintenance CPU gate failed.** No application
 route or binding changes, and no new UI or authentication behavior. The additive
@@ -78,8 +85,12 @@ details remain in the immutable object. Missing/corrupt objects fail closed.
 Rollback restores the hydrated fields with a compare-and-swap against the current
 reference and both projections. Objects remain retained for in-flight readers and
 backup rollback. Never add automatic bucket expiry: a D1 backup/Time Travel restore
-may refer to an older object. Object retention, safe orphan cleanup and backups
-must be designed together before activation.
+may refer to an older object. The
+[storage and retention decision](evidence/2026-09-25-r2-storage-capacity.md)
+requires a complete reference inventory, the actual backup/Time Travel horizon,
+no active or ambiguous operation, and a complete environment-scoped object
+listing before a separately reviewed cleanup can delete anything. Current
+unreferenced rehearsal objects are not proven safe to delete.
 
 ## Reuse, authorization and remaining integration
 
