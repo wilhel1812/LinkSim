@@ -79,6 +79,10 @@ account-wide measurement and reviewed cause show adequate monthly headroom.
 - Start the ordered rollback when three protected application or session-check
   requests fail with resource-limit responses within five minutes after intake
   has stopped. A successful static shell response does not cancel this trigger.
+- Start the ordered rollback regardless of total traffic when the designated
+  post-cutover canary or an independently confirmed unexpired, unrevoked session
+  attached to an allowed account receives three unexpected `401`/`403` responses
+  within five minutes, each still failing after one retry.
 - Start the ordered rollback when at least 20 protected application or
   session-check requests are observed in five minutes and 5% or more have a
   qualifying availability failure after one retry. A qualifying failure is a
