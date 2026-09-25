@@ -29,6 +29,18 @@ the application boundary is verified.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
+- [ ] Record and approve numeric production stop/rollback triggers in the release
+  evidence before the window. At minimum, define the thresholds for registration
+  and automatic-claim shutdown when resource-limit errors occur, daily Worker,
+  Durable Object or D1 usage approaches its accepted envelope, or D1/R2 storage
+  growth leaves insufficient headroom. Name the operator authorized to apply the
+  triggers and the reviewer who approved them. Do not begin cutover with blank,
+  qualitative or unapproved trigger values.
+- [ ] Complete and record the stable-staging VoiceOver spot-check required by
+  `docs/auth-transition.md`: sign-in choices, native passkey handoff
+  announcements, Profile credential actions, actionable error/fallback guidance,
+  and focus return. Record the tested build and browser/device in the release
+  evidence; do not begin cutover while this human-only check remains open.
 - [ ] Create a production-only GitHub OAuth application with callback
   `https://linksim.link/api/auth/callback/github`.
 - [ ] Create a production-only Turnstile widget for `linksim.link`.
@@ -145,6 +157,8 @@ rerun both plans to prove the desired boundary and its inverse rollback.
 
 - [ ] Review errors, auth-runtime duration, D1 rows read/written, Worker/Pages
   requests, Durable Object usage and alerts during the first hour and full day.
+  Apply the recorded stop/rollback triggers when their numeric conditions are
+  met; record the observation and action in the release evidence.
 - [ ] Review the same account-wide figures after one week against the accepted
   capacity baseline and 1,000-registered-user target.
 - [ ] Track migrated ordinary and privileged accounts in the administrator view.
