@@ -27,9 +27,12 @@ the application boundary is verified.
 - [ ] Freeze and record the release tag, commit SHA, tree SHA, Pages deployment,
   auth-runtime artifact/config SHA, and current Access application/policy IDs.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
-- [ ] Provision the unbound `linksim-history` bucket only from a production plan
-  accepted by `npm run tf:validate:prod-history-plan`. Require a zero-unexplained-
-  drift follow-up plan. Do not add the Pages binding or enable archive writes.
+- [ ] Provision the unbound `linksim-history` bucket only from the dedicated
+  `npm run tf:plan:prod-history` saved plan accepted by
+  `npm run tf:validate:prod-history-plan`. Keep the ordinary production plan as
+  the separate drift audit and record every remaining difference without
+  applying it in this operation. Do not add the Pages binding or enable archive
+  writes.
 - [ ] Rehearse the existing production-to-staging archive copy with a read-only
   production credential and a separate staging-write credential. An empty bucket
   or inline-only export is not evidence; use the first genuine archived object
