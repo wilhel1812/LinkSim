@@ -118,8 +118,8 @@ writes/day. Their combined **61,700 writes/day** sensitivity is below the hard
 100,000 daily allowance but above the accepted narrow exception and therefore
 requires explicit operational acceptance before archive activation. R2 archive
 activation additionally requires a complete account inventory, at most 3 GB per
-history environment and 6 GB combined, and at least 4 GB left for non-history
-and retained data. The current account fails that Free-tier gate because of the
+history environment and 6 GB combined, and at most 4 GB of non-history and
+retained data. The current account fails that Free-tier gate because of the
 unrelated backup bucket; account isolation, backup reduction or explicit billing
 acceptance is required.
 

@@ -139,8 +139,8 @@ archive activation.
 
 Before activation, re-run a complete account inventory and stop if any bucket
 is unclassified, total LinkSim history would exceed 6 GB combined, either
-environment would exceed 3 GB, or non-history account use leaves less than 4 GB
-for the approved archive envelope. During rollout, record object/byte growth,
+environment would exceed 3 GB, non-history account use exceeds 4 GB, or less
+than 6 GB remains for the approved archive envelope. During rollout, record object/byte growth,
 PUT/GET counts, retained-orphan counts, D1 references and physical D1 size after
 each bounded batch. Pause maintenance and registration before either operating
 cap or the accepted D1 envelope is crossed.

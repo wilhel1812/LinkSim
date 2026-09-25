@@ -32,8 +32,9 @@ the application boundary is verified.
 - [ ] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
-  environment would exceed 3 GB, combined history would exceed 6 GB, or other
-  account use leaves less than 4 GB inside the 10 GB allowance. The 2026-09-25
+  environment would exceed 3 GB, combined history would exceed 6 GB, non-history
+  account use exceeds 4 GB, or less than 6 GB remains for history inside the
+  10 GB allowance. The 2026-09-25
   current inventory fails this sustained Free-tier gate because unrelated
   account use exceeds the allowance; record the approved account-isolation,
   data-reduction or billing decision. Recheck billing-period metrics separately
