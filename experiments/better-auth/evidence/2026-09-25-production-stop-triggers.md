@@ -82,11 +82,15 @@ account-wide measurement and reviewed cause show adequate monthly headroom.
 - Start the ordered rollback when at least 20 protected application or
   session-check requests are observed in five minutes and 5% or more have a
   qualifying availability failure after one retry. A qualifying failure is a
-  timeout, connection failure, or retryable `5xx` response. Expected application
-  `4xx` responses, including authentication, authorization, not-found, conflict,
-  and rate-limit responses, do not count; a confirmed Cloudflare resource-limit
-  response follows the separate immediate-stop rule above. An unrelated upstream
-  provider outage also does not count toward this application rollback trigger.
+  timeout, connection failure, retryable `5xx` response, or an unexpected
+  authentication `401`/`403`. Treat a repeated `401`/`403` as unexpected when it
+  affects the designated post-cutover canary or a previously successful session
+  that is independently confirmed unexpired, unrevoked, and attached to an
+  allowed current account. Expected `4xx` responses from missing, expired, or
+  revoked credentials, authorization denial, not-found, conflict, and application
+  rate limiting do not count. A confirmed Cloudflare resource-limit response
+  follows the separate immediate-stop rule above. An unrelated upstream provider
+  outage also does not count toward this application rollback trigger.
 - Any verified authentication-boundary bypass, cross-account identity result,
   or inability to revoke a session starts rollback immediately, independent of
   quota percentages.
