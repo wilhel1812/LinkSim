@@ -46,13 +46,22 @@ the application boundary is verified.
   account use exceeds the allowance; record the approved account-isolation,
   data-reduction or billing decision. Recheck billing-period metrics separately
   rather than inferring the monthly average from one current-size snapshot.
-- [ ] Record and approve numeric production stop/rollback triggers in the release
-  evidence before the window. At minimum, define the thresholds for registration
-  and automatic-claim shutdown when resource-limit errors occur, daily Worker,
-  Durable Object or D1 usage approaches its accepted envelope, or D1/R2 storage
-  growth leaves insufficient headroom. Name the operator authorized to apply the
-  triggers and the reviewer who approved them. Do not begin cutover with blank,
-  qualitative or unapproved trigger values.
+- [x] Record and approve the
+  [numeric production stop/rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
+  before the window. `wilhel1812` is the authorized operator and approving
+  maintainer. The evidence defines warning, intake-stop, archive-stop and
+  Access-first/read-only rollback conditions for resource-limit errors, daily
+  Worker, Durable Object and D1 usage, and D1/R2 storage. Recheck the dated
+  platform allowances before cutover; a changed allowance requires review, not
+  silent percentage reinterpretation.
+- [ ] Configure and verify a protected post-cutover authentication canary before
+  the window. Run it once per minute through the first hour, once every five
+  minutes for the rest of the first day, and once every fifteen minutes through
+  the first week. A canary timeout, connection failure, retryable `5xx`, or
+  unexpected `401`/`403` that still fails after one retry starts the ordered
+  rollback regardless of natural request volume. Record where its
+  unexpired, unrevoked credential is held, how it is rotated or revoked, and how
+  the operator receives failures without exposing the credential.
 - [ ] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
@@ -175,9 +184,11 @@ rerun both plans to prove the desired boundary and its inverse rollback.
 - [ ] Review errors, auth-runtime duration, D1 rows read/written, Worker/Pages
   requests, Durable Object usage and alerts during the first hour and full day.
   Apply the recorded stop/rollback triggers when their numeric conditions are
-  met; record the observation and action in the release evidence.
+  met; confirm the protected canary maintained its required first-hour and
+  first-day cadence, and record the observation and action in the release evidence.
 - [ ] Review the same account-wide figures after one week against the accepted
-  capacity baseline and 1,000-registered-user target.
+  capacity baseline and 1,000-registered-user target. Confirm the protected
+  canary maintained its required first-week cadence.
 - [ ] Track migrated ordinary and privileged accounts in the administrator view.
 - [ ] After 90 days, separately approve disabling email claims and the temporary
   dual-login route. Retain mappings and migration audit records.
