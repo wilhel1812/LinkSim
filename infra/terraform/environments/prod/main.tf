@@ -32,3 +32,15 @@ module "stack" {
   access_applications                        = var.access_applications
   access_policies                            = var.access_policies
 }
+
+# This resource is intentionally independent of the Pages module. Declaring or
+# creating the bucket must not bind it to production or enable archive writes.
+resource "cloudflare_r2_bucket" "history" {
+  account_id   = var.account_id
+  name         = "linksim-history"
+  jurisdiction = "default"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
