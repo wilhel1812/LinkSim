@@ -66,19 +66,22 @@ size, not request count, for the archive caps.
 | Production D1 reaches 490 MB | Start the Access-first/read-only rollback and stop non-essential D1 mutations. |
 | Either history bucket reaches 2.5 GB or both reach 5 GB | Warn, inventory objects, verify retention and growth, and obtain a fresh estimate. |
 | Either history bucket reaches 3 GB or both reach 6 GB | Stop archive writes and maintenance. Another maintainer decision is required before accepting more LinkSim R2 storage or cost. |
-| Non-history R2 reaches 3.5 GB or less than 6.5 GB remains inside the account's 10 GB Free storage allowance | Warn, rerun the complete account inventory, classify growth by bucket, and obtain a fresh LinkSim cost estimate. |
-| Non-history R2 exceeds 4 GB or less than 6 GB remains inside the account's 10 GB Free storage allowance | Stop archive writes and maintenance. Do not resume under a Free-tier claim until account isolation or data reduction restores the reserve; a billing exception requires another explicit maintainer decision. |
+| Non-history R2 reaches 3.5 GB | Warn, rerun the complete account inventory, classify growth by bucket, and obtain a fresh LinkSim cost estimate. |
+| Non-history R2 exceeds 4 GB | Stop archive writes and maintenance. Do not resume under a Free-tier claim until account isolation or data reduction restores the reserve; a billing exception requires another explicit maintainer decision. |
 | LinkSim-attributable R2 cost is projected above the accepted approximately $0.06/month sensitivity | Stop archive expansion and obtain another maintainer decision before accepting the higher estimate. |
 
 The D1 thresholds leave 50 MB, 25 MB, and 10 MB respectively below the
 conservative 500 MB ceiling. The 476.3 MB 1,000-account fixture is therefore a
 narrow sensitivity near the intake-stop line, not evidence that growth can go
 unobserved. Reaching the target requires the archive path to keep live D1 below
-these thresholds. R2 account headroom is recalculated from total storage rather
-than treating unrelated buckets as outside the allowance. The existing
-maintainer acceptance covers the dated LinkSim-attributable approximately
-$0.06/month sensitivity only; it does not convert unrelated growth into
-unlimited LinkSim headroom.
+these thresholds. For the Free envelope, reserved history capacity is
+`10 GB − non-history R2`: the 3.5 GB warning preserves 6.5 GB and the 4 GB stop
+preserves 6 GB. Combine that calculation with the separate 3 GB per-history-
+environment and 6 GB combined-history caps; do not interpret "headroom" as
+unused capacity after subtracting both history and non-history storage. The
+existing maintainer acceptance covers the dated LinkSim-attributable
+approximately $0.06/month sensitivity only; it does not convert unrelated
+growth into unlimited LinkSim headroom.
 
 ## Ordered response and recovery
 
