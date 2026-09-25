@@ -69,18 +69,21 @@ Use this only when a legacy administrator or moderator has no independent
 GitHub identity. It is not a general sign-in path.
 
 1. List eligible privileged staging accounts:
-   `node scripts/manage-staging-admin-passkey-recovery.mjs list`
+   `node scripts/manage-admin-passkey-recovery.mjs staging list`
 2. Authorize the exact unmigrated LinkSim user for 15 minutes:
-   `node scripts/manage-staging-admin-passkey-recovery.mjs authorize <user-uuid> 15`
+   `node scripts/manage-admin-passkey-recovery.mjs staging authorize <user-uuid> 15`
 3. Open
    `https://staging.linksim.link/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fsettings%2Fprofile`.
    The route clears the cached Access session before asking for the legacy
    administrator identity.
 4. Keep the raised recovery window open and select **Create administrator
    passkey**. After LinkSim signs in to the preserved administrator profile, add
-   a second passkey in Profile settings and verify both sign-in methods.
+   passkeys on independent authenticators where available and verify sign-in.
+   The current administrator explicitly accepted a one-authenticator exception;
+   losing that passkey requires operator-assisted recovery and may leave the
+   account unrecoverable.
 5. If the attempt is abandoned, revoke the authorization shown by Wrangler:
-   `node scripts/manage-staging-admin-passkey-recovery.mjs revoke <authorization-uuid>`.
+   `node scripts/manage-admin-passkey-recovery.mjs staging revoke <authorization-uuid>`.
 
 The authorization and migration attempt are single-use and expire independently.
 The return URL carries only a correlation ID; a separate Secure, HttpOnly cookie

@@ -3,10 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
   parseRecoveryAuthorization,
   parseRecoveryRevocation,
-} from "./manage-staging-admin-passkey-recovery.mjs";
+  resolveRecoveryDatabase,
+} from "./manage-admin-passkey-recovery.mjs";
 
-describe("staging administrator passkey recovery operator output", () => {
+describe("administrator passkey recovery operator output", () => {
   const authorizationId = "67eef596-ce53-4c91-918d-54f200cabee9";
+
+  it("requires an explicit, allowlisted environment", () => {
+    expect(resolveRecoveryDatabase("staging")).toBe("linksim_staging");
+    expect(resolveRecoveryDatabase("production")).toBe("linksim");
+    expect(() => resolveRecoveryDatabase("preview")).toThrow("exactly staging or production");
+    expect(() => resolveRecoveryDatabase(undefined)).toThrow("exactly staging or production");
+  });
 
   it("returns the exact authorization row created by D1", () => {
     const stdout = `Wrangler output\n${JSON.stringify([{

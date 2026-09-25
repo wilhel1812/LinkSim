@@ -1,0 +1,27 @@
+# Dormant production auth-runtime configuration. Deployment requires a separate
+# production-cutover approval and the checklist in docs/production-auth-cutover-checklist.md.
+name = "linksim-auth-runtime-production"
+main = "index.ts"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[vars]
+AUTH_ORIGIN = "https://linksim.link"
+AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "false"
+AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"
+AUTH_LEGACY_CLAIM_ENABLED = "false"
+AUTH_REGISTRATION_ENABLED = "false"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linksim"
+database_id = "d669aac0-37ea-4c68-9b27-ece888e1966a"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuthRuntime"]

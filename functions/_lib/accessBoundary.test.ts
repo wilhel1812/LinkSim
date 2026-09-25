@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ACCESS_BOUNDARIES,
+  PRODUCTION_ACCESS_CUTOVER_BOUNDARY,
+  PRODUCTION_ACCESS_ROLLBACK_BOUNDARY,
   STAGING_ACCESS_ROLLBACK_BOUNDARY,
   applyAccessBoundary,
   buildApplicationUpdate,
+  isAccessPlanMode,
   orderAccessActions,
   parseAccessRedirectAudience,
   planAccessBoundary,
+  resolveAccessBoundary,
   selectBoundaryApplications,
   validateAcceptedAudiences,
   validatePreviewUrl,
@@ -95,6 +99,25 @@ const stagingApps = () => [
   }),
 ];
 
+const productionApps = () => [
+  makeApp({
+    id: "production-shell",
+    name: "LinkSim Production Public App Shell",
+    domain: "linksim.link",
+    aud: "production-shell-aud",
+    policyId: PUBLIC_POLICY_ID,
+    decision: "bypass",
+  }),
+  makeApp({
+    id: "production-api",
+    name: "LinkSim Authenticated API",
+    domain: "linksim.link/api/*",
+    aud: "ad63aaad91fb903f77154106fc69bb0fe7b845bfeb87ce09287b0c6dc92027b2",
+    policyId: AUTH_POLICY_ID,
+    decision: "allow",
+  }),
+];
+
 describe("Cloudflare Access boundary reconciliation", () => {
   it("plans only the two staging API application updates", () => {
     const plan = planAccessBoundary(stagingApps(), ACCESS_BOUNDARIES.staging);
@@ -155,6 +178,70 @@ describe("Cloudflare Access boundary reconciliation", () => {
     ];
     expect(orderAccessActions(actions, false).map(({ key }) => key)).toEqual(["api", "publicApi"]);
     expect(orderAccessActions(actions, true).map(({ key }) => key)).toEqual(["publicApi", "api"]);
+  });
+
+  it("plans one exact production cutover change and its inverse rollback", () => {
+    const current = productionApps();
+    const cutover = planAccessBoundary(current, PRODUCTION_ACCESS_CUTOVER_BOUNDARY);
+    expect(cutover.actions.map(({ key, fromDomain, toDomain }) => ({ key, fromDomain, toDomain })))
+      .toEqual([{
+        key: "api",
+        fromDomain: "linksim.link/api/*",
+        toDomain: "linksim.link/api/auth/legacy-access/*",
+      }]);
+
+    current[1] = makeApp({
+      id: "production-api",
+      name: "LinkSim Legacy Migration API",
+      domain: "linksim.link/api/auth/legacy-access/*",
+      aud: "ad63aaad91fb903f77154106fc69bb0fe7b845bfeb87ce09287b0c6dc92027b2",
+      policyId: AUTH_POLICY_ID,
+      decision: "allow",
+      destinations: [{ type: "public", uri: "linksim.link/api/auth/legacy-access/*" }],
+    });
+    expect(planAccessBoundary(current, PRODUCTION_ACCESS_CUTOVER_BOUNDARY).actions).toEqual([]);
+    expect(planAccessBoundary(current, PRODUCTION_ACCESS_ROLLBACK_BOUNDARY).actions.map(({ key }) => key))
+      .toEqual(["api"]);
+  });
+
+  it("keeps every production plan mode read only", () => {
+    expect(isAccessPlanMode("plan")).toBe(true);
+    expect(isAccessPlanMode("plan-cutover")).toBe(true);
+    expect(isAccessPlanMode("plan-rollback")).toBe(true);
+    expect(isAccessPlanMode("apply")).toBe(false);
+    expect(isAccessPlanMode("rollback")).toBe(false);
+  });
+
+  it("uses the post-cutover boundary only for the explicit production check mode", () => {
+    expect(resolveAccessBoundary("check", "production"))
+      .toBe(ACCESS_BOUNDARIES.production);
+    expect(resolveAccessBoundary("check-cutover", "production"))
+      .toBe(PRODUCTION_ACCESS_CUTOVER_BOUNDARY);
+    expect(() => resolveAccessBoundary("check-cutover", "staging"))
+      .toThrow("Production cutover checks require the production environment");
+  });
+
+  it("fails closed on production overlap or an unexpected transition", () => {
+    const overlapping = makeApp({
+      id: "unexpected-production-overlap",
+      name: "Unexpected production API",
+      domain: "linksim.link/api/library*",
+      aud: "unexpected",
+      policyId: PUBLIC_POLICY_ID,
+      decision: "bypass",
+    });
+    expect(() => planAccessBoundary(
+      selectBoundaryApplications(
+        [...productionApps(), overlapping],
+        PRODUCTION_ACCESS_CUTOVER_BOUNDARY,
+      ),
+      PRODUCTION_ACCESS_CUTOVER_BOUNDARY,
+    )).toThrow("Unexpected overlapping Access application");
+
+    const drifted = productionApps();
+    drifted[1] = { ...drifted[1], domain: "linksim.link/api/private/*" };
+    expect(() => planAccessBoundary(drifted, PRODUCTION_ACCESS_CUTOVER_BOUNDARY))
+      .toThrow("Expected exactly one Access application");
   });
 
   it("fails closed instead of creating, deleting, or guessing applications", () => {

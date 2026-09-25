@@ -9,10 +9,14 @@ const moduleSource = read("infra/terraform/modules/linksim_cloudflare/main.tf");
 const stagingWrangler = read("wrangler.staging.toml");
 const previewWrangler = read("wrangler.staging-preview.toml");
 const productionWrangler = read("wrangler.toml");
+const preparedProductionWrangler = read("wrangler.production-auth.toml");
+const preparedProductionRuntime = read("workers/auth-runtime/wrangler.production.toml");
 const deployScript = read("scripts/deploy-pages-safe.mjs");
 const deployWorkflow = read(".github/workflows/deploy-pages.yml");
 const stagingTerraformMain = read("infra/terraform/environments/staging/main.tf");
 const productionTerraformMain = read("infra/terraform/environments/prod/main.tf");
+const productionTerraformVariables = read("infra/terraform/environments/prod/variables.tf");
+const productionAuthCutoverTfvars = read("infra/terraform/environments/prod/auth-cutover.tfvars.example");
 const terraformVariables = read("infra/terraform/modules/linksim_cloudflare/variables.tf");
 const runtimeTypes = read("functions/_lib/types.ts");
 const accessPolicyDocs = read("docs/access-policy-templates.md");
@@ -140,7 +144,7 @@ describe("authenticated Pages preview Terraform intent", () => {
       .replace('\nAUTH_REGISTRATION_ENABLED = "true"', ""));
   });
 
-  it("binds the private auth Durable Object only to stable staging", () => {
+  it("keeps production auth dormant except through the protected cutover target", () => {
     expect(stagingWrangler).toContain('name = "AUTH"');
     expect(stagingWrangler).toContain('class_name = "AuthRuntime"');
     expect(stagingWrangler).toContain('script_name = "linksim-auth-runtime-staging"');
@@ -151,6 +155,13 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(previewWrangler).not.toContain("AUTH_SESSION_SOURCE");
     expect(productionWrangler).not.toContain('name = "AUTH"');
     expect(productionWrangler).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionTerraformMain).not.toContain("linksim-auth-runtime-production");
+    expect(moduleSource).not.toContain("linksim-auth-runtime-production");
+    expect(deployWorkflow).toContain("github.event.inputs.target == 'prod-auth-cutover'");
+    expect(deployWorkflow).toContain("--target \"$DEPLOY_TARGET\"");
+    expect(deployScript).toContain("wrangler.production-auth.toml");
+    expect(preparedProductionWrangler).toContain('script_name = "linksim-auth-runtime-production"');
+    expect(preparedProductionRuntime).toContain('name = "linksim-auth-runtime-production"');
   });
 
   it("keeps the staging Durable Object binding represented in Terraform", () => {
@@ -164,7 +175,16 @@ describe("authenticated Pages preview Terraform intent", () => {
       .split('variable "pages_production_durable_object_namespaces" {')[1]
       ?.split("\n}\n")[0] ?? "";
     expect(namespaceVariable).not.toContain("default");
-    expect(productionTerraformMain).not.toContain("pages_production_durable_object_namespaces");
+    expect(productionTerraformMain).toContain("pages_production_durable_object_namespaces");
+    expect(productionTerraformMain).toContain("pages_production_env_vars_plain");
+    expect(productionTerraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
+    expect(productionTerraformVariables).toContain('variable "pages_production_env_vars_plain"');
+    expect(production).not.toContain("pages_production_durable_object_namespaces");
+    expect(production).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionAuthCutoverTfvars).toContain("pages_production_durable_object_namespaces");
+    expect(productionAuthCutoverTfvars).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
+    expect(productionAuthCutoverTfvars).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
+    expect(productionAuthCutoverTfvars).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED    = "false"');
   });
 
   it("configures staging authentication before deploying its runtime and Pages application", () => {

@@ -1,0 +1,154 @@
+# Production authentication cutover checklist
+
+This runbook prepares the 0.29.0 migration from broad Cloudflare Access to
+Better Auth. Nothing here authorizes production work. Every production write
+requires a separately approved cutover window.
+
+The checked-in production auth files are dormant:
+
+- `wrangler.production-auth.toml` is the prepared Pages configuration.
+- `workers/auth-runtime/wrangler.production.toml` is the prepared private auth
+  runtime configuration.
+- `config/production-auth-build.env.example` records the required client build
+  flags without activating them in normal production CI.
+- `config/production-auth-mode.json` is the reviewed persistent deployment
+  switch. Its checked-in `active: false`, `accessBoundary: broad` state keeps
+  normal production automation on `wrangler.toml`, without the auth runtime or
+  Better Auth schema migrations.
+
+The initial production mode is `transition`: Better Auth is checked first while
+verified Access remains available for legacy migration. The existing Access API
+application is narrowed from `/api/*` to `/api/auth/legacy-access/*` only after
+the application boundary is verified.
+
+## Before the window
+
+- [ ] Obtain explicit production-cutover approval.
+- [ ] Freeze and record the release tag, commit SHA, tree SHA, Pages deployment,
+  auth-runtime artifact/config SHA, and current Access application/policy IDs.
+- [ ] Confirm production D1 backup/restore evidence and the rollback owner.
+- [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
+  operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
+- [ ] Create a production-only GitHub OAuth application with callback
+  `https://linksim.link/api/auth/callback/github`.
+- [ ] Create a production-only Turnstile widget for `linksim.link`.
+- [ ] Prepare distinct production values for `BETTER_AUTH_SECRET`,
+  `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TURNSTILE_SITE_KEY`, and
+  `TURNSTILE_SECRET_KEY`. Never copy staging values.
+- [ ] Prepare the protected client build inputs from
+  `config/production-auth-build.env.example`: set `VITE_BETTER_AUTH_PILOT=true`
+  and replace `VITE_TURNSTILE_SITE_KEY` with the public key from that exact
+  production widget. Verify both values are present in the release build.
+- [ ] Run `node scripts/access-boundary.mjs plan-cutover production` with a
+  read-only Access token. It must show exactly one change:
+  `linksim.link/api/*` to `linksim.link/api/auth/legacy-access/*`.
+- [ ] Before cutover, `node scripts/access-boundary.mjs plan-rollback production`
+  must show zero changes because the broad boundary is already restored. Repeat
+  it after the Access change and require exactly the inverse one-change plan.
+- [ ] Review the production Better Auth schema probe and migrations. Confirm
+  normal production automation skips them while auth mode remains inactive.
+- [ ] Prepare and review the activation candidate that changes
+  `config/production-auth-mode.json` to `active: true` while keeping
+  `accessBoundary: broad`. Prepare a separate post-Access candidate that keeps
+  auth active and changes only `accessBoundary` to `legacy`. Stage and validate
+  both before the production freeze.
+
+## Start the 90-day claim window
+
+At the approved cutover, record one UTC timestamp. Set
+`AUTH_LEGACY_CLAIM_DEADLINE` to exactly 90 days after it in both dormant configs.
+Record both values in the release evidence. Do not estimate the deadline before
+the cutover time is known.
+
+Enable `AUTH_DUAL_LOGIN_MIGRATION_ENABLED`, `AUTH_LEGACY_CLAIM_ENABLED`, and
+`AUTH_REGISTRATION_ENABLED` only in the reviewed cutover candidate. Temporarily
+enable `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED` in both Pages and runtime for
+the administrator bootstrap below. The dormant files keep all four disabled so
+an accidental deployment fails closed.
+
+## Ordered cutover
+
+The checked-in preparation defaults intentionally keep authentication disabled.
+The reviewed activation release sets the recorded deadline and approved flags,
+changes `active` to `true` while retaining the broad boundary, and reaches
+production through the normal tagged release and protected environment. The
+same protected job then performs the first three steps and permanently selects
+the auth configuration for later normal production releases. The manual
+`prod-auth-cutover` target remains available for a separately approved rerun and
+requires confirmation `APPROVE_PRODUCTION_AUTH_CUTOVER`.
+
+1. Probe production D1. Apply, in order, the reviewed additive migrations
+   `2026-09-19_better_auth_schema.sql`,
+   `2026-09-21_auth_migration_attempt.sql`, and
+   `2026-09-23_privileged_passkey_recovery.sql`, then rerun
+   `db/probes/better-auth-schema.sql`.
+2. Put the five production secrets on `linksim-auth-runtime-production` and
+   deploy `workers/auth-runtime/wrangler.production.toml`.
+3. Build with the two verified production client inputs, then deploy the
+   reviewed Pages candidate using `wrangler.production-auth.toml` while broad
+   `/api/*` Access protection remains in place.
+4. Verify runtime health, exact trusted origin, secure production cookies,
+   production passkey RP ID, and that Access still redirects anonymous API
+   requests with the recorded audience.
+5. Before narrowing Access, bootstrap the legacy administrator:
+   - run `node scripts/manage-admin-passkey-recovery.mjs production list` and
+     verify the exact unmigrated administrator UUID;
+   - authorize it for 15 minutes with
+     `node scripts/manage-admin-passkey-recovery.mjs production authorize <user-uuid> 15`;
+   - open
+     `https://linksim.link/api/auth/legacy-access/start?recovery=passkey&returnTo=%2Fsettings%2Fprofile`,
+     complete the passkey ceremony, and verify administrator settings, roles and
+     the migration progress view;
+   - revoke an abandoned authorization with
+     `node scripts/manage-admin-passkey-recovery.mjs production revoke <authorization-uuid>`;
+   - set `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED=false` in Pages and runtime,
+     promote the reviewed retirement candidate through the protected release,
+     and verify that new recovery attempts are rejected.
+6. Copy the reviewed auth values into the active production Terraform variables,
+   replace the namespace and deadline placeholders, and keep privileged recovery
+   `false`. Run the protected plan/apply and require a zero-drift follow-up plan.
+   Future Terraform applies must retain these values so they cannot remove the
+   auth binding or re-enable recovery.
+7. Freeze production deployments. Apply the single reviewed Access change,
+   preserving the existing application, audience and allow policy. Do not create
+   a replacement app. Immediately promote the already-reviewed boundary candidate
+   that changes `accessBoundary` to `legacy`; its deployment must pass the strict
+   application-`401` and legacy-Access redirect check. Until that candidate lands,
+   a normal deployment fails its broad-boundary precheck and cannot redeploy the
+   old Pages configuration because auth remains active.
+8. Immediately verify the anonymous shell and public routes, application JSON
+   `401` responses, legacy Access redirect and audience, GitHub login/logout,
+   revoked sessions, passkeys, claims, dual-login migration, administrator roles,
+   migration progress, supported deep links, cloud sync and local unsynced work.
+9. Record deployed SHAs/configuration and the post-cutover usage/error baseline.
+
+## Rollback
+
+Rollback order is security-sensitive:
+
+1. Disable registration, automatic claims and new migration attempts.
+2. Restore the broad `/api/*` Access boundary first. Verify its redirect and
+   exact audience before changing Pages or the auth runtime.
+3. Change `accessBoundary` back to `broad` in the reviewed fallback candidate,
+   then deploy the tested transition/read-only fallback. Set `active` to `false`
+   only if the fallback deliberately returns normal releases to `wrangler.toml`.
+   Preserve additive schemas, identity mappings, credentials, audit history and
+   local work.
+4. Confirm existing Better Auth users are not remapped or deleted. Access alone
+   cannot serve newly registered users, so communicate the fallback state.
+
+The repository exposes production Access changes as read-only plans only. Make
+the reviewed dashboard/API mutation during the separately approved window, then
+rerun both plans to prove the desired boundary and its inverse rollback.
+
+## Monitoring and retirement
+
+- [ ] Review errors, auth-runtime duration, D1 rows read/written, Worker/Pages
+  requests, Durable Object usage and alerts during the first hour and full day.
+- [ ] Review the same account-wide figures after one week against the accepted
+  capacity baseline and 1,000-registered-user target.
+- [ ] Track migrated ordinary and privileged accounts in the administrator view.
+- [ ] After 90 days, separately approve disabling email claims and the temporary
+  dual-login route. Retain mappings and migration audit records.
+- [ ] Retire obsolete Access verification only after the remaining accounts and
+  rollback evidence have been reviewed.
