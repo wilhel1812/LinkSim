@@ -202,15 +202,21 @@ require assisted resolution; never overwrite a mapping. Keep GitHub linked.
 Recovery uses GitHub or an enrolled passkey; loss of all methods requires audited
 manual ownership review and is not guaranteed. Email alone is not sufficient.
 
-One staging-only exception handles a privileged legacy account that has no
-independent GitHub identity. An operator creates a short-lived authorization for
-the exact LinkSim ID and Access subject. Fresh Access proof can then bootstrap a
-Better Auth-managed passkey and session through an opaque, single-use context
-bound to a separate Secure, HttpOnly, same-site browser cookie. A copied return
-URL is not sufficient to continue recovery.
+A bounded exception handles a privileged legacy account that has no independent
+GitHub identity. It is rehearsed in staging and may be temporarily enabled for
+the separately approved production administrator bootstrap. An operator creates
+a short-lived authorization for the exact environment, LinkSim ID and Access
+subject. Fresh Access proof can then bootstrap a Better Auth-managed passkey and
+session through an opaque, single-use context bound to a separate Secure,
+HttpOnly, same-site browser cookie. A copied return URL is not sufficient to
+continue recovery. Production must disable and verify this recovery gate before
+broad API Access is narrowed.
 No email matching, password, permanent Access session, ordinary registration or
 custom WebAuthn/session primitive is introduced. The recovered privileged user
-must enroll a second passkey before sign-off.
+should enroll passkeys on independent authenticators where available. The
+current administrator has one available authenticator and explicitly accepted a
+single-passkey exception: loss of that passkey requires operator-assisted
+recovery and may leave the account unrecoverable.
 
 ## Security, staging and cutover
 
@@ -231,6 +237,9 @@ disabled integration first, expose narrowly scoped auth/migration routes, migrat
 privileged accounts, obtain production cutover approval, and remove broad Access
 only after application boundary checks pass. Record exact SHAs and cutover time.
 Review the first full day and first week before closing capacity acceptance.
+Use the ordered, fail-closed
+[production authentication cutover checklist](production-auth-cutover-checklist.md)
+for the separately approved production window.
 
 For the stable-staging boundary cutover, reconcile Access before merging the
 deployment commit: run `node scripts/access-boundary.mjs plan staging`, confirm

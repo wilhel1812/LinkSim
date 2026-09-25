@@ -12,6 +12,7 @@ import { validateCurrentStagingVersionState } from "./version-state.mjs";
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
 const wranglerProd = path.join(root, "wrangler.toml");
+const wranglerProductionAuth = path.join(root, "wrangler.production-auth.toml");
 const wranglerStaging = path.join(root, "wrangler.staging.toml");
 const wranglerStagingPreview = path.join(root, "wrangler.staging-preview.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
@@ -24,6 +25,7 @@ const REQUIRED_ENV_BY_TARGET = {
   staging: ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"],
   "staging-preview": ["VITE_MAPTILER_KEY"],
   "prod-main": ["VITE_MAPTILER_KEY"],
+  "prod-auth-cutover": ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"],
 };
 
 const TARGETS = {
@@ -73,7 +75,29 @@ const TARGETS = {
       authRuntime: null,
     },
   },
+  "prod-auth-cutover": {
+    projectName: "linksim",
+    branch: "main",
+    requiredBranch: "main",
+    configPath: wranglerProductionAuth,
+    environmentLabel: "production-auth-cutover",
+    expected: {
+      name: "linksim",
+      databaseName: "linksim",
+      bucketName: "linksim-avatars",
+      historyBucketName: "",
+      authRuntime: {
+        name: "AUTH",
+        className: "AuthRuntime",
+        scriptName: "linksim-auth-runtime-production",
+      },
+      authSessionSource: "transition",
+    },
+  },
 };
+
+const isProductionTarget = (targetName) =>
+  targetName === "prod-main" || targetName === "prod-auth-cutover";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -223,7 +247,7 @@ const parseWranglerJsonPayload = (stdout) => {
 };
 
 async function verifyRemoteSchema(targetName, databaseName) {
-  if (targetName !== "staging" && targetName !== "staging-preview" && targetName !== "prod-main") return;
+  if (targetName !== "staging" && targetName !== "staging-preview" && !isProductionTarget(targetName)) return;
   // CI workflows apply and verify required migrations before invoking this deploy script.
   // Keep the local preflight for operators with D1 read access.
   if (process.env.GITHUB_ACTIONS === "true") return;
@@ -345,20 +369,20 @@ async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
   const headTags =
-    targetName === "prod-main"
+    isProductionTarget(targetName)
       ? (await run("git", ["tag", "--points-at", "HEAD"], { capture: true })).stdout
           .split("\n")
           .map((line) => line.trim())
           .filter(Boolean)
       : [];
   const expectedReleaseTag =
-    targetName === "prod-main"
+    isProductionTarget(targetName)
       ? `v${JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version}`
       : "";
   const status = await run("git", ["status", "--porcelain"], { capture: true });
   assert(status.stdout.trim().length === 0, "Preflight failed: unexpected dirty files before deploy.");
   if (target.requiredBranch) {
-    const isTaggedProdCheckout = targetName === "prod-main" && headTags.includes(expectedReleaseTag);
+    const isTaggedProdCheckout = isProductionTarget(targetName) && headTags.includes(expectedReleaseTag);
     assert(
       branch === target.requiredBranch || isTaggedProdCheckout,
       `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}' or the tagged release commit.`,
@@ -398,12 +422,14 @@ async function preflight(targetName, target) {
   const expectedDurableObjectBindings = target.expected.authRuntime ? [target.expected.authRuntime] : [];
   assert(JSON.stringify(durableObjectBindings) === JSON.stringify(expectedDurableObjectBindings),
     `Preflight failed: unexpected Durable Object bindings for ${targetName}.`);
-  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === (targetName === "staging" ? "better-auth" : ""),
+  const expectedAuthSessionSource = target.expected.authSessionSource
+    ?? (targetName === "staging" ? "better-auth" : "");
+  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === expectedAuthSessionSource,
     `Preflight failed: unexpected AUTH_SESSION_SOURCE for ${targetName}.`);
 
   await verifyRemoteSchema(targetName, databaseName);
 
-  if (targetName === "prod-main") {
+  if (isProductionTarget(targetName)) {
     await run("node", ["scripts/validate-prod-release.mjs"]);
   }
 
@@ -448,8 +474,8 @@ async function main() {
 
   if (process.argv.includes("--verify-commit-only")) {
     assert(
-      targetName === "prod-main",
-      "--verify-commit-only is only valid for the prod-main target.",
+      isProductionTarget(targetName),
+      "--verify-commit-only is only valid for a production target.",
     );
     const currentCommit = await getGitRef(["rev-parse", "--short", "HEAD"]);
     const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);

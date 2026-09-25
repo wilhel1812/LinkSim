@@ -97,7 +97,7 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(workflow).not.toContain("schedule:");
   });
 
-  it("applies and probes the Better Auth schema on staging only", () => {
+  it("applies and probes the Better Auth schema on staging and only the explicit production auth cutover", () => {
     const migration = "db/migrations/2026-09-19_better_auth_schema.sql";
     const migrationAttempt = "db/migrations/2026-09-21_auth_migration_attempt.sql";
     const privilegedRecovery = "db/migrations/2026-09-23_privileged_passkey_recovery.sql";
@@ -115,10 +115,20 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(migrationStep.indexOf(`--file ${migrationAttempt} --yes`))
       .toBeLessThan(migrationStep.lastIndexOf(`--file ${probe}`));
     expect(migrationStep).toContain(`--file ${probe}`);
-    expect(productionJob).not.toContain(migration);
-    expect(productionJob).not.toContain(migrationAttempt);
-    expect(productionJob).not.toContain(privilegedRecovery);
-    expect(productionJob).not.toContain(probe);
+    const productionStep = "- name: Apply and verify production Better Auth schema";
+    const productionDeploy = "- name: Deploy prod/main with guardrails";
+    expect(productionJob).toContain(productionStep);
+    const productionMigrationStep = productionJob.slice(
+      productionJob.indexOf(productionStep),
+      productionJob.indexOf(productionDeploy),
+    );
+    expect(productionMigrationStep).toContain(
+      "if: github.event.inputs.target == 'prod-auth-cutover'",
+    );
+    expect(productionMigrationStep).toContain(`--file ${migration} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${migrationAttempt} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${privilegedRecovery} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${probe}`);
   });
 
   it("validates workflow-derived preview and release values before quoted shell use", () => {
@@ -224,7 +234,10 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(productionJob).toContain(commitGateStep);
     expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
     expect(productionJob).toContain(
-      'node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only',
+      "DEPLOY_TARGET: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'prod-auth-cutover' || 'prod-main' }}",
+    );
+    expect(productionJob).toContain(
+      'node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target "$DEPLOY_TARGET" --verify-commit-only',
     );
     expect(productionJob.indexOf(commitGateStep)).toBeLessThan(
       productionJob.indexOf(simulationMigrationStep),
@@ -312,7 +325,39 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(stagingJob).toContain('VITE_BETTER_AUTH_PILOT: "true"');
     expect(stagingJob).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
     expect(previewJob).not.toContain("VITE_BETTER_AUTH_PILOT");
-    expect(productionJob).not.toContain("VITE_BETTER_AUTH_PILOT");
+    expect(productionJob).toContain("github.event.inputs.target == 'prod-auth-cutover'");
+    expect(productionJob).toContain(
+      "VITE_BETTER_AUTH_PILOT: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'true' || '' }}",
+    );
+    expect(productionJob).toContain(
+      "VITE_TURNSTILE_SITE_KEY: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && secrets.VITE_TURNSTILE_SITE_KEY || '' }}",
+    );
+  });
+
+  it("keeps the production auth cutover on the protected release deployment path", () => {
+    expect(workflow).toContain("- prod-auth-cutover");
+    expect(workflow).toContain("APPROVE_PRODUCTION_AUTH_CUTOVER");
+    expect(productionJob).toContain("environment: production");
+    expect(productionJob).toContain("Apply and verify production Better Auth schema");
+    expect(productionJob).toContain("db/migrations/2026-09-19_better_auth_schema.sql");
+    expect(productionJob).toContain("db/migrations/2026-09-21_auth_migration_attempt.sql");
+    expect(productionJob).toContain("db/migrations/2026-09-23_privileged_passkey_recovery.sql");
+    expect(productionJob).toContain("db/probes/better-auth-schema.sql");
+    expect(productionJob).toContain("Configure production auth secrets");
+    expect(productionJob).toContain("workers/auth-runtime/wrangler.production.toml");
+    expect(productionJob).toContain('--target "$DEPLOY_TARGET"');
+    expect(productionJob).toContain("config/production-auth-mode.json");
+    expect(productionJob).toContain("steps.production_mode.outputs.auth_active == 'true'");
+    expect(productionJob).toContain('access_boundary=$ACCESS_BOUNDARY');
+    expect(productionJob).toContain(
+      'The legacy-only Access boundary requires production authentication to be active.',
+    );
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check-cutover production");
+    expect(productionJob).toContain("environment: production");
+    expect(deployScript).toContain('"prod-auth-cutover"');
+    expect(deployScript).toContain('configPath: wranglerProductionAuth');
+    expect(deployScript).toContain('scriptName: "linksim-auth-runtime-production"');
   });
 
   it("fetches the production baseline before validating a staging deployment", () => {

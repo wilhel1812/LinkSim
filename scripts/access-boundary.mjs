@@ -138,6 +138,54 @@ export const STAGING_ACCESS_ROLLBACK_BOUNDARY = Object.freeze({
   }),
 });
 
+export const PRODUCTION_ACCESS_CUTOVER_BOUNDARY = Object.freeze({
+  ...ACCESS_BOUNDARIES.production,
+  strictHost: "linksim.link",
+  configPath: "wrangler.toml",
+  originProbeUrl: "https://linksim.link/api/health",
+  apiAuthMode: "application",
+  legacyMigrationUrl: "https://linksim.link/api/auth/legacy-access/session",
+  authBootstrapUrl: "https://linksim.link/api/auth/passkey/generate-authenticate-options",
+  authManagementUrl: "https://linksim.link/api/auth/passkey/list-user-passkeys",
+  applications: ACCESS_BOUNDARIES.production.applications.map((application) => {
+    if (application.key !== "api") return application;
+    return {
+      ...application,
+      name: "LinkSim Legacy Migration API",
+      domain: "linksim.link/api/auth/legacy-access/*",
+      destinationUris: ["linksim.link/api/auth/legacy-access/*"],
+      mutable: true,
+      currentName: "LinkSim Authenticated API",
+      currentDomain: "linksim.link/api/*",
+      currentDestinationUris: [],
+      currentPolicyId: application.policyId,
+    };
+  }),
+});
+
+export const PRODUCTION_ACCESS_ROLLBACK_BOUNDARY = Object.freeze({
+  ...PRODUCTION_ACCESS_CUTOVER_BOUNDARY,
+  apiAuthMode: "access",
+  originProbeUrl: undefined,
+  legacyMigrationUrl: undefined,
+  authBootstrapUrl: undefined,
+  authManagementUrl: undefined,
+  applications: PRODUCTION_ACCESS_CUTOVER_BOUNDARY.applications.map((application) => {
+    if (!application.mutable) return application;
+    return {
+      ...application,
+      name: application.currentName,
+      domain: application.currentDomain,
+      destinationUris: application.currentDestinationUris,
+      policyId: application.currentPolicyId,
+      currentName: application.name,
+      currentDomain: application.domain,
+      currentDestinationUris: application.destinationUris,
+      currentPolicyId: application.policyId,
+    };
+  }),
+});
+
 const normalizePolicyIds = (policies) =>
   [...new Set((policies ?? []).map((policy) => String(policy.id ?? "").trim()).filter(Boolean))]
     .sort();
@@ -151,6 +199,22 @@ const sameValues = (left, right) =>
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+export const isAccessPlanMode = (mode) =>
+  ["plan", "plan-cutover", "plan-rollback"].includes(mode);
+
+export const resolveAccessBoundary = (mode, environment) => {
+  const configuredBoundary = ACCESS_BOUNDARIES[environment];
+  assert(configuredBoundary, `Unknown Access environment: ${environment ?? ""}.`);
+  assert(
+    !["plan-cutover", "plan-rollback", "check-cutover"].includes(mode) || environment === "production",
+    "Production cutover checks require the production environment.",
+  );
+  if (mode === "rollback") return STAGING_ACCESS_ROLLBACK_BOUNDARY;
+  if (["plan-cutover", "check-cutover"].includes(mode)) return PRODUCTION_ACCESS_CUTOVER_BOUNDARY;
+  if (mode === "plan-rollback") return PRODUCTION_ACCESS_ROLLBACK_BOUNDARY;
+  return configuredBoundary;
 };
 
 export const validateAcceptedAudiences = (configured, expected) => {
@@ -499,12 +563,10 @@ export const verifyHttpBoundary = async (
 const run = async () => {
   const [mode, environment] = process.argv.slice(2);
   assert(
-    ["plan", "apply", "rollback", "check", "check-access", "check-preview"].includes(mode),
-    "Usage: access-boundary.mjs <plan|apply|rollback|check|check-access|check-preview> <staging|production>",
+    ["plan", "plan-cutover", "plan-rollback", "apply", "rollback", "check", "check-cutover", "check-access", "check-preview"].includes(mode),
+    "Usage: access-boundary.mjs <plan|plan-cutover|plan-rollback|apply|rollback|check|check-cutover|check-access|check-preview> <staging|production>",
   );
-  const configuredBoundary = ACCESS_BOUNDARIES[environment];
-  assert(configuredBoundary, `Unknown Access environment: ${environment ?? ""}.`);
-  const boundary = mode === "rollback" ? STAGING_ACCESS_ROLLBACK_BOUNDARY : configuredBoundary;
+  const boundary = resolveAccessBoundary(mode, environment);
   assert(!["apply", "rollback"].includes(mode) || environment === "staging", "Production Access mutation is not supported.");
   assert(mode !== "check-preview" || environment === "staging", "Preview verification is staging-only.");
 
@@ -517,7 +579,7 @@ const run = async () => {
     return;
   }
 
-  if (mode === "check") {
+  if (mode === "check" || mode === "check-cutover") {
     await verifyHttpBoundary(boundary, { expectPagesRedirect: environment === "staging" });
     console.log(`[access-boundary] ${environment} boundary verified.`);
     return;
@@ -539,7 +601,7 @@ const run = async () => {
     console.log(`[access-boundary] ${action.key}: ${action.fromDomain} -> ${action.toDomain}`);
   }
 
-  if (mode === "plan") return;
+  if (isAccessPlanMode(mode)) return;
 
   assert(plan.actions.length <= 2, "Refusing to apply more than two Access application updates.");
   const allowedKeys = new Set(["api", "publicApi"]);

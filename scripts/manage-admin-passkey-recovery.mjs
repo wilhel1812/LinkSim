@@ -6,9 +6,22 @@ import { pathToFileURL } from "node:url";
 import { parseWranglerRows } from "./verify-identity-lifecycle-d1.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const run = (sql, json = false) => {
+const RECOVERY_DATABASES = Object.freeze({
+  staging: "linksim_staging",
+  production: "linksim",
+});
+
+export const resolveRecoveryDatabase = (environment) => {
+  const database = RECOVERY_DATABASES[environment];
+  if (!database) {
+    throw new Error("Recovery environment must be exactly staging or production.");
+  }
+  return database;
+};
+
+const run = (database, sql, json = false) => {
   const result = spawnSync("npx", [
-    "wrangler", "d1", "execute", "linksim_staging", "--remote", "--command", sql,
+    "wrangler", "d1", "execute", database, "--remote", "--command", sql,
     ...(json ? ["--json"] : []), "--yes",
   ], {
     ...(json ? { encoding: "utf8" } : { stdio: "inherit" }),
@@ -37,9 +50,10 @@ export const parseRecoveryRevocation = (stdout, expectedId) => {
   return row;
 };
 
-const main = ([action, value, rawMinutes = "15"]) => {
+const main = ([environment, action, value, rawMinutes = "15"]) => {
+  const database = resolveRecoveryDatabase(environment);
   if (action === "list") {
-    run(`SELECT users.id, users.username, users.email, users.is_admin, users.is_moderator,
+    run(database, `SELECT users.id, users.username, users.email, users.is_admin, users.is_moderator,
       CASE WHEN mapping.auth_user_id IS NULL THEN 'not-migrated' ELSE 'migrated' END AS migration_state
       FROM users LEFT JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = users.id
       LEFT JOIN deleted_users AS deleted ON deleted.id = users.id
@@ -52,7 +66,7 @@ const main = ([action, value, rawMinutes = "15"]) => {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + minutes * 60_000).toISOString();
-    const stdout = run(`UPDATE auth_privileged_passkey_recovery SET revoked_at = '${createdAt}'
+    const stdout = run(database, `UPDATE auth_privileged_passkey_recovery SET revoked_at = '${createdAt}'
       WHERE linksim_user_id = '${value}' AND consumed_at IS NULL AND revoked_at IS NULL
         AND expires_at <= '${createdAt}';
       INSERT INTO auth_privileged_passkey_recovery
@@ -71,13 +85,13 @@ const main = ([action, value, rawMinutes = "15"]) => {
     console.log(JSON.stringify(parseRecoveryAuthorization(stdout, id), null, 2));
   } else if (action === "revoke") {
     if (!UUID.test(value ?? "")) throw new Error("revoke requires the recovery authorization UUID");
-    const stdout = run(`UPDATE auth_privileged_passkey_recovery SET revoked_at = '${new Date().toISOString()}'
+    const stdout = run(database, `UPDATE auth_privileged_passkey_recovery SET revoked_at = '${new Date().toISOString()}'
       WHERE id = '${value}' AND consumed_at IS NULL AND revoked_at IS NULL;
       SELECT id, linksim_user_id, expires_at, consumed_at, revoked_at
       FROM auth_privileged_passkey_recovery WHERE id = '${value}';`, true);
     console.log(JSON.stringify(parseRecoveryRevocation(stdout, value), null, 2));
   } else {
-    throw new Error("Usage: node scripts/manage-staging-admin-passkey-recovery.mjs list | authorize <LinkSim user UUID> [5-30 minutes] | revoke <authorization UUID>");
+    throw new Error("Usage: node scripts/manage-admin-passkey-recovery.mjs <staging|production> list | authorize <LinkSim user UUID> [5-30 minutes] | revoke <authorization UUID>");
   }
 };
 
