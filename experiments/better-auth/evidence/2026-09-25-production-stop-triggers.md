@@ -79,10 +79,15 @@ account-wide measurement and reviewed cause show adequate monthly headroom.
 - Start the ordered rollback when three protected application or session-check
   requests fail with resource-limit responses within five minutes after intake
   has stopped. A successful static shell response does not cancel this trigger.
-- Start the ordered rollback regardless of total traffic when the designated
-  post-cutover canary or an independently confirmed unexpired, unrevoked session
-  attached to an allowed account receives three unexpected `401`/`403` responses
-  within five minutes, each still failing after one retry.
+- Start the ordered rollback regardless of total traffic when the scheduled
+  post-cutover canary receives one unexpected `401`/`403` response that still
+  fails after one retry, or when an independently confirmed unexpired, unrevoked
+  session attached to an allowed account receives three such responses within
+  five minutes. Before cutover, configure and verify the protected canary to run
+  once per minute through the first hour, once every five minutes for the rest
+  of the first day, and once every fifteen minutes through the first week. A
+  missing or unhealthy canary leaves the cutover gate open; natural traffic is
+  not a substitute for this schedule.
 - Start the ordered rollback when at least 20 protected application or
   session-check requests are observed in five minutes and 5% or more have a
   qualifying availability failure after one retry. A qualifying failure is a
