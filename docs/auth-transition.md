@@ -2,8 +2,9 @@
 
 Approved in issue #1107. This document records the implementation handoff, not
 proof that the replacement has passed acceptance. Production remains on Access.
-GitHub is the initial provider; GitLab is deferred. Passkeys are optional if the
-runtime gate fails for them. No passwords, transactional email, auth SaaS, custom
+GitHub is the initial provider; GitLab is deferred. Passkey support is required
+before production cutover, while enrollment remains optional. No passwords,
+transactional email, auth SaaS, custom
 session tokens, cryptography, or recovery codes.
 
 ## Delivery batches
@@ -186,6 +187,18 @@ This does not approve production schema, auth runtime, routes, credentials,
 archive writes, Access removal or cutover. Account-wide runtime and quota gates
 remain open before any of those steps.
 
+The [final staging release-readiness audit](../experiments/better-auth/evidence/2026-09-25-auth-staging-release-readiness.md)
+records exact-tree deployment, Access-boundary, signed-in session, passkey,
+sync and supported deep-link evidence without repeating completed migration or
+credential ceremonies. It makes a qualified capacity go at the current scale
+and a conditional acceptance of the 1,000-registered-account target within the
+modeled activity envelope. The accepted storage sensitivities span roughly 958
+to 1,000 accounts, but do not establish a supported-user range; reaching 1,000
+on Free depends on bounded R2 archive operation before D1 approaches its ceiling.
+Representative cold/full-app CPU, billable object duration, actual active
+fraction and history growth remain first-hour/day/week monitoring requirements,
+not staging-proven guarantees.
+
 ## Migration and recovery invariants
 
 Provider subjects identify subsequent logins. During a fixed 90-day window from
@@ -240,6 +253,12 @@ Review the first full day and first week before closing capacity acceptance.
 Use the ordered, fail-closed
 [production authentication cutover checklist](production-auth-cutover-checklist.md)
 for the separately approved production window.
+
+The only remaining human-only staging accessibility evidence is a manual
+VoiceOver spot-check of sign-in, native passkey handoff announcements, Profile
+credential actions, error/fallback guidance and focus return. Existing automated
+accessibility-tree tests remain required; the spot-check does not require another
+migration or credential change.
 
 For the stable-staging boundary cutover, reconcile Access before merging the
 deployment commit: run `node scripts/access-boundary.mjs plan staging`, confirm
