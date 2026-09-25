@@ -119,17 +119,27 @@ The checked-in declaration is inert until an operator runs an approved apply.
 Before that separately approved production action:
 
 1. Run `npm run tf:plan:prod` with the protected production state and provider
-   credentials.
-2. Run `npm run tf:validate:prod-history-plan`. It reads the saved plan without
-   writing a JSON copy and accepts only one create action for the fixed
+   credentials as the ordinary drift audit. Do not apply this plan when it
+   contains any change other than the history bucket. Existing unrelated drift
+   remains visible and must be reconciled separately.
+2. Run `npm run tf:plan:prod-history` to produce the exceptional, refreshed
+   target plan for only `cloudflare_r2_bucket.history`. Terraform will print its
+   standard targeted-plan warning; this one-time isolated bucket creation is the
+   reviewed exceptional use. The command does not disable refresh and does not
+   change or suppress the ordinary production plan.
+3. Run `npm run tf:validate:prod-history-plan`. It reads the dedicated
+   `prod-history.tfplan` without writing a JSON copy and accepts only one create
+   action for the fixed
    `cloudflare_r2_bucket.history` / `linksim-history` resource in the LinkSim
    account. Any Pages, D1, DNS, Access, binding, update, replacement, deletion,
    or second resource change blocks the operation.
-3. Preserve the reviewed saved plan as the apply input. Do not regenerate or
+4. Preserve the reviewed saved plan as the apply input. Do not regenerate or
    apply a broader plan. Obtain explicit production approval before applying it.
-4. After creation, rerun the normal production plan and require zero unexplained
-   drift. Bucket creation still does not authorize a Pages binding, archive
-   writer, backfill, or authentication cutover.
+5. Apply only the validated `prod-history.tfplan`. After creation, rerun the
+   normal production plan and record every remaining difference; do not apply
+   unrelated drift as part of this operation. Bucket creation still does not
+   authorize a Pages binding, archive writer, backfill, or authentication
+   cutover.
 
 No CI workflow plans or applies Terraform; CI only formats, initializes with
 the backend disabled, and validates configuration.

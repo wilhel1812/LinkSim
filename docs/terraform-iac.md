@@ -42,9 +42,9 @@ state.
 The production history bucket is a root resource rather than an input to the
 Pages module. Its declaration and eventual creation do not add a
 `HISTORY_BUCKET` binding or `HISTORY_SCOPE`, so archive writes remain disabled.
-The production plan for its initial creation must pass
-`npm run tf:validate:prod-history-plan`; that validator rejects every plan with
-another resource change. Applying the saved plan is a separately approved
+The dedicated `npm run tf:plan:prod-history` plan for its initial creation must
+pass `npm run tf:validate:prod-history-plan`; that validator rejects every plan
+with another resource change. Applying the saved plan is a separately approved
 production action.
 
 `pages_access_audience_keys` derives Pages `ACCESS_AUD` only from applications

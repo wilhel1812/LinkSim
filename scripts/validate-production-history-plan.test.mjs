@@ -1,4 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { validateProductionHistoryPlan } from '../infra/terraform/scripts/validate-production-history-plan.mjs';
 
 const expected = {
@@ -19,6 +31,60 @@ const expected = {
 };
 
 describe('production history Terraform plan validation', () => {
+  it('uses an explicit refreshed target plan and a dedicated saved-plan name', () => {
+    const script = readFileSync(
+      new URL('../infra/terraform/scripts/plan-production-history.sh', import.meta.url),
+      'utf8',
+    );
+    const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+    expect(script).toContain('-target=cloudflare_r2_bucket.history');
+    expect(script).toContain('TEMP_PLAN_PATH="${ENV_DIR}/prod-history.tmp.tfplan"');
+    expect(script).toContain('-out="${TEMP_PLAN_PATH}"');
+    expect(script).toContain('mv "${TEMP_PLAN_PATH}" "${PLAN_PATH}"');
+    expect(script).not.toContain('-refresh=false');
+    expect(packageJson.scripts['tf:plan:prod-history']).toBe(
+      'infra/terraform/scripts/plan-production-history.sh',
+    );
+    expect(packageJson.scripts['tf:validate:prod-history-plan']).toBe(
+      'node infra/terraform/scripts/validate-production-history-plan.mjs prod-history.tfplan',
+    );
+    const ignored = spawnSync('git', [
+      'check-ignore',
+      'infra/terraform/environments/prod/prod-history.tmp.tfplan',
+      'infra/terraform/environments/prod/prod-history.tfplan',
+    ], { encoding: 'utf8' });
+    expect(ignored.status).toBe(0);
+  });
+
+  it('removes a stale saved plan before a failed preflight', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'linksim-prod-history-plan-'));
+    const scripts = join(fixture, 'scripts');
+    const environment = join(fixture, 'environments', 'prod');
+    mkdirSync(scripts, { recursive: true });
+    mkdirSync(environment, { recursive: true });
+    copyFileSync(
+      new URL('../infra/terraform/scripts/plan-production-history.sh', import.meta.url),
+      join(scripts, 'plan-production-history.sh'),
+    );
+    writeFileSync(join(environment, 'backend.hcl'), 'fixture');
+    const stalePlan = join(environment, 'prod-history.tfplan');
+    writeFileSync(stalePlan, 'stale plan');
+
+    try {
+      const env = { ...process.env };
+      delete env.TF_VAR_cloudflare_api_token;
+      const result = spawnSync('bash', [join(scripts, 'plan-production-history.sh')], {
+        env,
+        encoding: 'utf8',
+      });
+      expect(result.status).not.toBe(0);
+      expect(existsSync(stalePlan)).toBe(false);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+
   it('accepts exactly the protected LinkSim history bucket creation', () => {
     const withExistingNoOp = {
       ...expected,
