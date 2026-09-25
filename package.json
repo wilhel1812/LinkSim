@@ -50,6 +50,7 @@
     "tf:import:prod": "infra/terraform/scripts/import.sh prod",
     "tf:plan:staging": "infra/terraform/scripts/plan.sh staging",
     "tf:plan:prod": "infra/terraform/scripts/plan.sh prod",
+    "tf:validate:prod-history-plan": "node infra/terraform/scripts/validate-production-history-plan.mjs",
     "tf:discover:staging": "node infra/terraform/scripts/discover-cloudflare.mjs staging infra/terraform/environments/staging/discovery.json",
     "tf:discover:prod": "node infra/terraform/scripts/discover-cloudflare.mjs prod infra/terraform/environments/prod/discovery.json"
   },

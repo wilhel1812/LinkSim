@@ -132,7 +132,14 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(stagingTerraformMain).toMatch(/pages_production_env_vars_plain\s*=\s*\{[\s\S]*HISTORY_SCOPE\s*=\s*"staging"[\s\S]*AUTH_SESSION_SOURCE\s*=\s*"better-auth"[\s\S]*\}/);
     const sharedStagingVars = staging.split("pages_env_vars_plain = {")[1]?.split("}\n")[0] ?? "";
     expect(sharedStagingVars).not.toContain("AUTH_SESSION_SOURCE");
-    expect(production).not.toContain('history_r2_bucket_name');
+    expect(productionTerraformMain).toContain('resource "cloudflare_r2_bucket" "history"');
+    expect(productionTerraformMain).toContain('name         = "linksim-history"');
+    expect(productionTerraformMain).toContain('prevent_destroy = true');
+    const productionStack = productionTerraformMain
+      .split('module "stack" {')[1]?.split('\n}')[0] ?? "";
+    expect(productionStack).not.toContain('history_r2_bucket_name');
+    expect(preparedProductionWrangler).not.toContain('HISTORY_BUCKET');
+    expect(preparedProductionWrangler).not.toContain('HISTORY_SCOPE');
     expect(previewWrangler).toBe(stagingWrangler
       .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
       .replace(/\n\[\[durable_objects\.bindings\]\]\nname = "AUTH"\nclass_name = "AuthRuntime"\nscript_name = "linksim-auth-runtime-staging"\n/, "")

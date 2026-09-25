@@ -24,6 +24,8 @@ Terraform manages these resources for both `staging` and `prod` environments:
 - R2 buckets (`cloudflare_r2_bucket`)
   - `linksim-avatars-staging`
   - `linksim-avatars`
+  - stable staging history `linksim-history-staging`
+  - unbound production history `linksim-history`
 - DNS records in zone `linksim.link` (`cloudflare_dns_record`)
 - Access applications and Access policies for LinkSim hostnames
   - `cloudflare_zero_trust_access_application`
@@ -36,6 +38,14 @@ raw Pages hostname; and `pages_previews` protects wildcard branch previews.
 Discover and import every existing live application ID before apply; never
 replace an existing Access application just because it is absent from local
 state.
+
+The production history bucket is a root resource rather than an input to the
+Pages module. Its declaration and eventual creation do not add a
+`HISTORY_BUCKET` binding or `HISTORY_SCOPE`, so archive writes remain disabled.
+The production plan for its initial creation must pass
+`npm run tf:validate:prod-history-plan`; that validator rejects every plan with
+another resource change. Applying the saved plan is a separately approved
+production action.
 
 `pages_access_audience_keys` derives Pages `ACCESS_AUD` only from applications
 that issue authenticated JWTs. Bypass applications must never be accepted as

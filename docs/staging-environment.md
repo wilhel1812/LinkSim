@@ -141,8 +141,16 @@ credential for `linksim-history-staging`. Set `R2_ACCOUNT_ID`,
 `R2_HISTORY_STAGING_SECRET_ACCESS_KEY` in the operator's shell. Do not save them
 in the repository or use the production write credential for refresh. The
 production history bucket is not yet configured, so this path has synthetic
-test coverage but no live archived-production rehearsal. It is not permission
-to enable production archiving or authentication. A full refresh still replaces
+test coverage but no live archived-production rehearsal. The repository models
+the fixed unbound `linksim-history` bucket and includes an exact-plan validator;
+creating that bucket remains a separately approved production action. An empty
+bucket or an inline-only export short-circuits before R2 access and therefore
+does not prove the production credential or a live object transfer. Complete
+the live rehearsal only after a genuine production archive object exists, or
+after separately approving a synthetic write to the otherwise isolated bucket.
+Use the existing `sanitize-with-archives` path so production is read-only and
+staging alone receives the verified copy. This is not permission to enable
+production archiving or authentication. A full refresh still replaces
 application tables in the staging D1; use it only as an intentional operator
 action, then verify mixed archived/inline history on staging.
 

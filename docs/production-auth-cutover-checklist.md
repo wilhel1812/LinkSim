@@ -27,6 +27,13 @@ the application boundary is verified.
 - [ ] Freeze and record the release tag, commit SHA, tree SHA, Pages deployment,
   auth-runtime artifact/config SHA, and current Access application/policy IDs.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
+- [ ] Provision the unbound `linksim-history` bucket only from a production plan
+  accepted by `npm run tf:validate:prod-history-plan`. Require a zero-unexplained-
+  drift follow-up plan. Do not add the Pages binding or enable archive writes.
+- [ ] Rehearse the existing production-to-staging archive copy with a read-only
+  production credential and a separate staging-write credential. An empty bucket
+  or inline-only export is not evidence; use the first genuine archived object
+  or obtain separate approval for one synthetic production-bucket object.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
 - [ ] Re-run the complete account R2 inventory from the
