@@ -120,8 +120,9 @@ did not change during hydration, and checks permission again after the R2 read.
 Tests deny a stranger and a mismatched change without touching R2, and deny a
 grant revoked during the read. The existing API route verifies identity and
 current account state before calling this reader. Staging has the additive
-schema migration and isolated private bucket binding, but still needs an
-end-to-end rehearsal before archiving is enabled.
+schema migration and isolated private bucket binding. The authenticated
+mixed-history end-to-end rehearsal completed on 2026-09-18; production archive
+activation remains separately gated and disabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a
@@ -179,8 +180,11 @@ size on a synthetic staging rehearsal, then reassess free-tier headroom.
 A [temporary staging-only rehearsal](history-archive-staging-rehearsal.md)
 uses the real staging D1 and private R2 bindings through a local Durable
 Object with remote bindings, restricted to one synthetic history row and a short-lived
-secret. It does not enable application archive writes or replace the remaining
-end-to-end revert, refresh and Manual Sync checks.
+secret. That initial one-row probe did not itself enable application archive
+writes. A later authenticated mixed-history rehearsal completed the archived
+revert and Manual Sync checks on 2026-09-18, and the bounded live
+production-to-staging refresh completed after #1200. Production archive
+activation and a measured backfill rollout remain unapproved.
 The [first staging round trip](evidence/2026-09-18-history-staging-rehearsal.md)
 converted and restored one synthetic row with exact D1 equality. It did not
 measure deployed CPU, and R2 bucket summary counts remained unconfirmed.
