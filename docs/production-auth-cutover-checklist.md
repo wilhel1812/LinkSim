@@ -50,17 +50,17 @@ the application boundary is verified.
   verified, and the new source object plus its copied staging object were
   removed. This rehearsal did not authorize deletion of the five older staging
   rehearsal objects retained by the linked storage decision.
-- [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
+- [x] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
   The [2026-09-26 read-only baseline](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
   records all five resource families below their approved warning thresholds.
   The active Wrangler OAuth session lacks Notifications read access. A read-only
   dashboard fallback confirmed two enabled email billing-budget alerts,
   including the LinkSim emergency spend warning, and an inspected recipient
-  matching the active account operator. Actual receipt remains open. Do not
-  infer a missing alert from the audit credential's HTTP 403 response, and do
-  not check this item until a test/recent dispatch or maintainer confirmation
-  establishes receipt.
+  matching the active account operator. The maintainer confirmed receipt of a
+  Cloudflare test notification for the LinkSim-specific alert at 20:06 CEST on
+  2026-09-26. Do not infer a missing alert from the audit credential's HTTP 403
+  response.
 - [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history

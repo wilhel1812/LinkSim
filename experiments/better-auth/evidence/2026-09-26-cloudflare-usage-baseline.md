@@ -1,12 +1,13 @@
 # Cloudflare alert audit and pre-cutover usage baseline (2026-09-26)
 
-Status: **usage baseline complete; alert-delivery confirmation remains open.**
+Status: **complete.**
 The measured resources are below every approved warning threshold. The current
 Wrangler OAuth session cannot read Cloudflare Notifications. A subsequent
 read-only dashboard review confirmed two enabled email billing-budget alerts,
 including a LinkSim-specific emergency spend warning, and verified that the
-inspected recipient matches the active Cloudflare account operator. Receipt of
-a dispatched notification is not yet evidenced, so this does not complete the
+inspected recipient matches the active Cloudflare account operator. A test
+notification for the LinkSim-specific alert was dispatched and the maintainer
+confirmed receipt at **2026-09-26 20:06 CEST (18:06 UTC)**, completing the
 combined checklist gate.
 
 This was a read-only account audit. It did not change notification policies,
@@ -83,25 +84,19 @@ inspected policy's recipient matches the active account owner/operator. The
 recipient address and alert thresholds are intentionally omitted from public
 evidence. No policy field was saved or changed.
 
-Cloudflare documents Notification History as the record of what was sent,
-when, and to whom. The required completion evidence is therefore still one of:
-
-1. a recent dispatch or Cloudflare test notification received by the active
-   operator; or
-2. maintainer confirmation that the currently configured Cloudflare billing
-   and usage notifications have previously been received at that actively
-   monitored destination.
-
-Until one of those exists, keep the combined checklist item unchecked. Do not
-create or change a notification policy as part of this evidence-only step.
+At approximately **2026-09-26 18:06 UTC**, Cloudflare's dashboard test action
+was confirmed for `LinkSim emergency spend warning`. The maintainer confirmed
+receipt at **20:06 CEST (18:06 UTC)**. This proves that the enabled policy can
+reach the actively monitored operator destination. No notification policy,
+recipient or threshold was created or changed.
 
 ## Decision
 
 The numeric baseline passes: no D1, Workers, Durable Objects or R2 warning,
-intake-stop or rollback threshold is close to triggering. The alert-delivery
-control remains a release-preparation blocker because receipt by an active
-operator has not yet been evidenced. This file does not authorize production
-promotion, authentication cutover, archive activation or a billing change.
+intake-stop or rollback threshold is close to triggering. Alert delivery to an
+active operator is confirmed, so the combined release-preparation gate is
+complete. This file does not authorize production promotion, authentication
+cutover, archive activation or a billing change.
 
 Sources: [Cloudflare Notification History](https://developers.cloudflare.com/notifications/notification-history/),
 [D1 metrics and analytics](https://developers.cloudflare.com/d1/observability/metrics-analytics/),
