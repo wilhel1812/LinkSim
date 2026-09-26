@@ -1,0 +1,169 @@
+name: Protected authentication canary
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Canary environment"
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      mode:
+        description: "Probe cadence"
+        required: true
+        default: single
+        type: choice
+        options: [single, first-hour]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'schedule' && 'production-canary' || format('{0}-canary', inputs.target) }}
+    concurrency:
+      group: auth-canary-${{ github.event_name == 'schedule' && 'production-scheduled' || format('{0}-{1}', inputs.target, inputs.mode) }}
+      cancel-in-progress: ${{ github.event_name == 'schedule' }}
+    steps:
+      - name: Check protected configuration
+        id: configuration
+        env:
+          AUTH_CANARY_COOKIE: ${{ secrets.AUTH_CANARY_COOKIE }}
+          AUTH_CANARY_EXPECTED_USER_ID: ${{ vars.AUTH_CANARY_EXPECTED_USER_ID }}
+          AUTH_CANARY_CUTOVER_AT: ${{ vars.AUTH_CANARY_CUTOVER_AT }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ -z "$AUTH_CANARY_COOKIE" ] || [ -z "$AUTH_CANARY_EXPECTED_USER_ID" ] || [ -z "$AUTH_CANARY_CUTOVER_AT" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "The selected canary environment is not configured." >&2
+              exit 1
+            fi
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout protected branch
+        if: steps.configuration.outputs.configured == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || (inputs.target == 'production' && 'main' || 'staging') }}
+      - name: Record checked-out revision
+        id: revision
+        if: steps.configuration.outputs.configured == 'true'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Select scheduled cadence
+        id: cadence
+        if: steps.configuration.outputs.configured == 'true'
+        env:
+          AUTH_CANARY_CUTOVER_AT: ${{ vars.AUTH_CANARY_CUTOVER_AT }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != "schedule" ]; then
+            node scripts/auth-canary.mjs cadence "$AUTH_CANARY_CUTOVER_AT" > /dev/null
+            echo "due=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          RESULT=$(node scripts/auth-canary.mjs cadence "$AUTH_CANARY_CUTOVER_AT")
+          node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(`due=${value.due}\nphase=${value.phase}\n`)' "$RESULT" >> "$GITHUB_OUTPUT"
+      - name: Setup Node
+        if: steps.cadence.outputs.due == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Run one protected probe
+        id: single_probe
+        if: steps.cadence.outputs.due == 'true' && (github.event_name == 'schedule' || inputs.mode == 'single')
+        continue-on-error: true
+        env:
+          AUTH_CANARY_URL: ${{ github.event_name == 'schedule' && 'https://linksim.link/api/me' || (inputs.target == 'production' && 'https://linksim.link/api/me' || 'https://staging.linksim.link/api/me') }}
+          AUTH_CANARY_COOKIE: ${{ secrets.AUTH_CANARY_COOKIE }}
+          AUTH_CANARY_EXPECTED_USER_ID: ${{ vars.AUTH_CANARY_EXPECTED_USER_ID }}
+        run: |
+          set +e
+          node scripts/auth-canary.mjs probe
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 1 ]; then
+            echo "rollback_eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$STATUS"
+      - name: Monitor every minute through the first hour
+        id: first_hour_probe
+        if: steps.cadence.outputs.due == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'first-hour'
+        continue-on-error: true
+        env:
+          AUTH_CANARY_URL: ${{ inputs.target == 'production' && 'https://linksim.link/api/me' || 'https://staging.linksim.link/api/me' }}
+          AUTH_CANARY_COOKIE: ${{ secrets.AUTH_CANARY_COOKIE }}
+          AUTH_CANARY_EXPECTED_USER_ID: ${{ vars.AUTH_CANARY_EXPECTED_USER_ID }}
+        run: |
+          START_EPOCH=$(date +%s)
+          for iteration in $(seq 1 60); do
+            echo "Protected authentication canary $iteration/60"
+            set +e
+            node scripts/auth-canary.mjs probe
+            STATUS=$?
+            set -e
+            if [ "$STATUS" -ne 0 ]; then
+              if [ "$STATUS" -eq 1 ]; then
+                echo "rollback_eligible=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
+              fi
+              exit "$STATUS"
+            fi
+            if [ "$iteration" -lt 60 ]; then
+              NEXT_EPOCH=$((START_EPOCH + iteration * 60))
+              NOW_EPOCH=$(date +%s)
+              DELAY=$((NEXT_EPOCH - NOW_EPOCH))
+              if [ "$DELAY" -gt 0 ]; then sleep "$DELAY"; fi
+            fi
+          done
+          echo "rollback_eligible=false" >> "$GITHUB_OUTPUT"
+      - name: Open or update the canary incident
+        if: always() && steps.configuration.outputs.configured == 'true' && (steps.single_probe.outputs.rollback_eligible == 'true' || steps.first_hour_probe.outputs.rollback_eligible == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANARY_TARGET: ${{ github.event_name == 'schedule' && 'production' || inputs.target }}
+          CANARY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CANARY_COMMIT: ${{ steps.revision.outputs.sha }}
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const production = process.env.CANARY_TARGET === 'production';
+          const title = production
+            ? 'Production authentication canary failed'
+            : 'Staging authentication canary rehearsal failed';
+          const recovery = production
+            ? 'Start the ordered authentication rollback in `docs/production-auth-cutover-checklist.md`.'
+            : 'Fix the staging authentication or canary configuration, then repeat the staging rehearsal before production cutover.';
+          const body = [
+            `The protected ${process.env.CANARY_TARGET} authentication canary failed after its built-in retry.`,
+            '',
+            `Workflow evidence: ${process.env.CANARY_RUN_URL}`,
+            `Checked-out revision: ${process.env.CANARY_COMMIT}`,
+            '',
+            `${recovery} Inspect the protected workflow logs; do not paste or rotate the session cookie through this issue.`,
+            '',
+          ].join('\n');
+          fs.writeFileSync('/tmp/canary-incident.md', body, { mode: 0o600 });
+          fs.writeFileSync('/tmp/canary-title.txt', `${title}\n`, { mode: 0o600 });
+          NODE
+          TITLE=$(cat /tmp/canary-title.txt)
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file /tmp/canary-incident.md
+          else
+            LABELS=(--label bug)
+            if [ "$CANARY_TARGET" = "production" ]; then LABELS+=(--label critical); fi
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/canary-incident.md "${LABELS[@]}" --milestone 0.29.0
+          fi
+      - name: Fail after a canary probe failure
+        if: always() && (steps.single_probe.outcome == 'failure' || steps.first_hour_probe.outcome == 'failure')
+        run: exit 1
