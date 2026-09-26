@@ -2,9 +2,33 @@
 
 ## [0.29.0] - Unreleased
 
+### Added
+- Added GitHub registration and sign-in with optional passkeys, secure credential management, and a unified sign-in experience. (#1107, #1144, #1149, #1151, #1153, #1156)
+- Added guarded migration paths that preserve existing LinkSim identities, resources, roles, and grants for eligible, privileged, and unmatched legacy accounts. (#1107, #1164, #1175)
+- Added administrator-visible authentication migration status and aggregate progress without exposing sessions, provider tokens, or passkey material. (#1107, #1173)
+
 ### Changed
 - Refresh operational notices on page load and explicit local updates, and avoid repeated profile and unnecessary administrator data requests. (#1107)
 - Exclude authentication tables from staging refresh exports and sanitize user fields before import; reject unclassified tables and unsafe refresh overrides. (#1107)
+- Reduced Library synchronization and full-recovery database scans while preserving Manual Sync, authorization, deletion, and recovery semantics. (#1107)
+- Prepared archive-aware history recovery and bounded maintenance so inline and archived revisions retain the same verification and revert behavior. (#1107, #1133)
+- Updated MapLibre to a patched release while preserving existing vector, raster, custom-style, terrain, attribution, and fallback behavior. (#1140)
+
+### Fixed
+- Rejected incomplete or metadata-only history revisions before they can overwrite a complete Site or Simulation, while keeping complete inline and archived revisions restorable. (#1143)
+- Allowed existing Site and Simulation descriptions to be explicitly cleared without treating omitted partial-update fields as empty values. (#1142)
+- Hardened mobile passkey bootstrap, OAuth callback recovery, Safari return handling, and legacy-migration retry and conflict recovery. (#1107, #1153, #1164)
+
+### Security
+- Patched all tracked critical, high, and moderate dependency advisories selected for this release without broad unrelated package modernization. (#1137, #1140)
+- Added native CodeQL analysis and GitHub secret scanning while retaining the repository's fast tracked-file secret guard. (#1182)
+- Pinned external GitHub Actions dependencies to reviewed commit SHAs and added regression coverage for the workflow inventory. (#1184)
+- Centralized protected API authentication through the private auth runtime with exact-origin, CSRF, persistent rate-limit, session-revocation, and current-account checks. (#1107)
+
+### Internal
+- Recorded the 1,000-registered-account capacity model, MapTiler operating thresholds, R2 storage bounds, and numeric production warning, intake-stop, archive-stop, and rollback triggers. (#1107, #1138, #1195)
+- Prepared inactive production authentication configuration, additive schema probes, exact inverse rollback guidance, and a dormant protected authentication canary; production activation remains separately approved. (#1186, #1201)
+- Provisioned an unbound production history bucket and rehearsed a credential-scoped production-to-staging object transfer without enabling application archive writes. (#1107)
 
 ## [0.28.1] - 2026-09-08
 
