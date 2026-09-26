@@ -52,6 +52,13 @@ the application boundary is verified.
   rehearsal objects retained by the linked storage decision.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
+  The [2026-09-26 read-only baseline](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
+  records all five resource families below their approved warning thresholds.
+  The active Wrangler OAuth session lacks Notifications read access, and the
+  locked operator workstation prevented a dashboard fallback, so policy/history
+  review and active-operator receipt remain open. Do not infer a missing alert
+  from the audit credential's HTTP 403 response, and do not check this item
+  until provider history or maintainer confirmation establishes receipt.
 - [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
