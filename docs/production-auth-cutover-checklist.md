@@ -47,7 +47,9 @@ the application boundary is verified.
   [#1200](https://github.com/wilhel1812/LinkSim/pull/1200): one approved
   disposable object was copied with separate 15-minute production-read and
   staging-write credentials, its sanitized staging reference and digest were
-  verified, and cleanup returned both buckets to zero objects and bytes.
+  verified, and the new source object plus its copied staging object were
+  removed. This rehearsal did not authorize deletion of the five older staging
+  rehearsal objects retained by the linked storage decision.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
 - [x] Re-run the complete account R2 inventory from the

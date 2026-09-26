@@ -142,7 +142,9 @@ inline-only exports without R2 credentials. The fixed, unbound production bucket
 was provisioned through #1198, and the live path was rehearsed after #1200 with
 one approved disposable object and separate 15-minute production-read and
 staging-write credentials. The copy, sanitized staging reference, and digest
-were verified before both copies were removed. Archive writes remain disabled.
+were verified before both new copies were removed. The five older retained
+staging rehearsal objects remain governed by the backup-aware cleanup contract
+below. Archive writes remain disabled.
 The prototype leaves Manual Sync client behavior unchanged. A SQLite-backed
 regression now exercises full Library fetch/push and both revert paths with an
 archived and an inline revision. The authenticated mixed-history staging

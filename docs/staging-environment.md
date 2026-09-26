@@ -148,8 +148,10 @@ unbound `linksim-history` bucket exists and archive writes remain disabled. On
 2026-09-25, the live transfer path was rehearsed with one separately approved
 disposable object and separate 15-minute production-read and staging-write
 credentials after #1200. The copy, sanitized staging reference and digest were
-verified, then both copies were removed and both buckets returned to zero
-objects and bytes.
+verified, then the new source object and its copied staging object were removed.
+The five older staging rehearsal objects recorded by the storage decision remain
+subject to its backup-aware retention contract; this rehearsal did not authorize
+their deletion.
 Use the existing `sanitize-with-archives` path so production is read-only and
 staging alone receives the verified copy. This is not permission to enable
 production archiving or authentication. A full refresh still replaces
