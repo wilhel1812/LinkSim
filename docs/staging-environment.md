@@ -143,13 +143,13 @@ in the repository or use the production write credential for refresh. Prefer
 short-lived credentials from Cloudflare's R2 Temporary Credentials API. When
 temporary credentials are used, also set their corresponding
 `R2_HISTORY_SOURCE_SESSION_TOKEN` and `R2_HISTORY_STAGING_SESSION_TOKEN`; the
-transfer keeps the source and staging credential sets separate. The fixed
-unbound `linksim-history` bucket exists, but archive writes remain disabled and
-the transfer path does not yet have a live archived-production rehearsal. An
-empty bucket or an inline-only export short-circuits before R2 access and
-therefore does not prove the production credential or a live object transfer.
-Complete the live rehearsal only after a genuine production archive object exists, or
-after separately approving a synthetic write to the otherwise isolated bucket.
+transfer keeps the source and staging credential sets separate. The fixed,
+unbound `linksim-history` bucket exists and archive writes remain disabled. On
+2026-09-25, the live transfer path was rehearsed with one separately approved
+disposable object and separate 15-minute production-read and staging-write
+credentials after #1200. The copy, sanitized staging reference and digest were
+verified, then both copies were removed and both buckets returned to zero
+objects and bytes.
 Use the existing `sanitize-with-archives` path so production is read-only and
 staging alone receives the verified copy. This is not permission to enable
 production archiving or authentication. A full refresh still replaces

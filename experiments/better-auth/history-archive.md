@@ -138,12 +138,16 @@ Production requires physically separate buckets and bindings. Never reuse a
 production R2 key or introduce a production fallback. The archive-aware staging
 refresh copies and verifies archived production objects into staging's private
 bucket, then rewrites only their sanitized staging references. It also handles
-inline-only exports without R2 credentials. Its live production-to-staging copy
-has not been rehearsed because no production history bucket is configured yet.
+inline-only exports without R2 credentials. The fixed, unbound production bucket
+was provisioned through #1198, and the live path was rehearsed after #1200 with
+one approved disposable object and separate 15-minute production-read and
+staging-write credentials. The copy, sanitized staging reference, and digest
+were verified before both copies were removed. Archive writes remain disabled.
 The prototype leaves Manual Sync client behavior unchanged. A SQLite-backed
 regression now exercises full Library fetch/push and both revert paths with an
-archived and an inline revision. An authenticated mixed-history staging rehearsal
-is still required before archive writes can be enabled.
+archived and an inline revision. The authenticated mixed-history staging
+rehearsal completed on 2026-09-18; archive writes remain disabled and separately
+gated by the production cutover checklist.
 
 ## Bounded backfill and maintenance
 
@@ -275,9 +279,9 @@ snapshot contains archived references. The transfer copies and verifies every
 referenced object in bounded groups, rewrites keys and digests in the sanitized
 SQL, and imports only after all copies succeed. The configured bucket names are
 distinct; the helper itself cannot prove that two arbitrary R2 bindings do not
-alias. The workflow has local integration tests, but no live production-to-
-staging copy has run because the production history bucket is not configured.
-It does not provide an atomic D1 import or backup-aware cleanup of unreferenced
-objects. Neither real production history nor authentication data was copied.
+alias. The live production-to-staging rehearsal described above supplemented
+the local integration tests with a bounded disposable object; it did not copy
+real production history or authentication data. The workflow does not provide
+an atomic D1 import or backup-aware cleanup of unreferenced objects.
 
 See [measured results](evidence/2026-09-17-history-r2.md).

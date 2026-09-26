@@ -271,11 +271,12 @@ Use the ordered, fail-closed
 [production authentication cutover checklist](production-auth-cutover-checklist.md)
 for the separately approved production window.
 
-The only remaining human-only staging accessibility evidence is a manual
-VoiceOver spot-check of sign-in, native passkey handoff announcements, Profile
-credential actions, error/fallback guidance and focus return. Existing automated
-accessibility-tree tests remain required; the spot-check does not require another
-migration or credential change.
+The maintainer completed the human-only stable-staging VoiceOver spot-check on
+2026-09-25 against `v0.29.0+8829bafc`, covering sign-in, native passkey handoff
+announcements, Profile credential actions, error/fallback guidance and focus
+return. The canonical evidence is recorded in #1107. Existing automated
+accessibility-tree tests remain required; this completion does not authorize
+production cutover.
 
 For the stable-staging boundary cutover, reconcile Access before merging the
 deployment commit: run `node scripts/access-boundary.mjs plan staging`, confirm
