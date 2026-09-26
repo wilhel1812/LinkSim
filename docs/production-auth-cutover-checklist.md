@@ -98,17 +98,19 @@ the application boundary is verified.
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
-- [ ] Complete and record the stable-staging VoiceOver spot-check required by
+- [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
-  and focus return. Record the tested build and browser/device in the release
-  evidence; do not begin cutover while this human-only check remains open.
+  and focus return. Record the tested build in the release evidence; do not
+  begin cutover while this human-only check remains open.
   The maintainer completed and accepted this check on 2026-09-25 against stable
   staging build `v0.29.0+8829bafc`; the canonical evidence is recorded in
   [#1188](https://github.com/wilhel1812/LinkSim/issues/1188) and
   [#1107](https://github.com/wilhel1812/LinkSim/issues/1107). The browser/device
-  was not recorded, so this release-evidence gate remains unchecked until that
-  metadata is added.
+  was not recorded. On 2026-09-26 the maintainer explicitly waived that metadata
+  for the current release, so its absence is non-blocking and this gate is
+  complete. The waiver does not remove automated accessibility coverage or the
+  completed human sign-off.
 - [ ] Create a production-only GitHub OAuth application with callback
   `https://linksim.link/api/auth/callback/github`.
 - [ ] Create a production-only Turnstile widget for `linksim.link`.
