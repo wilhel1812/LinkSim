@@ -28,7 +28,7 @@
 ### Internal
 - Recorded the 1,000-registered-account capacity model, MapTiler operating thresholds, R2 storage bounds, and numeric production warning, intake-stop, archive-stop, and rollback triggers. (#1107, #1138, #1195)
 - Prepared inactive production authentication configuration, additive schema probes, exact inverse rollback guidance, and a dormant protected authentication canary; production activation remains separately approved. (#1186, #1201)
-- Provisioned an unbound production history bucket and rehearsed a credential-scoped production-to-staging object transfer without enabling application archive writes. (#1107)
+- Provisioned an unbound production history bucket and added credential-scoped production-to-staging transfer support without enabling application archive writes. (#1107)
 
 ## [0.28.1] - 2026-09-08
 
