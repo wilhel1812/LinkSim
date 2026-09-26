@@ -57,9 +57,10 @@ The maintainer completed and accepted the human-only VoiceOver spot-check on
 popover, native passkey handoff announcements, Profile passkey actions,
 error/fallback guidance and focus return. The sign-off is recorded in #1188 and
 #1107, and automated accessibility-tree coverage already passed. The
-browser/device was not recorded, so the production checklist continues to block
-cutover until that release-evidence metadata is added. No repeat migration or
-credential change is required.
+browser/device was not recorded. On 2026-09-26 the maintainer explicitly waived
+that metadata for the current release, so its absence no longer blocks the
+production checklist. The completed human check and automated coverage remain
+the accepted evidence; no repeat migration or credential change is required.
 
 ## Bounded capacity decision
 
