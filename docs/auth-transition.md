@@ -274,9 +274,10 @@ for the separately approved production window.
 The maintainer completed the human-only stable-staging VoiceOver spot-check on
 2026-09-25 against `v0.29.0+8829bafc`, covering sign-in, native passkey handoff
 announcements, Profile credential actions, error/fallback guidance and focus
-return. The canonical evidence is recorded in #1107. Existing automated
-accessibility-tree tests remain required; this completion does not authorize
-production cutover.
+return. The sign-off is recorded in #1188 and #1107, but the browser/device was
+not recorded. The production-checklist evidence gate therefore remains open
+until that metadata is added. Existing automated accessibility-tree tests
+remain required; the human sign-off does not authorize production cutover.
 
 For the stable-staging boundary cutover, reconcile Access before merging the
 deployment commit: run `node scripts/access-boundary.mjs plan staging`, confirm

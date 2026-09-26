@@ -52,12 +52,14 @@ The final exact-tree checks added:
 - The checked-in production mode remained `active: false` with
   `accessBoundary: broad`; no production workflow or mutation ran.
 
-One human-only staging check remains: a manual VoiceOver spot-check of the
-sign-in popover, native passkey handoff announcements, Profile passkey actions,
-error/fallback guidance and focus return. Automated accessibility-tree coverage
-already passed. This spot-check does not require another account migration or
-credential change. The production checklist now blocks cutover until this check,
-the tested build and the browser/device are recorded in release evidence.
+The maintainer completed and accepted the human-only VoiceOver spot-check on
+2026-09-25 against stable-staging build `v0.29.0+8829bafc`, covering the sign-in
+popover, native passkey handoff announcements, Profile passkey actions,
+error/fallback guidance and focus return. The sign-off is recorded in #1188 and
+#1107, and automated accessibility-tree coverage already passed. The
+browser/device was not recorded, so the production checklist continues to block
+cutover until that release-evidence metadata is added. No repeat migration or
+credential change is required.
 
 ## Bounded capacity decision
 
