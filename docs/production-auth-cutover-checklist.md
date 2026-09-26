@@ -50,16 +50,22 @@ the application boundary is verified.
   verified, and the new source object plus its copied staging object were
   removed. This rehearsal did not authorize deletion of the five older staging
   rehearsal objects retained by the linked storage decision.
-- [x] Confirm Cloudflare usage notifications and billing alerts reach an active
+- [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
-  The [2026-09-26 read-only baseline](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
-  records all five resource families below their approved warning thresholds.
+  The [2026-09-26 baseline and alert-delivery audit](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
+  records the daily usage and monthly operation figures below their approved
+  warning thresholds, LinkSim R2 storage below its caps, and the unrelated
+  non-history R2 storage threshold exception already approved in #1192.
   The active Wrangler OAuth session lacks Notifications read access. A read-only
   dashboard fallback confirmed two enabled email billing-budget alerts,
   including the LinkSim emergency spend warning, and an inspected recipient
   matching the active account operator. The maintainer confirmed receipt of a
   Cloudflare test notification for the LinkSim-specific alert at 20:06 CEST on
-  2026-09-26. Do not infer a missing alert from the audit credential's HTTP 403
+  2026-09-26. This proves the billing-alert delivery path only: both observed
+  policies are `Billing Budget Alert` policies, so a distinct resource-usage
+  notification category has not been identified or tested. Keep this combined
+  item open until that path is evidenced or the maintainer explicitly redefines
+  the control. Do not infer a missing alert from the audit credential's HTTP 403
   response.
 - [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).

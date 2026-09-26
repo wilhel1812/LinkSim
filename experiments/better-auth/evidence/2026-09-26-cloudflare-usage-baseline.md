@@ -1,20 +1,26 @@
 # Cloudflare alert audit and pre-cutover usage baseline (2026-09-26)
 
-Status: **complete.**
-The measured resources are below every approved warning threshold. The current
-Wrangler OAuth session cannot read Cloudflare Notifications. A subsequent
-read-only dashboard review confirmed two enabled email billing-budget alerts,
-including a LinkSim-specific emergency spend warning, and verified that the
-inspected recipient matches the active Cloudflare account operator. A test
-notification for the LinkSim-specific alert was dispatched and the maintainer
-confirmed receipt at **2026-09-26 20:06 CEST (18:06 UTC)**, completing the
-combined checklist gate.
+Status: **usage baseline complete; billing-alert delivery confirmed; distinct
+usage-notification delivery remains open.**
+The measured daily usage and monthly operation figures are below their approved
+warning thresholds. LinkSim R2 storage is below its caps, while known unrelated
+non-history R2 storage remains above the approved stop threshold under the
+bounded billing exception in #1192. The current Wrangler OAuth session cannot
+read Cloudflare Notifications. A subsequent configuration-read-only dashboard
+review confirmed two enabled email billing-budget alerts, including a
+LinkSim-specific emergency spend warning, and verified that the inspected
+recipient matches the active Cloudflare account operator. A test notification
+for the LinkSim-specific alert was dispatched and the maintainer confirmed
+receipt at **2026-09-26 20:06 CEST (18:06 UTC)**. This confirms billing-alert
+delivery, but not a distinct resource-usage notification category.
 
-This was a read-only account audit. It did not change notification policies,
-billing, databases, buckets, deployments, bindings, application behavior,
-authentication configuration or production state. Account and recipient
-identities, the unrelated R2 bucket name, and its exact private inventory are
-omitted from public evidence.
+The account and configuration audit was read-only. Its sole side effect was the
+explicitly approved test-email dispatch, which may also create provider
+notification-history state. It did not change notification policies, recipients,
+thresholds, billing, databases, buckets, deployments, bindings, application
+behavior, authentication configuration or production state. Account and
+recipient identities, the unrelated R2 bucket name, and its exact private
+inventory are omitted from public evidence.
 
 ## Measurement window and tools
 
@@ -86,17 +92,22 @@ evidence. No policy field was saved or changed.
 
 At approximately **2026-09-26 18:06 UTC**, Cloudflare's dashboard test action
 was confirmed for `LinkSim emergency spend warning`. The maintainer confirmed
-receipt at **20:06 CEST (18:06 UTC)**. This proves that the enabled policy can
-reach the actively monitored operator destination. No notification policy,
-recipient or threshold was created or changed.
+receipt at **20:06 CEST (18:06 UTC)**. This proves that the enabled
+billing-budget policy can reach the actively monitored operator destination.
+It does not prove that a separate Cloudflare resource-usage notification policy
+exists or reaches that destination. No notification policy, recipient or
+threshold was created or changed.
 
 ## Decision
 
-The numeric baseline passes: no D1, Workers, Durable Objects or R2 warning,
-intake-stop or rollback threshold is close to triggering. Alert delivery to an
-active operator is confirmed, so the combined release-preparation gate is
-complete. This file does not authorize production promotion, authentication
-cutover, archive activation or a billing change.
+The daily D1, Workers and Durable Objects usage figures and monthly R2 operation
+figures pass with wide headroom. LinkSim history storage remains below its caps;
+the unrelated non-history R2 storage exception is unchanged and must not be
+described as below the warning or stop thresholds. Billing-alert delivery to an
+active operator is confirmed. Keep the combined release-preparation gate open
+until a distinct usage-notification path is evidenced or the maintainer
+explicitly redefines that control. This file does not authorize production
+promotion, authentication cutover, archive activation or a billing change.
 
 Sources: [Cloudflare Notification History](https://developers.cloudflare.com/notifications/notification-history/),
 [D1 metrics and analytics](https://developers.cloudflare.com/d1/observability/metrics-analytics/),
