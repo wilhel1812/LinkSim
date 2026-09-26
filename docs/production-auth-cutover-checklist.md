@@ -27,21 +27,30 @@ the application boundary is verified.
 - [ ] Freeze and record the release tag, commit SHA, tree SHA, Pages deployment,
   auth-runtime artifact/config SHA, and current Access application/policy IDs.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
-- [ ] Provision the unbound `linksim-history` bucket only from the dedicated
+- [x] Provision the unbound `linksim-history` bucket only from the dedicated
   `npm run tf:plan:prod-history` saved plan accepted by
   `npm run tf:validate:prod-history-plan`. Keep the ordinary production plan as
   the separate drift audit and record every remaining difference without
   applying it in this operation. Do not add the Pages binding or enable archive
-  writes.
-- [ ] Rehearse the existing production-to-staging archive copy with a read-only
+  writes. Completed on 2026-09-25 through
+  [#1198](https://github.com/wilhel1812/LinkSim/pull/1198): the accepted plan
+  created only the bucket (`1 added, 0 changed, 0 destroyed`), the follow-up
+  ordinary plan showed the bucket as a no-op, unrelated drift was not applied,
+  and the bucket remains unbound with archive writes disabled.
+- [x] Rehearse the existing production-to-staging archive copy with a read-only
   production credential and a separate staging-write credential. An empty bucket
   or inline-only export is not evidence; use the first genuine archived object
   or obtain separate approval for one synthetic production-bucket object. Prefer
   separately scoped short-lived R2 credentials and pass each credential's
   session token through the documented staging-refresh environment variable.
+  Completed on 2026-09-25 after
+  [#1200](https://github.com/wilhel1812/LinkSim/pull/1200): one approved
+  disposable object was copied with separate 15-minute production-read and
+  staging-write credentials, its sanitized staging reference and digest were
+  verified, and cleanup returned both buckets to zero objects and bytes.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
-- [ ] Re-run the complete account R2 inventory from the
+- [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
   environment would exceed 3 GB, combined history would exceed 6 GB, non-history
@@ -51,6 +60,11 @@ the application boundary is verified.
   account use exceeds the allowance; record the approved account-isolation,
   data-reduction or billing decision. Recheck billing-period metrics separately
   rather than inferring the monthly average from one current-size snapshot.
+  [#1192](https://github.com/wilhel1812/LinkSim/issues/1192) records the
+  maintainer's bounded billing decision: approximately USD 0.06/month of
+  incremental LinkSim R2 storage is accepted at the 3.31 GB sensitivity, the
+  unrelated account charge remains outside LinkSim, the 3 GB-per-environment
+  and 6 GB-combined caps remain, and any higher estimate needs a new decision.
 - [x] Record and approve the
   [numeric production stop/rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
   before the window. `wilhel1812` is the authorized operator and approving
@@ -70,11 +84,14 @@ the application boundary is verified.
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
-- [ ] Complete and record the stable-staging VoiceOver spot-check required by
+- [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
   and focus return. Record the tested build and browser/device in the release
   evidence; do not begin cutover while this human-only check remains open.
+  The maintainer completed and accepted this check on 2026-09-25 against stable
+  staging build `v0.29.0+8829bafc`; the canonical evidence is recorded in
+  [#1107](https://github.com/wilhel1812/LinkSim/issues/1107).
 - [ ] Create a production-only GitHub OAuth application with callback
   `https://linksim.link/api/auth/callback/github`.
 - [ ] Create a production-only Turnstile widget for `linksim.link`.
