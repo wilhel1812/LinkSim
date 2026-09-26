@@ -52,7 +52,7 @@ the application boundary is verified.
   rehearsal objects retained by the linked storage decision.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
-- [ ] Re-run the complete account R2 inventory from the
+- [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
   environment would exceed 3 GB, combined history would exceed 6 GB, non-history
@@ -69,6 +69,16 @@ the application boundary is verified.
   and 6 GB-combined caps remain, and any higher estimate needs a new decision.
   That decision resolves the billing choice, but the linked inventory predates
   production bucket provisioning and must be rerun before activation.
+  Completed on 2026-09-26 in the
+  [post-provision inventory](../experiments/better-auth/evidence/2026-09-26-r2-post-provision-inventory.md):
+  all six account buckets were classified, the unbound production history
+  bucket contained zero objects and zero bytes, staging history remained at
+  five objects and 824 kB, and combined history remained below the 6 GB cap.
+  The unrelated bucket still exceeded 10 GB in both the current summary and a
+  separate September-to-date average-daily-peak query. The sustained Free-tier
+  gate therefore still fails, but #1192's bounded billing exception covers
+  that exact condition without changing either archive cap. Archive activation
+  and every other production action remain separately gated.
 - [x] Record and approve the
   [numeric production stop/rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
   before the window. `wilhel1812` is the authorized operator and approving

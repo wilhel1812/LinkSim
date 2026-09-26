@@ -5,6 +5,11 @@ sensitivity on an otherwise clean Cloudflare account, but this Cloudflare
 account does not have Free R2 storage headroom.** Production archive activation,
 object cleanup, billing changes and authentication cutover remain unapproved.
 
+The [2026-09-26 post-provision inventory](2026-09-26-r2-post-provision-inventory.md)
+supersedes this file's dated account snapshot after the unbound production
+history bucket was created. The model, operating caps, retention contract and
+cleanup prohibitions below remain authoritative.
+
 ## Read-only inventory
 
 Between **2026-09-25T13:28:32Z and 2026-09-25T13:29:26Z**, Wrangler 4.140.0
