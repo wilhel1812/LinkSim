@@ -201,7 +201,14 @@ combined operating cap. This fits an otherwise clean 10 GB account, but the
 current account's unrelated use exceeds the allowance, which leaves no
 sustained Free headroom if retained. Archive activation therefore requires
 account isolation, sufficient data reduction or explicit acceptance of R2
-billing; the current billing-period average must be checked separately.
+billing. The maintainer accepted the bounded LinkSim increment in #1192, and
+the subsequent
+[post-provision inventory](../experiments/better-auth/evidence/2026-09-26-r2-post-provision-inventory.md)
+classified all six account buckets: production history remained empty, combined
+history remained below the 6 GB cap, and a separate September-to-date query
+confirmed that the unrelated workload's average daily peak alone remained above
+10 GB. This satisfies the inventory gate under the bounded billing exception;
+it does not authorize archive activation or any production change.
 Representative cold/full-app CPU, billable object duration, actual active
 fraction and history growth remain first-hour/day/week monitoring requirements,
 not staging-proven guarantees.
