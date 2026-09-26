@@ -2,10 +2,12 @@
 
 Status: **usage baseline complete; alert-delivery confirmation remains open.**
 The measured resources are below every approved warning threshold. The current
-Wrangler OAuth session cannot read Cloudflare Notifications, however, and the
-dashboard was unavailable while the operator workstation was locked. This
-evidence therefore does not infer that configured notifications reach an active
-operator and does not complete the combined checklist gate.
+Wrangler OAuth session cannot read Cloudflare Notifications. A subsequent
+read-only dashboard review confirmed two enabled email billing-budget alerts,
+including a LinkSim-specific emergency spend warning, and verified that the
+inspected recipient matches the active Cloudflare account operator. Receipt of
+a dispatched notification is not yet evidenced, so this does not complete the
+combined checklist gate.
 
 This was a read-only account audit. It did not change notification policies,
 billing, databases, buckets, deployments, bindings, application behavior,
@@ -74,13 +76,21 @@ has deployment and analytics access but not Notifications read access. This is
 an access limitation of the audit credential, not evidence that policies are
 missing or disabled.
 
+At approximately **2026-09-26T17:17Z**, a read-only authenticated dashboard
+review showed two enabled `Billing Budget Alert` policies using email delivery:
+the account's existing budget alert and `LinkSim emergency spend warning`. The
+inspected policy's recipient matches the active account owner/operator. The
+recipient address and alert thresholds are intentionally omitted from public
+evidence. No policy field was saved or changed.
+
 Cloudflare documents Notification History as the record of what was sent,
 when, and to whom. The required completion evidence is therefore still one of:
 
-1. a read-only policy/history review showing enabled billing/usage policies and
-   a recent dispatch to the active operator; or
+1. a recent dispatch or Cloudflare test notification received by the active
+   operator; or
 2. maintainer confirmation that the currently configured Cloudflare billing
-   and usage notifications are received at the actively monitored destination.
+   and usage notifications have previously been received at that actively
+   monitored destination.
 
 Until one of those exists, keep the combined checklist item unchecked. Do not
 create or change a notification policy as part of this evidence-only step.

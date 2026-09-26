@@ -54,11 +54,13 @@ the application boundary is verified.
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
   The [2026-09-26 read-only baseline](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
   records all five resource families below their approved warning thresholds.
-  The active Wrangler OAuth session lacks Notifications read access, and the
-  locked operator workstation prevented a dashboard fallback, so policy/history
-  review and active-operator receipt remain open. Do not infer a missing alert
-  from the audit credential's HTTP 403 response, and do not check this item
-  until provider history or maintainer confirmation establishes receipt.
+  The active Wrangler OAuth session lacks Notifications read access. A read-only
+  dashboard fallback confirmed two enabled email billing-budget alerts,
+  including the LinkSim emergency spend warning, and an inspected recipient
+  matching the active account operator. Actual receipt remains open. Do not
+  infer a missing alert from the audit credential's HTTP 403 response, and do
+  not check this item until a test/recent dispatch or maintainer confirmation
+  establishes receipt.
 - [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
