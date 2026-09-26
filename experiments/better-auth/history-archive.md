@@ -121,8 +121,9 @@ Tests deny a stranger and a mismatched change without touching R2, and deny a
 grant revoked during the read. The existing API route verifies identity and
 current account state before calling this reader. Staging has the additive
 schema migration and isolated private bucket binding. The authenticated
-mixed-history end-to-end rehearsal completed on 2026-09-18; production archive
-activation remains separately gated and disabled.
+[mixed-history end-to-end rehearsal](evidence/2026-09-18-history-staging-rehearsal.md)
+completed on 2026-09-18; production archive activation remains separately gated
+and disabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a
@@ -148,9 +149,10 @@ staging rehearsal objects remain governed by the backup-aware cleanup contract
 below. Archive writes remain disabled.
 The prototype leaves Manual Sync client behavior unchanged. A SQLite-backed
 regression now exercises full Library fetch/push and both revert paths with an
-archived and an inline revision. The authenticated mixed-history staging
-rehearsal completed on 2026-09-18; archive writes remain disabled and separately
-gated by the production cutover checklist.
+archived and an inline revision. The authenticated
+[mixed-history staging rehearsal](evidence/2026-09-18-history-staging-rehearsal.md)
+completed on 2026-09-18; archive writes remain disabled and separately gated by
+the production cutover checklist.
 
 ## Bounded backfill and maintenance
 

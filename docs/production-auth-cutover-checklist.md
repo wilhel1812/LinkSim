@@ -52,7 +52,7 @@ the application boundary is verified.
   rehearsal objects retained by the linked storage decision.
 - [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
   operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
-- [x] Re-run the complete account R2 inventory from the
+- [ ] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
   environment would exceed 3 GB, combined history would exceed 6 GB, non-history
@@ -67,6 +67,8 @@ the application boundary is verified.
   incremental LinkSim R2 storage is accepted at the 3.31 GB sensitivity, the
   unrelated account charge remains outside LinkSim, the 3 GB-per-environment
   and 6 GB-combined caps remain, and any higher estimate needs a new decision.
+  That decision resolves the billing choice, but the linked inventory predates
+  production bucket provisioning and must be rerun before activation.
 - [x] Record and approve the
   [numeric production stop/rollback triggers](../experiments/better-auth/evidence/2026-09-25-production-stop-triggers.md)
   before the window. `wilhel1812` is the authorized operator and approving
