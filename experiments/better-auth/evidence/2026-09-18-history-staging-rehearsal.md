@@ -31,10 +31,30 @@ retention at that point. A later deployed [R2 list probe](2026-09-18-history-dep
 found the object under this row's staging prefix before a second archive run.
 No object cleanup will be attempted until backup/Time Travel retention is designed.
 
-This rehearsal does not satisfy deployed CPU headroom, a live authorized
-application revert, a live sanitized staging refresh, Manual Sync on a mixed
-archived/inline account, or 1,000-registered-user capacity. The existing
-automated integration tests cover archive-aware authorization/revert and
+At the time, this isolated probe did not satisfy deployed CPU headroom, a live
+authorized application revert, a live sanitized staging refresh, Manual Sync on
+a mixed archived/inline account, or 1,000-registered-user capacity. The existing
+automated integration tests covered archive-aware authorization/revert and
 staging-export replacement, and full 1,524 tests plus build passed on the
-reviewed exact-row fix before this rehearsal. Archive writes remain disabled
-in the application.
+reviewed exact-row fix before this rehearsal.
+
+## Subsequent authenticated mixed-history completion
+
+Later on 2026-09-18, the maintainer used a signed-in stable-staging session to
+load a complete synthetic shared Simulation through the normal Library. Its
+revision `resource_changes.id=9202` was archived through the private
+staging-only probe, and the actual Change Log reverted the archived revision as
+a copy with audit text `Revert copy from change #9202`. Manual recovery **Sync
+Now** then settled at **Up to date** with zero pending changes.
+
+The probe restored revision 9202 inline after the check. Six test-generated
+synthetic history rows and the temporary editor grant were removed. A private
+backup comparison passed for the original payload, snapshot, details,
+timestamps and visibility. The private archive object was retained for backup
+and D1 Time Travel safety. This completes the live authorized archived revert
+and mixed-history Manual Sync evidence; the canonical operator record is
+[#1107](https://github.com/wilhel1812/LinkSim/issues/1107).
+
+The later live sanitized production-to-staging refresh is recorded separately
+through #1200. Neither rehearsal enables application archive writes, proves a
+full production backfill, or authorizes production archive activation.

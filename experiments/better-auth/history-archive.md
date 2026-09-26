@@ -120,8 +120,10 @@ did not change during hydration, and checks permission again after the R2 read.
 Tests deny a stranger and a mismatched change without touching R2, and deny a
 grant revoked during the read. The existing API route verifies identity and
 current account state before calling this reader. Staging has the additive
-schema migration and isolated private bucket binding, but still needs an
-end-to-end rehearsal before archiving is enabled.
+schema migration and isolated private bucket binding. The authenticated
+[mixed-history end-to-end rehearsal](evidence/2026-09-18-history-staging-rehearsal.md)
+completed on 2026-09-18; production archive activation remains separately gated
+and disabled.
 
 The archive writer now has a separate disposable SQLite-backed Durable Object
 runtime. A thin public gateway holds only a short-lived probe credential and a
@@ -138,12 +140,19 @@ Production requires physically separate buckets and bindings. Never reuse a
 production R2 key or introduce a production fallback. The archive-aware staging
 refresh copies and verifies archived production objects into staging's private
 bucket, then rewrites only their sanitized staging references. It also handles
-inline-only exports without R2 credentials. Its live production-to-staging copy
-has not been rehearsed because no production history bucket is configured yet.
+inline-only exports without R2 credentials. The fixed, unbound production bucket
+was provisioned through #1198, and the live path was rehearsed after #1200 with
+one approved disposable object and separate 15-minute production-read and
+staging-write credentials. The copy, sanitized staging reference, and digest
+were verified before both new copies were removed. The five older retained
+staging rehearsal objects remain governed by the backup-aware cleanup contract
+below. Archive writes remain disabled.
 The prototype leaves Manual Sync client behavior unchanged. A SQLite-backed
 regression now exercises full Library fetch/push and both revert paths with an
-archived and an inline revision. An authenticated mixed-history staging rehearsal
-is still required before archive writes can be enabled.
+archived and an inline revision. The authenticated
+[mixed-history staging rehearsal](evidence/2026-09-18-history-staging-rehearsal.md)
+completed on 2026-09-18; archive writes remain disabled and separately gated by
+the production cutover checklist.
 
 ## Bounded backfill and maintenance
 
@@ -173,8 +182,11 @@ size on a synthetic staging rehearsal, then reassess free-tier headroom.
 A [temporary staging-only rehearsal](history-archive-staging-rehearsal.md)
 uses the real staging D1 and private R2 bindings through a local Durable
 Object with remote bindings, restricted to one synthetic history row and a short-lived
-secret. It does not enable application archive writes or replace the remaining
-end-to-end revert, refresh and Manual Sync checks.
+secret. That initial one-row probe did not itself enable application archive
+writes. A later authenticated mixed-history rehearsal completed the archived
+revert and Manual Sync checks on 2026-09-18, and the bounded live
+production-to-staging refresh completed after #1200. Production archive
+activation and a measured backfill rollout remain unapproved.
 The [first staging round trip](evidence/2026-09-18-history-staging-rehearsal.md)
 converted and restored one synthetic row with exact D1 equality. It did not
 measure deployed CPU, and R2 bucket summary counts remained unconfirmed.
@@ -275,9 +287,9 @@ snapshot contains archived references. The transfer copies and verifies every
 referenced object in bounded groups, rewrites keys and digests in the sanitized
 SQL, and imports only after all copies succeed. The configured bucket names are
 distinct; the helper itself cannot prove that two arbitrary R2 bindings do not
-alias. The workflow has local integration tests, but no live production-to-
-staging copy has run because the production history bucket is not configured.
-It does not provide an atomic D1 import or backup-aware cleanup of unreferenced
-objects. Neither real production history nor authentication data was copied.
+alias. The live production-to-staging rehearsal described above supplemented
+the local integration tests with a bounded disposable object; it did not copy
+real production history or authentication data. The workflow does not provide
+an atomic D1 import or backup-aware cleanup of unreferenced objects.
 
 See [measured results](evidence/2026-09-17-history-r2.md).
