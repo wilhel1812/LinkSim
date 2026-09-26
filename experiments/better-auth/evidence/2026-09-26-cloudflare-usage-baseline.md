@@ -1,7 +1,7 @@
 # Cloudflare alert audit and pre-cutover usage baseline (2026-09-26)
 
-Status: **usage baseline complete; billing-alert delivery confirmed; distinct
-usage-notification delivery remains open.**
+Status: **complete under the provider-limited alert control approved on
+2026-09-26.**
 The measured daily usage and monthly operation figures are below their approved
 warning thresholds. LinkSim R2 storage is below its caps, while known unrelated
 non-history R2 storage remains above the approved stop threshold under the
@@ -12,7 +12,11 @@ LinkSim-specific emergency spend warning, and verified that the inspected
 recipient matches the active Cloudflare account operator. A test notification
 for the LinkSim-specific alert was dispatched and the maintainer confirmed
 receipt at **2026-09-26 20:06 CEST (18:06 UTC)**. This confirms billing-alert
-delivery, but not a distinct resource-usage notification category.
+delivery. A later dashboard check found that the account's native
+`Usage Based Billing` product selector does not offer D1, Workers/Pages or
+Durable Objects metrics, so the maintainer approved the provider-limited
+control recorded below instead of treating an unavailable alert as a permanent
+release blocker.
 
 The account and configuration audit was read-only. Its sole side effect was the
 explicitly approved test-email dispatch, which may also create provider
@@ -98,15 +102,37 @@ It does not prove that a separate Cloudflare resource-usage notification policy
 exists or reaches that destination. No notification policy, recipient or
 threshold was created or changed.
 
+At approximately **2026-09-26 19:04 UTC**, the authenticated dashboard exposed
+the `Usage Based Billing` alert type, but its product selector contained only
+`R2 Storage`, `R2 Storage Class A Operations`, and
+`R2 Storage Class B Operations`. It did not offer D1 rows read/written,
+Workers/Pages requests, or Durable Objects requests/duration for this account.
+The empty form was cancelled; no usage alert, recipient, threshold or policy was
+created or changed.
+
+The maintainer therefore redefined this pre-cutover control to require all of
+the following evidence together:
+
+1. successful delivery of the account-wide billing-budget warning to the active
+   operator;
+2. a dated provider baseline for D1, Workers/Pages, Durable Objects and R2; and
+3. manual review of those metrics against the approved warning, intake-stop and
+   rollback triggers before cutover and during the first-hour, first-day and
+   first-week monitoring windows.
+
+This is a documented provider limitation, not a claim that Cloudflare sends
+native warning notifications for every resource metric. A future native alert
+may supplement the control when the account becomes eligible and the required
+metric appears in the dashboard.
+
 ## Decision
 
 The daily D1, Workers and Durable Objects usage figures and monthly R2 operation
 figures pass with wide headroom. LinkSim history storage remains below its caps;
 the unrelated non-history R2 storage exception is unchanged and must not be
 described as below the warning or stop thresholds. Billing-alert delivery to an
-active operator is confirmed. Keep the combined release-preparation gate open
-until a distinct usage-notification path is evidenced or the maintainer
-explicitly redefines that control. This file does not authorize production
+active operator is confirmed, and the provider-limited monitoring control above
+completes this release-preparation gate. This file does not authorize production
 promotion, authentication cutover, archive activation or a billing change.
 
 Sources: [Cloudflare Notification History](https://developers.cloudflare.com/notifications/notification-history/),

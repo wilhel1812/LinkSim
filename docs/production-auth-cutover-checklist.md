@@ -50,8 +50,9 @@ the application boundary is verified.
   verified, and the new source object plus its copied staging object were
   removed. This rehearsal did not authorize deletion of the five older staging
   rehearsal objects retained by the linked storage decision.
-- [ ] Confirm Cloudflare usage notifications and billing alerts reach an active
-  operator. Record current D1, Workers, Durable Objects, Pages and R2 baselines.
+- [x] Confirm Cloudflare billing alerts reach an active operator. Record current
+  D1, Workers, Durable Objects, Pages and R2 baselines, and retain the approved
+  manual monitoring cadence where native metric alerts are unavailable.
   The [2026-09-26 baseline and alert-delivery audit](../experiments/better-auth/evidence/2026-09-26-cloudflare-usage-baseline.md)
   records the daily usage and monthly operation figures below their approved
   warning thresholds, LinkSim R2 storage below its caps, and the unrelated
@@ -61,12 +62,16 @@ the application boundary is verified.
   including the LinkSim emergency spend warning, and an inspected recipient
   matching the active account operator. The maintainer confirmed receipt of a
   Cloudflare test notification for the LinkSim-specific alert at 20:06 CEST on
-  2026-09-26. This proves the billing-alert delivery path only: both observed
-  policies are `Billing Budget Alert` policies, so a distinct resource-usage
-  notification category has not been identified or tested. Keep this combined
-  item open until that path is evidenced or the maintainer explicitly redefines
-  the control. Do not infer a missing alert from the audit credential's HTTP 403
-  response.
+  2026-09-26. A subsequent `Usage Based Billing` creation check offered only R2
+  storage and Class A/Class B operation metrics for this account; D1,
+  Workers/Pages and Durable Objects metrics were absent. The maintainer therefore
+  approved the provider-limited control: tested account-wide billing-alert
+  delivery plus dated provider baselines and manual review against the approved
+  warning, intake-stop and rollback triggers before cutover and during the
+  first-hour, first-day and first-week monitoring windows. No usage-alert policy
+  was created or changed. Do not infer a missing alert from the audit
+  credential's HTTP 403 response, and do not claim native coverage for metrics
+  the dashboard does not offer.
 - [x] Re-run the complete account R2 inventory from the
   [storage decision](../experiments/better-auth/evidence/2026-09-25-r2-storage-capacity.md).
   Classify every bucket and block archive activation if either history
