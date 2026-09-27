@@ -25,7 +25,7 @@ pages_production_env_vars_plain = {
   AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"
   AUTH_LEGACY_CLAIM_ENABLED                = "true"
   AUTH_REGISTRATION_ENABLED                = "true"
-  AUTH_LEGACY_CLAIM_DEADLINE               = "2026-12-26T15:00:00.000Z"
+  AUTH_LEGACY_CLAIM_DEADLINE               = "2026-12-26T13:30:00.000Z"
 }
 
 pages_access_audience_keys = ["authenticated_api"]
