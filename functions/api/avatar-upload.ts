@@ -62,7 +62,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     const prev = await getUserAvatarKeys(env, auth.userId);
     const avatarUrl = avatarUrlForObjectKey(objectKey, env.AVATAR_PUBLIC_BASE_URL);
     const writtenKeys: string[] = [];
-    let user: Awaited<ReturnType<typeof setUserAvatarAssets>>;
     try {
       await env.AVATAR_BUCKET.put(objectKey, original.bytes, {
         httpMetadata: { contentType: original.contentType, cacheControl: "public, max-age=31536000, immutable" },
@@ -74,14 +73,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
         customMetadata: { userId: auth.userId, variant: "thumb", hash },
       });
       writtenKeys.push(thumbKey);
-      user = await setUserAvatarAssets(env, auth.userId, {
+      const updated = await setUserAvatarAssets(env, auth.userId, {
         avatarUrl,
         avatarObjectKey: objectKey,
         avatarThumbKey: thumbKey,
         avatarHash: hash,
         avatarBytes: original.bytes.byteLength,
         avatarContentType: original.contentType,
-      });
+      }, prev);
+      if (!updated) {
+        throw new ApiRequestError("Your avatar changed in another request. Please retry the upload.", 409, "avatar_conflict");
+      }
     } catch (error) {
       await Promise.allSettled(writtenKeys.map((key) => env.AVATAR_BUCKET!.delete(key)));
       throw error;
@@ -90,6 +92,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       ...(prev.avatarObjectKey && prev.avatarObjectKey !== objectKey ? [env.AVATAR_BUCKET.delete(prev.avatarObjectKey)] : []),
       ...(prev.avatarThumbKey && prev.avatarThumbKey !== thumbKey ? [env.AVATAR_BUCKET.delete(prev.avatarThumbKey)] : []),
     ]);
+    const user = await fetchUserProfile(env, auth.userId);
+    if (!user) throw new Error("User not found after avatar update.");
 
     return withCors(
       request,

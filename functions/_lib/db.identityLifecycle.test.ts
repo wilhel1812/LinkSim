@@ -166,18 +166,32 @@ describe("authoritative identity lifecycle", () => {
     const database = new SqliteD1();
     seedCanonicalAccount(database);
 
-    const profile = await setUserAvatarAssets(envFor(database) as never, "old-subject", {
+    const previous = { avatarObjectKey: "users/opaque/avatar.webp", avatarThumbKey: "users/opaque/avatar-thumb.webp" };
+    const updated = await setUserAvatarAssets(envFor(database) as never, "old-subject", {
       avatarUrl: "/api/avatar/users/new/avatar.webp",
       avatarObjectKey: "users/new/avatar.webp",
       avatarThumbKey: "users/new/avatar-thumb.webp",
       avatarHash: "new-avatar-hash",
       avatarBytes: 4321,
       avatarContentType: "image/webp",
-    });
+    }, previous);
 
-    expect(profile.basemapPreferences?.customSources).toEqual([
+    expect(updated).toBe(true);
+    const profile = await fetchMyUserProfile(envFor(database) as never, "old-subject");
+
+    expect(profile?.basemapPreferences?.customSources).toEqual([
       expect.objectContaining({ id: "field", lightUrl: "https://maps.test/style.json" }),
     ]);
+    expect(await setUserAvatarAssets(envFor(database) as never, "old-subject", {
+      avatarUrl: "/api/avatar/users/loser/avatar.webp",
+      avatarObjectKey: "users/loser/avatar.webp",
+      avatarThumbKey: "users/loser/avatar-thumb.webp",
+      avatarHash: "loser-avatar-hash",
+      avatarBytes: 1234,
+      avatarContentType: "image/webp",
+    }, previous)).toBe(false);
+    expect((await fetchMyUserProfile(envFor(database) as never, "old-subject"))?.avatarUrl)
+      .toBe("/api/avatar/users/new/avatar.webp");
   });
 
   it("atomically migrates every identity alias and observable resource timestamp", async () => {
