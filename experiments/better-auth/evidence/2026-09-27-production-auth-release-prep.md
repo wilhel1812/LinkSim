@@ -31,7 +31,8 @@ included.
   was loaded into the protected environment secret, and the expected user ID
   was updated to match it. The temporary local handoff copy was removed; no
   credential value is recorded here.
-- `AUTH_CANARY_CUTOVER_AT` is `2026-09-27T15:00:00.000Z`. Scheduled production
+- `AUTH_CANARY_CUTOVER_AT` is `2026-09-27T13:30:00.000Z` in the protected
+  environment. Reverify it before public cutover. Scheduled production
   probes are dormant before that time. The initial server-side session expiry
   is `2026-10-04T11:07:16.689Z`; Better Auth has a one-day rolling update age.
   Verify that probing extends the expiry after the first day, and rotate the
@@ -95,8 +96,8 @@ auth releases and applies migrations idempotently if needed.
 ## Remaining before public activation
 
 - Verify the final immutable candidate on staging and approve its protected
-  main promotion without moving the superseded `v0.29.2`, `v0.29.3` or
-  `v0.29.4` tags.
+  main promotion without moving the superseded `v0.29.2`, `v0.29.3`,
+  `v0.29.4` or `v0.29.5` tags.
 - At the reviewed window, narrow exactly one Access application, immediately
   promote the exact tagged candidate, and run the protected production canary.
 - Restore broad Access first if a rollback trigger occurs. Continue the
@@ -106,20 +107,22 @@ auth releases and applies migrations idempotently if needed.
 
 - The maintainer approved completing the production rollout on 2026-09-27.
 - The 10:00 and 11:00 UTC targets passed while protected release gates remained
-  open; neither was a public cutover. The reviewed activation window is now
-  `2026-09-27T15:00:00Z` (`2026-09-27 17:00 CEST`). If final candidate validation
+  open; neither was a public cutover. The maintainer then asked to move the
+  pending 15:00 UTC window earlier. The reviewed activation window is now
+  `2026-09-27T13:30:00Z` (`2026-09-27 15:30 CEST`). If final candidate validation
   is not complete by then, advance the timestamp and prepare a new candidate;
   never backdate the cutover.
 - The corresponding 90-day legacy-claim deadline is
-  `2026-12-26T15:00:00.000Z`.
+  `2026-12-26T13:30:00.000Z`.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
 - The `v0.29.1` candidate keeps Better Auth active and broad Access available,
   but permanently disables new privileged passkey-recovery attempts after the
   administrator bootstrap.
-- The immutable `v0.29.2`, `v0.29.3` and `v0.29.4` candidates were not promoted
-  after release-review findings. The `v0.29.5` candidate keeps Better Auth
+- The immutable `v0.29.2`, `v0.29.3`, `v0.29.4` and `v0.29.5` candidates were not
+  promoted after release-review findings or the revised cutover window. The
+  `v0.29.6` candidate keeps Better Auth
   active and privileged passkey recovery disabled, and changes the expected
   Access boundary to `legacy` for the public cutover. Its runbook now states
   that the legacy-only Access boundary must precede production deployment.
