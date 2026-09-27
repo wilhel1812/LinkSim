@@ -4,17 +4,18 @@ This runbook prepares the 0.29.0 migration from broad Cloudflare Access to
 Better Auth. Nothing here authorizes production work. Every production write
 requires a separately approved cutover window.
 
-The checked-in production auth files are dormant:
+The checked-in production auth files describe the reviewed release candidate:
 
 - `wrangler.production-auth.toml` is the prepared Pages configuration.
 - `workers/auth-runtime/wrangler.production.toml` is the prepared private auth
   runtime configuration.
 - `config/production-auth-build.env.example` records the required client build
-  flags without activating them in normal production CI.
+  flags; protected production CI supplies their reviewed values while auth mode
+  is active.
 - `config/production-auth-mode.json` is the reviewed persistent deployment
-  switch. Its checked-in `active: false`, `accessBoundary: broad` state keeps
-  normal production automation on `wrangler.toml`, without the auth runtime or
-  Better Auth schema migrations.
+  switch. The activation candidate's `active: true`, `accessBoundary: broad`
+  state selects the auth runtime and additive Better Auth schema migrations
+  while broad Access remains available for rollback.
 
 The initial production mode is `transition`: Better Auth is checked first while
 verified Access remains available for legacy migration. The existing Access API
@@ -23,7 +24,8 @@ the application boundary is verified.
 
 ## Before the window
 
-- [ ] Obtain explicit production-cutover approval.
+- [x] Obtain explicit production-cutover approval. The maintainer approved the
+  complete production rollout for 2026-09-27.
 - [ ] Freeze and record the release tag, commit SHA, tree SHA, Pages deployment,
   auth-runtime artifact/config SHA, and current Access application/policy IDs.
 - [ ] Confirm production D1 backup/restore evidence and the rollback owner.
@@ -142,10 +144,12 @@ the application boundary is verified.
 - [x] Prepare distinct production values for `BETTER_AUTH_SECRET`,
   `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TURNSTILE_SITE_KEY`, and
   `TURNSTILE_SECRET_KEY`. Never copy staging values.
-- [ ] Prepare the protected client build inputs from
+- [x] Prepare the protected client build inputs from
   `config/production-auth-build.env.example`: set `VITE_BETTER_AUTH_PILOT=true`
   and replace `VITE_TURNSTILE_SITE_KEY` with the public key from that exact
-  production widget. Verify both values are present in the release build.
+  production widget. The protected production workflow injects both values
+  from the reviewed auth mode and the `production` environment whenever the
+  immutable authentication candidate is active.
 - [x] Run `node scripts/access-boundary.mjs plan-cutover production` with a
   read-only Access token. It must show exactly one change:
   `linksim.link/api/*` to `linksim.link/api/auth/legacy-access/*`.

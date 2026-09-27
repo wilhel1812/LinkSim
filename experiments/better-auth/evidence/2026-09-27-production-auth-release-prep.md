@@ -97,3 +97,16 @@ inactive.
   candidates. These are preparation only; merging to `main`, deploying
   production, changing Access, and applying the production D1 migrations remain
   separately gated production actions.
+
+## Approved release window
+
+- The maintainer approved completing the production rollout on 2026-09-27.
+- The planned activation timestamp is `2026-09-27T10:00:00Z`
+  (`2026-09-27 12:00 CEST`). If candidate validation is not complete by that
+  time, the timestamp must move forward before the activation candidate is
+  frozen; it must never be backdated.
+- The corresponding 90-day legacy-claim deadline is
+  `2026-12-26T10:00:00.000Z`.
+- The `v0.29.0` candidate activates Better Auth while retaining broad Access
+  and temporarily enables privileged passkey recovery for the administrator
+  bootstrap.
