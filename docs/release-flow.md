@@ -77,7 +77,8 @@
     - Normal development: next minor `X.(Y+1).0`.
     - Approved patch development: next patch `X.Y.(Z+1)`, or a later patch
       only when every skipped patch candidate has an immutable tag reachable
-      from the staging release tree. This permits replacing an abandoned
+      from the staging release tree and both package files at each tag declare
+      its version. This permits replacing an abandoned
       candidate without moving or reusing its tag.
     - Approved breaking or first-stable development: next major `(X+1).0.0`.
   - CI validates the selected line before shared-staging deployment and never edits or commits versions.

@@ -60,6 +60,15 @@ export const validatePackageVersionParity = ({
   return declared.value;
 };
 
+export const isTaggedSkippedPatchCandidate = ({
+  expectedVersion,
+  packageContent,
+  lockfileContent,
+}) => validatePackageVersionParity({
+  ...parsePackageVersionInputs(packageContent, lockfileContent),
+  label: `tagged ${expectedVersion} candidate`,
+}) === expectedVersion;
+
 export const validateStagingVersionState = ({
   productionVersion,
   stagingVersion,
@@ -155,9 +164,14 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
       const tag = `v${production.major}.${production.minor}.${patch}`;
       try {
         runGit(["merge-base", "--is-ancestor", `refs/tags/${tag}`, "HEAD"]);
-        skippedPatchTags.push(tag);
+        const tagRef = `refs/tags/${tag}`;
+        if (isTaggedSkippedPatchCandidate({
+          expectedVersion: `${production.major}.${production.minor}.${patch}`,
+          packageContent: runGit(["show", `${tagRef}:package.json`]),
+          lockfileContent: runGit(["show", `${tagRef}:package-lock.json`]),
+        })) skippedPatchTags.push(tag);
       } catch {
-        // Missing or non-ancestral candidate tags cannot justify skipping a patch.
+        // Missing, non-ancestral, or malformed candidate tags cannot justify a skipped patch.
       }
     }
   }

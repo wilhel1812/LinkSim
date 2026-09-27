@@ -12,7 +12,7 @@ const evaluatePolicy = (expression: string) => {
     [
       "--input-type=module",
       "--eval",
-      `import { validatePackageVersionParity, validateStagingVersionState } from ${JSON.stringify(scriptPath)};
+      `import { validatePackageVersionParity, validateStagingVersionState, isTaggedSkippedPatchCandidate } from ${JSON.stringify(scriptPath)};
        try {
          const result = ${expression};
          console.log(JSON.stringify({ ok: true, value: result }));
@@ -107,6 +107,29 @@ describe("staging version-state policy", () => {
         skippedPatchTags: ["v0.26.3"],
       })`).ok,
     ).toBe(false);
+  });
+
+  it("requires a skipped tag to declare its own version in both package files", () => {
+    const packageContent = JSON.stringify({ version: "0.26.2" });
+    const lockfileContent = JSON.stringify({
+      version: "0.26.2",
+      packages: { "": { version: "0.26.2" } },
+    });
+    expect(
+      evaluatePolicy(`isTaggedSkippedPatchCandidate({
+        expectedVersion: "0.26.3",
+        packageContent: ${JSON.stringify(packageContent)},
+        lockfileContent: ${JSON.stringify(lockfileContent)},
+      })`),
+    ).toEqual({ ok: true, value: false });
+
+    expect(
+      evaluatePolicy(`isTaggedSkippedPatchCandidate({
+        expectedVersion: "0.26.2",
+        packageContent: ${JSON.stringify(packageContent)},
+        lockfileContent: ${JSON.stringify(lockfileContent)},
+      })`),
+    ).toEqual({ ok: true, value: true });
   });
 
   it.each(["0.28.0", "0.26.4", "0.25.9", "2.0.0", "0.27.0-beta"])(
