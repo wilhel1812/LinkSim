@@ -60,10 +60,29 @@ export const validatePackageVersionParity = ({
   return declared.value;
 };
 
+export const isTaggedSkippedPatchCandidate = ({
+  expectedVersion,
+  packageContent,
+  lockfileContent,
+}) => validatePackageVersionParity({
+  ...parsePackageVersionInputs(packageContent, lockfileContent),
+  label: `tagged ${expectedVersion} candidate`,
+}) === expectedVersion;
+
+export const isTagInStagingHistory = ({
+  taggedCommit,
+  taggedCommitIsAncestor,
+  taggedTree,
+  stagingHistoryTrees,
+}) => Boolean(taggedCommit) && (taggedCommitIsAncestor || (
+  Boolean(taggedTree) && stagingHistoryTrees.includes(taggedTree)
+));
+
 export const validateStagingVersionState = ({
   productionVersion,
   stagingVersion,
   treesMatch,
+  skippedPatchTags = [],
 }) => {
   const production = parseBaseVersion(productionVersion, "production version");
   const staging = parseBaseVersion(stagingVersion, "staging version");
@@ -87,6 +106,14 @@ export const validateStagingVersionState = ({
     staging.major === production.major &&
     staging.minor === production.minor &&
     staging.patch === production.patch + 1;
+  const isTaggedSkippedPatch =
+    staging.major === production.major &&
+    staging.minor === production.minor &&
+    staging.patch > production.patch + 1 &&
+    Array.from(
+      { length: staging.patch - production.patch - 1 },
+      (_, index) => `v${production.major}.${production.minor}.${production.patch + index + 1}`,
+    ).every((tag) => skippedPatchTags.includes(tag));
   const isNextMinor =
     staging.major === production.major &&
     staging.minor === production.minor + 1 &&
@@ -96,12 +123,12 @@ export const validateStagingVersionState = ({
     staging.minor === 0 &&
     staging.patch === 0;
 
-  if (!isNextPatch && !isNextMinor && !isNextMajor) {
+  if (!isNextPatch && !isTaggedSkippedPatch && !isNextMinor && !isNextMajor) {
     throw new Error(
       `Staging version ${staging.value} must explicitly select either next patch ` +
         `${production.major}.${production.minor}.${production.patch + 1} or next minor ` +
         `${production.major}.${production.minor + 1}.0 or next major ` +
-        `${production.major + 1}.0.0.`,
+        `${production.major + 1}.0.0, unless every skipped patch candidate has a verified tag in staging history.`,
     );
   }
 
@@ -109,6 +136,8 @@ export const validateStagingVersionState = ({
     state: "development-line",
     progression: isNextPatch
       ? "next-patch"
+      : isTaggedSkippedPatch
+        ? "tagged-skipped-patch"
       : isNextMinor
         ? "next-minor"
         : "next-major",
@@ -136,6 +165,42 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
     ),
     label: "production",
   });
+  const production = parseBaseVersion(productionVersion);
+  const staging = parseBaseVersion(stagingVersion);
+  const skippedPatchTags = [];
+  let stagingHistoryTrees;
+  if (staging.major === production.major && staging.minor === production.minor) {
+    for (let patch = production.patch + 1; patch < staging.patch; patch += 1) {
+      const tag = `v${production.major}.${production.minor}.${patch}`;
+      try {
+        const tagRef = `refs/tags/${tag}`;
+        // A skipped release tag must peel to a commit, never directly to a tree.
+        const taggedCommit = runGit(["rev-parse", `${tagRef}^{commit}`]).trim();
+        let taggedCommitIsAncestor = true;
+        try {
+          runGit(["merge-base", "--is-ancestor", taggedCommit, "HEAD"]);
+        } catch {
+          taggedCommitIsAncestor = false;
+        }
+        if (!taggedCommitIsAncestor && !stagingHistoryTrees) {
+          stagingHistoryTrees = runGit(["log", "--format=%T", "HEAD"]).trim().split("\n");
+        }
+        if (!isTagInStagingHistory({
+          taggedCommit,
+          taggedCommitIsAncestor,
+          taggedTree: taggedCommitIsAncestor ? "" : runGit(["rev-parse", `${taggedCommit}^{tree}`]).trim(),
+          stagingHistoryTrees: stagingHistoryTrees ?? [],
+        })) continue;
+        if (isTaggedSkippedPatchCandidate({
+          expectedVersion: `${production.major}.${production.minor}.${patch}`,
+          packageContent: runGit(["show", `${tagRef}:package.json`]),
+          lockfileContent: runGit(["show", `${tagRef}:package-lock.json`]),
+        })) skippedPatchTags.push(tag);
+      } catch {
+        // Missing, unrelated, or malformed candidate tags cannot justify a skipped patch.
+      }
+    }
+  }
 
   let treesMatch = true;
   try {
@@ -154,6 +219,7 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
       productionVersion,
       stagingVersion,
       treesMatch,
+      skippedPatchTags,
     }),
   };
 };

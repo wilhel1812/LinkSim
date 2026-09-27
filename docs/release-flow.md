@@ -75,7 +75,12 @@
   - Immediately after production promotion, `staging` may retain production's base version while both branch trees are identical.
   - The first subsequent change that makes the staging tree diverge must deliberately update `package.json` and `package-lock.json` to one reviewed development line:
     - Normal development: next minor `X.(Y+1).0`.
-    - Approved patch development: next patch `X.Y.(Z+1)`.
+    - Approved patch development: next patch `X.Y.(Z+1)`, or a later patch
+      only when every skipped patch candidate has an immutable tag whose commit
+      is in staging history, or whose tree exactly matches a staging-history
+      commit from the exact-tree production fallback, and both package files
+      at each tag declare its version. This permits replacing an abandoned
+      candidate without moving or reusing its tag.
     - Approved breaking or first-stable development: next major `(X+1).0.0`.
   - CI validates the selected line before shared-staging deployment and never edits or commits versions.
   - Build label channel by environment:
