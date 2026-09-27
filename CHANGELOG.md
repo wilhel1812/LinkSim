@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.29.2] - 2026-09-27
+
+### Security
+- Prepared the reviewed legacy-only Access boundary for the public authentication cutover while keeping Better Auth active and privileged passkey recovery disabled. (#1107)
+- Moved the approved cutover timestamp forward to 2026-09-27 11:00 UTC and kept the legacy-claim deadline exactly 90 days later. (#1107)
+
 ## [0.29.1] - 2026-09-27
 
 ### Security
