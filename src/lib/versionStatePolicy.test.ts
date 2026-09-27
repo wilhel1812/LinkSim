@@ -135,6 +135,7 @@ describe("staging version-state policy", () => {
   it("accepts an exact-tree release tag only when its tree is in staging history", () => {
     expect(
       evaluatePolicy(`isTagInStagingHistory({
+        taggedCommit: "release-commit",
         taggedCommitIsAncestor: false,
         taggedTree: "verified-tree",
         stagingHistoryTrees: ["older-tree", "verified-tree"],
@@ -143,9 +144,19 @@ describe("staging version-state policy", () => {
 
     expect(
       evaluatePolicy(`isTagInStagingHistory({
+        taggedCommit: "release-commit",
         taggedCommitIsAncestor: false,
         taggedTree: "unrelated-tree",
         stagingHistoryTrees: ["older-tree", "verified-tree"],
+      })`),
+    ).toEqual({ ok: true, value: false });
+
+    expect(
+      evaluatePolicy(`isTagInStagingHistory({
+        taggedCommit: "",
+        taggedCommitIsAncestor: false,
+        taggedTree: "verified-tree",
+        stagingHistoryTrees: ["verified-tree"],
       })`),
     ).toEqual({ ok: true, value: false });
   });

@@ -70,12 +70,13 @@ export const isTaggedSkippedPatchCandidate = ({
 }) === expectedVersion;
 
 export const isTagInStagingHistory = ({
+  taggedCommit,
   taggedCommitIsAncestor,
   taggedTree,
   stagingHistoryTrees,
-}) => taggedCommitIsAncestor || (
+}) => Boolean(taggedCommit) && (taggedCommitIsAncestor || (
   Boolean(taggedTree) && stagingHistoryTrees.includes(taggedTree)
-);
+));
 
 export const validateStagingVersionState = ({
   productionVersion,
@@ -173,9 +174,11 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
       const tag = `v${production.major}.${production.minor}.${patch}`;
       try {
         const tagRef = `refs/tags/${tag}`;
+        // A skipped release tag must peel to a commit, never directly to a tree.
+        const taggedCommit = runGit(["rev-parse", `${tagRef}^{commit}`]).trim();
         let taggedCommitIsAncestor = true;
         try {
-          runGit(["merge-base", "--is-ancestor", tagRef, "HEAD"]);
+          runGit(["merge-base", "--is-ancestor", taggedCommit, "HEAD"]);
         } catch {
           taggedCommitIsAncestor = false;
         }
@@ -183,8 +186,9 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
           stagingHistoryTrees = runGit(["log", "--format=%T", "HEAD"]).trim().split("\n");
         }
         if (!isTagInStagingHistory({
+          taggedCommit,
           taggedCommitIsAncestor,
-          taggedTree: taggedCommitIsAncestor ? "" : runGit(["rev-parse", `${tagRef}^{tree}`]).trim(),
+          taggedTree: taggedCommitIsAncestor ? "" : runGit(["rev-parse", `${taggedCommit}^{tree}`]).trim(),
           stagingHistoryTrees: stagingHistoryTrees ?? [],
         })) continue;
         if (isTaggedSkippedPatchCandidate({
