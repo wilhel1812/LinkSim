@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.29.0] - Unreleased
+## [0.29.0] - 2026-09-27
 
 ### Added
 - Added GitHub registration and sign-in with optional passkeys, secure credential management, and a unified sign-in experience. (#1107, #1144, #1149, #1151, #1153, #1156)

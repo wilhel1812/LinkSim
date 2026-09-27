@@ -38,7 +38,7 @@ describe("staging auth runtime isolation", () => {
     }
   });
 
-  it("keeps production auth preparation dormant, isolated and fail closed", () => {
+  it("keeps the production auth activation candidate isolated and explicit", () => {
     const activePages = readFileSync(resolve(process.cwd(), "wrangler.toml"), "utf8");
     const preparedPages = readFileSync(
       resolve(process.cwd(), "wrangler.production-auth.toml"),
@@ -59,18 +59,18 @@ describe("staging auth runtime isolation", () => {
     expect(preparedPages).toContain('AUTH_SESSION_SOURCE = "transition"');
     expect(preparedRuntime).toContain('name = "linksim-auth-runtime-production"');
     expect(preparedRuntime).toContain('AUTH_ORIGIN = "https://linksim.link"');
-    expect(productionAuthMode).toEqual({ active: false, accessBoundary: "broad" });
+    expect(productionAuthMode).toEqual({ active: true, accessBoundary: "broad" });
 
     for (const config of [preparedPages, preparedRuntime]) {
       expect(config).toContain('database_name = "linksim"');
       expect(config).toContain('database_id = "d669aac0-37ea-4c68-9b27-ece888e1966a"');
       expect(config).not.toContain("linksim_staging");
       expect(config).not.toContain("a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c");
-      expect(config).toContain('AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "false"');
-      expect(config).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"');
-      expect(config).toContain('AUTH_LEGACY_CLAIM_ENABLED = "false"');
-      expect(config).toContain('AUTH_REGISTRATION_ENABLED = "false"');
-      expect(config).not.toContain("AUTH_LEGACY_CLAIM_DEADLINE");
+      expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-26T10:00:00.000Z"');
+      expect(config).toContain('AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"');
+      expect(config).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"');
+      expect(config).toContain('AUTH_LEGACY_CLAIM_ENABLED = "true"');
+      expect(config).toContain('AUTH_REGISTRATION_ENABLED = "true"');
     }
   });
 

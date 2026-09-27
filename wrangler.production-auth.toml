@@ -1,7 +1,7 @@
-# Dormant production authentication configuration.
+# Production authentication activation candidate.
 # Deployment automation selects this file only for the explicitly confirmed,
-# protected production auth cutover target or after the reviewed production
-# auth mode file is activated according to the operator checklist.
+# protected production auth cutover target or while the reviewed production
+# auth mode remains active according to the operator checklist.
 name = "linksim"
 compatibility_date = "2026-03-12"
 pages_build_output_dir = "dist"
@@ -30,7 +30,8 @@ PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE = "6000"
 PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE = "600"
 CALC_API_PROXY_RATE_LIMIT_PER_MINUTE = "120"
 AUTH_SESSION_SOURCE = "transition"
-AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "false"
-AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"
-AUTH_LEGACY_CLAIM_ENABLED = "false"
-AUTH_REGISTRATION_ENABLED = "false"
+AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-26T10:00:00.000Z"
+AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"
+AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"
+AUTH_LEGACY_CLAIM_ENABLED = "true"
+AUTH_REGISTRATION_ENABLED = "true"
