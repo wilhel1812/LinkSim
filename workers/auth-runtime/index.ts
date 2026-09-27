@@ -1,0 +1,94 @@
+import { DurableObject } from "cloudflare:workers";
+import { betterAuth } from "better-auth";
+
+import { makeAuthSessionLog, type AuthSessionResultCategory } from "./logging";
+import { authRuntimeOptions, type AuthRuntimeEnv } from "./options";
+import { hasExactRequestOrigin, isAuthGatewayRoute, requiresMutationOrigin } from "../../functions/_lib/apiRoutePolicy";
+import { getSetCookieHeaders } from "../../functions/_lib/http";
+import { SerialExecutor } from "./serialExecutor";
+
+const SESSION_HEADERS = [
+  "cookie",
+  "origin",
+  "content-type",
+  "accept",
+  "user-agent",
+  "cf-connecting-ip",
+] as const;
+
+const AUTH_HEADERS = [...SESSION_HEADERS, "x-captcha-response"] as const;
+
+export class AuthRuntime extends DurableObject<AuthRuntimeEnv> {
+  private readonly auth;
+  private readonly passkeyDeletion = new SerialExecutor();
+
+  constructor(ctx: DurableObjectState, env: AuthRuntimeEnv) {
+    super(ctx, env);
+    this.auth = betterAuth(authRuntimeOptions(env));
+  }
+
+  async checkSession(request: Request) {
+    const started = Date.now();
+    const origin = new URL(this.env.AUTH_ORIGIN).origin;
+    const incomingOrigin = request.headers.get("origin");
+    if (request.method !== "GET" || (incomingOrigin !== null && incomingOrigin !== origin)) {
+      console.info(JSON.stringify(makeAuthSessionLog(403, "rejected", Date.now() - started)));
+      return { status: 403, setCookies: [] };
+    }
+
+    const headers = new Headers();
+    for (const name of SESSION_HEADERS) {
+      const value = request.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    try {
+      const session = await this.auth.api.getSession({ headers, returnHeaders: true });
+      const status = session.response ? 200 : 401;
+      const result: AuthSessionResultCategory = session.response ? "ok" : "no-session";
+      console.info(JSON.stringify(makeAuthSessionLog(status, result, Date.now() - started)));
+      return session.response
+        ? {
+            status,
+            authUserId: session.response.user.id,
+            fresh: Date.now() - new Date(session.response.session.createdAt).getTime() < 5 * 60 * 1000,
+            setCookies: getSetCookieHeaders(session.headers),
+          }
+        : { status, setCookies: getSetCookieHeaders(session.headers) };
+    } catch {
+      console.info(JSON.stringify(makeAuthSessionLog(500, "error", Date.now() - started)));
+      return { status: 500, setCookies: [] };
+    }
+  }
+
+  async fetch(request: Request) {
+    if (!isAuthGatewayRoute(request)) return new Response(null, { status: 404 });
+    if (requiresMutationOrigin(request) && !hasExactRequestOrigin(request)) {
+      return new Response(null, { status: 403 });
+    }
+
+    const headers = new Headers();
+    for (const name of AUTH_HEADERS) {
+      const value = request.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    const origin = new URL(this.env.AUTH_ORIGIN).origin;
+    const incoming = new URL(request.url);
+    const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
+    const body = requiresMutationOrigin(request) ? await request.arrayBuffer() : undefined;
+    const handle = () => this.auth.handler(new Request(url, {
+      method: request.method,
+      headers,
+      body,
+    }));
+    return incoming.pathname === "/api/auth/passkey/delete-passkey"
+      ? this.passkeyDeletion.run(handle)
+      : handle();
+  }
+
+}
+
+export default {
+  fetch() {
+    return new Response(null, { status: 404 });
+  },
+};

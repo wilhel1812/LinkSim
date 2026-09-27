@@ -17,9 +17,9 @@ const lifecycleResponse = (request: Request, result: Awaited<ReturnType<typeof s
   return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 };
 
-export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     const me = await assertUserAccess(env, auth.userId);
@@ -31,9 +31,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   }
 };
 
-export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     const me = await assertUserAccess(env, auth.userId);

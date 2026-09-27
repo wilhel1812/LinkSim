@@ -7,7 +7,17 @@ const staging = read("infra/terraform/environments/staging/terraform.tfvars");
 const production = read("infra/terraform/environments/prod/terraform.tfvars");
 const moduleSource = read("infra/terraform/modules/linksim_cloudflare/main.tf");
 const stagingWrangler = read("wrangler.staging.toml");
+const previewWrangler = read("wrangler.staging-preview.toml");
 const productionWrangler = read("wrangler.toml");
+const preparedProductionWrangler = read("wrangler.production-auth.toml");
+const preparedProductionRuntime = read("workers/auth-runtime/wrangler.production.toml");
+const deployScript = read("scripts/deploy-pages-safe.mjs");
+const deployWorkflow = read(".github/workflows/deploy-pages.yml");
+const stagingTerraformMain = read("infra/terraform/environments/staging/main.tf");
+const productionTerraformMain = read("infra/terraform/environments/prod/main.tf");
+const productionTerraformVariables = read("infra/terraform/environments/prod/variables.tf");
+const productionAuthCutoverTfvars = read("infra/terraform/environments/prod/auth-cutover.tfvars.example");
+const terraformVariables = read("infra/terraform/modules/linksim_cloudflare/variables.tf");
 const runtimeTypes = read("functions/_lib/types.ts");
 const accessPolicyDocs = read("docs/access-policy-templates.md");
 const authSetupDocs = read("docs/cloudflare-auth-setup.md");
@@ -25,8 +35,11 @@ const applicationBlock = (config: string, key: string): string => {
 };
 
 describe("authenticated Pages preview Terraform intent", () => {
-  it("keeps only APIs and wildcard previews authenticated on staging", () => {
+  it("keeps only the legacy migration path and wildcard previews on Access in staging", () => {
     expect(applicationBlock(staging, "authenticated_api")).toContain(
+      'domain = "staging.linksim.link/api/auth/legacy-access/*"',
+    );
+    expect(applicationBlock(staging, "public_api_exceptions")).toContain(
       'domain = "staging.linksim.link/api/*"',
     );
     expect(applicationBlock(staging, "pages_root")).toContain('domain = "linksim-staging.pages.dev"');
@@ -97,5 +110,126 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(moduleSource).toContain(
       'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value',
     );
+  });
+
+  it("binds private history only to stable staging, never previews or production", () => {
+    const preview = moduleSource.split("    preview = {")[1]?.split("    production = {")[0] ?? "";
+    const stable = moduleSource.split("    production = {")[1]?.split("  lifecycle {")[0] ?? "";
+    expect(stagingWrangler).toContain('binding = "HISTORY_BUCKET"');
+    expect(stagingWrangler).toContain('bucket_name = "linksim-history-staging"');
+    expect(stagingWrangler).toContain('HISTORY_SCOPE = "staging"');
+    expect(previewWrangler).not.toContain("HISTORY_BUCKET");
+    expect(previewWrangler).not.toContain("HISTORY_SCOPE");
+    expect(productionWrangler).not.toContain("HISTORY_BUCKET");
+    expect(productionWrangler).not.toContain("HISTORY_SCOPE");
+    expect(preview).not.toContain("history_r2_bucket_name");
+    expect(preview).not.toContain("pages_production_env_vars");
+    expect(stable).toContain("history_r2_bucket_name");
+    expect(stable).toContain("pages_production_env_vars");
+    expect(deployScript).toContain('wrangler.staging-preview.toml');
+    expect(deployScript).toContain('configPath: wranglerStagingPreview');
+    expect(staging).toContain('history_r2_bucket_name');
+    expect(stagingTerraformMain).toMatch(/pages_production_env_vars_plain\s*=\s*\{[\s\S]*HISTORY_SCOPE\s*=\s*"staging"[\s\S]*AUTH_SESSION_SOURCE\s*=\s*"better-auth"[\s\S]*\}/);
+    const sharedStagingVars = staging.split("pages_env_vars_plain = {")[1]?.split("}\n")[0] ?? "";
+    expect(sharedStagingVars).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionTerraformMain).toContain('resource "cloudflare_r2_bucket" "history"');
+    expect(productionTerraformMain).toContain('name         = "linksim-history"');
+    expect(productionTerraformMain).toContain('prevent_destroy = true');
+    const productionStack = productionTerraformMain
+      .split('module "stack" {')[1]?.split('\n}')[0] ?? "";
+    expect(productionStack).not.toContain('history_r2_bucket_name');
+    expect(preparedProductionWrangler).not.toContain('HISTORY_BUCKET');
+    expect(preparedProductionWrangler).not.toContain('HISTORY_SCOPE');
+    expect(previewWrangler).toBe(stagingWrangler
+      .replace(/\n\[\[r2_buckets\]\]\nbinding = "HISTORY_BUCKET"\nbucket_name = "linksim-history-staging"\n/, "")
+      .replace(/\n\[\[durable_objects\.bindings\]\]\nname = "AUTH"\nclass_name = "AuthRuntime"\nscript_name = "linksim-auth-runtime-staging"\n/, "")
+      .replace('\nHISTORY_SCOPE = "staging"', "")
+      .replace('\nAUTH_SESSION_SOURCE = "better-auth"', "")
+      .replace('\nAUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"', "")
+      .replace('\nAUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"', "")
+      .replace('\nAUTH_LEGACY_CLAIM_ENABLED = "true"', "")
+      .replace('\nAUTH_REGISTRATION_ENABLED = "true"', ""));
+  });
+
+  it("keeps production auth dormant except through the protected cutover target", () => {
+    expect(stagingWrangler).toContain('name = "AUTH"');
+    expect(stagingWrangler).toContain('class_name = "AuthRuntime"');
+    expect(stagingWrangler).toContain('script_name = "linksim-auth-runtime-staging"');
+    expect(stagingWrangler).toContain('AUTH_SESSION_SOURCE = "better-auth"');
+    expect(deployScript).toContain("parseDurableObjectBindings");
+    expect(deployScript).toContain("unexpected Durable Object bindings");
+    expect(previewWrangler).not.toContain('name = "AUTH"');
+    expect(previewWrangler).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionWrangler).not.toContain('name = "AUTH"');
+    expect(productionWrangler).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionTerraformMain).not.toContain("linksim-auth-runtime-production");
+    expect(moduleSource).not.toContain("linksim-auth-runtime-production");
+    expect(deployWorkflow).toContain("github.event.inputs.target == 'prod-auth-cutover'");
+    expect(deployWorkflow).toContain("--target \"$DEPLOY_TARGET\"");
+    expect(deployScript).toContain("wrangler.production-auth.toml");
+    expect(preparedProductionWrangler).toContain('script_name = "linksim-auth-runtime-production"');
+    expect(preparedProductionRuntime).toContain('name = "linksim-auth-runtime-production"');
+  });
+
+  it("keeps the staging Durable Object binding represented in Terraform", () => {
+    expect(terraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
+    expect(moduleSource).toContain("var.pages_production_durable_object_namespaces");
+    expect(stagingTerraformMain).toContain("pages_production_durable_object_namespaces");
+    expect(read("infra/terraform/environments/staging/variables.tf")).toContain(
+      "Stable staging requires exactly one AUTH Durable Object namespace ID.",
+    );
+    const namespaceVariable = read("infra/terraform/environments/staging/variables.tf")
+      .split('variable "pages_production_durable_object_namespaces" {')[1]
+      ?.split("\n}\n")[0] ?? "";
+    expect(namespaceVariable).not.toContain("default");
+    expect(productionTerraformMain).toContain("pages_production_durable_object_namespaces");
+    expect(productionTerraformMain).toContain("pages_production_env_vars_plain");
+    expect(productionTerraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
+    expect(productionTerraformVariables).toContain('variable "pages_production_env_vars_plain"');
+    expect(production).not.toContain("pages_production_durable_object_namespaces");
+    expect(production).not.toContain("AUTH_SESSION_SOURCE");
+    expect(productionAuthCutoverTfvars).toContain("pages_production_durable_object_namespaces");
+    expect(productionAuthCutoverTfvars).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
+    expect(productionAuthCutoverTfvars).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
+    expect(productionAuthCutoverTfvars).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED    = "false"');
+  });
+
+  it("configures staging authentication before deploying its runtime and Pages application", () => {
+    const secretNames = [
+      "BETTER_AUTH_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
+      "TURNSTILE_SITE_KEY",
+      "TURNSTILE_SECRET_KEY",
+    ];
+    const boundaryPrecheck = deployWorkflow.indexOf("Verify staging Access boundary before deploy");
+    const runtime = deployWorkflow.indexOf("wrangler deploy --config workers/auth-runtime/wrangler.staging.toml");
+    const pages = deployWorkflow.indexOf("npm run deploy:staging");
+    const boundaryPostcheck = deployWorkflow.indexOf("Re-verify staging Access boundary after deploy");
+    expect(boundaryPrecheck).toBeGreaterThan(0);
+    expect(boundaryPrecheck).toBeLessThan(runtime);
+    expect(runtime).toBeGreaterThan(0);
+    for (const secretName of secretNames) {
+      const secret = deployWorkflow.indexOf(`secret put ${secretName}`);
+      const sourceSecret = secretName === "TURNSTILE_SITE_KEY"
+        ? "VITE_TURNSTILE_SITE_KEY"
+        : secretName === "GITHUB_CLIENT_ID" || secretName === "GITHUB_CLIENT_SECRET"
+          ? `BETTER_AUTH_${secretName}`
+          : secretName;
+      expect(deployWorkflow).toContain(`secrets.${sourceSecret}`);
+      expect(secret).toBeGreaterThan(0);
+      expect(secret).toBeLessThan(runtime);
+    }
+    expect(pages).toBeGreaterThan(runtime);
+    expect(boundaryPostcheck).toBeGreaterThan(pages);
+    expect(deployWorkflow).toContain('test "${#BETTER_AUTH_SECRET}" -ge 32');
+    expect(deployWorkflow).toContain('VITE_BETTER_AUTH_PILOT: "true"');
+    expect(deployWorkflow).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(deployWorkflow).toContain("TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(deployWorkflow).not.toContain("AUTH_PILOT_GITHUB_ACCOUNT_ID");
+    expect(deployWorkflow).not.toContain("AUTH_PILOT_LINKSIM_USER_ID");
+    expect(read("workers/auth-runtime/wrangler.staging.toml"))
+      .toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"');
+    expect(productionTerraformMain).not.toContain("AUTH_PILOT_GITHUB_ACCOUNT_ID");
   });
 });

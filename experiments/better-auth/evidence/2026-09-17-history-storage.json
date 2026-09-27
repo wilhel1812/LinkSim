@@ -1,0 +1,59 @@
+{
+  "source": "local synthetic workerd and D1; duration is wall time, not production CPU",
+  "results": [
+    {
+      "sites": 12,
+      "rawBytes": 3261,
+      "storedBytes": 798,
+      "snapshotBytes": 1515,
+      "snapshotGzipBytes": 258,
+      "roundTrip": true,
+      "detailsMs": 2
+    },
+    {
+      "sites": 100,
+      "rawBytes": 25757,
+      "storedBytes": 2199,
+      "snapshotBytes": 12763,
+      "snapshotGzipBytes": 1141,
+      "roundTrip": true,
+      "detailsMs": 1
+    },
+    {
+      "sites": 400,
+      "rawBytes": 103625,
+      "storedBytes": 12016,
+      "snapshotBytes": 51697,
+      "snapshotGzipBytes": 4417,
+      "roundTrip": true,
+      "detailsMs": 4
+    }
+  ],
+  "dry": {
+    "scanned": 1,
+    "candidates": 1,
+    "converted": 0,
+    "conflicts": 0,
+    "bytesBefore": 3261,
+    "bytesAfter": 798,
+    "nextId": 1
+  },
+  "apply": {
+    "scanned": 1,
+    "candidates": 1,
+    "converted": 1,
+    "conflicts": 0,
+    "bytesBefore": 3261,
+    "bytesAfter": 798,
+    "nextId": 1
+  },
+  "repeat": {
+    "scanned": 1,
+    "candidates": 0,
+    "converted": 0,
+    "conflicts": 0,
+    "bytesBefore": 798,
+    "bytesAfter": 798,
+    "nextId": 1
+  }
+}

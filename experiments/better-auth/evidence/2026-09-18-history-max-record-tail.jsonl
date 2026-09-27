@@ -1,0 +1,10 @@
+{"firstInvocation":false,"timestamp":1789741268091,"path":"/dry-run","status":200,"cpuMs":1,"wallMs":523,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741268474,"path":"/dry-run","status":200,"cpuMs":14,"wallMs":134,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741280949,"path":"/archive","status":200,"cpuMs":22,"wallMs":771,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741280931,"path":"/archive","status":200,"cpuMs":0,"wallMs":795,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741292461,"path":"/hydrate","status":200,"cpuMs":9,"wallMs":176,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741292447,"path":"/hydrate","status":200,"cpuMs":2,"wallMs":197,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741302785,"path":"/restore","status":200,"cpuMs":11,"wallMs":301,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741302772,"path":"/restore","status":200,"cpuMs":1,"wallMs":320,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741316775,"path":"/object-count","status":200,"cpuMs":2,"wallMs":163,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}
+{"firstInvocation":false,"timestamp":1789741316754,"path":"/object-count","status":200,"cpuMs":1,"wallMs":191,"outcome":"ok","version":"f04a074f-f534-4014-9008-3bb47c3fec7c"}

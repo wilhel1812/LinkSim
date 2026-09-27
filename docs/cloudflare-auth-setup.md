@@ -1,12 +1,12 @@
-# Cloudflare Access + D1 Setup (Recommended)
+# Cloudflare authentication boundaries and D1 setup
 
 This project uses:
 
 - Cloudflare Pages + Functions API
 - Cloudflare D1 for persistence
-- Cloudflare Access for authentication at the edge
-- GitHub identity provider in Access as primary login
-- Access One-time PIN as fallback login
+- Better Auth with GitHub and passkeys on stable staging
+- Cloudflare Access for production during migration, staging previews, and the
+  narrow stable-staging legacy proof path
 
 ## 1) Create D1 Database
 
@@ -39,7 +39,11 @@ In Cloudflare Zero Trust:
 1. Go to **Access** → **Applications**
 2. Add/update applications for each explicit boundary:
    - custom app shell (`staging.linksim.link` / `linksim.link`): Bypass for everyone;
-   - custom authenticated API (`staging.linksim.link/api/*` / `linksim.link/api/*`): authenticated Allow;
+   - stable-staging API (`staging.linksim.link/api/*`): Bypass so LinkSim's
+     Better Auth guard is authoritative;
+   - stable-staging legacy proof (`staging.linksim.link/api/auth/legacy-access/*`): authenticated Allow;
+   - production API (`linksim.link/api/*`): authenticated Allow until the
+     separately approved production cutover;
    - staging raw Pages root (`linksim-staging.pages.dev`): Bypass so Pages can redirect it to the custom domain;
    - staging branch previews (`*.linksim-staging.pages.dev`): authenticated Allow.
 3. Add login methods:
@@ -50,10 +54,22 @@ In Cloudflare Zero Trust:
 
 Notes:
 - Native email+password user database is not provided by Cloudflare Access.
-- The LinkSim `Sign in / Sign up` action starts Access authentication. A first
-  successful GitHub or email-OTP login creates the LinkSim account; the user
-  then enters an initially empty username.
-- Passkeys are handled by your identity provider (GitHub), not by Access itself.
+- On stable staging, the LinkSim sign-in popover starts Better Auth GitHub or
+  passkey authentication. GitHub is required to create a new account.
+- Access GitHub or one-time PIN remains relevant only to legacy migration and
+  the production deployment while the transition is open.
+- The legacy migration route accepts only a freshly issued Access JWT, creates
+  a ten-minute single-use attempt, and then requires a fresh Better Auth GitHub
+  session. `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true` must be present in both the
+  stable-staging Pages and auth-runtime configurations. Preview and production
+  must omit it until their separately reviewed rollout phase.
+- A separately gated privileged passkey recovery exists only for an
+  operator-authorized, unmigrated administrator or moderator. It always logs
+  out of the cached Access identity first, requires a fresh exact-subject Access
+  proof, binds the public attempt reference to a separate short-lived Secure and
+  HttpOnly browser cookie, and lets Better Auth create the first passkey and session. It never
+  matches email or registers an ordinary user. Production omits
+  `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED`.
 
 ## 4) Registration Behavior
 
@@ -79,6 +95,18 @@ administrator can durably demote or revoke a bootstrap identity. Diagnostics
 endpoints follow that current D1 state and do not provide a configuration-only
 break-glass bypass. Bootstrap consumption survives account deletion and
 restoration, so reauthentication cannot undo a durable demotion.
+
+Stable staging additionally declares these non-secret, fail-closed rollout
+gates in checked-in Wrangler configuration:
+
+- `AUTH_DUAL_LOGIN_MIGRATION_ENABLED=true`
+- `AUTH_LEGACY_CLAIM_ENABLED=true`
+- `AUTH_REGISTRATION_ENABLED=true`
+- `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED=true`
+
+Omitting or setting a gate to any value other than the exact string `true`
+disables that path. Existing auth mappings continue to work when claim or
+registration is disabled.
 
 ## Account lifecycle policy
 
@@ -121,8 +149,9 @@ Requests with another browser `Origin` (including `null`) are rejected before
 API handlers run, even when they carry a `CF_Authorization` cookie. Requests
 without `Origin`, such as curl and server-to-server API clients, remain allowed
 but receive no CORS authorization headers. This application boundary complements
-Access; it does not replace the configured issuer, audience, and signature
-verification or authorize changes to Access applications.
+the active environment authentication boundary. On stable staging it does not
+replace Better Auth session validation; on Access-protected routes it does not
+replace issuer, audience, and signature verification.
 
 ## 6) D1 Binding in Pages
 
@@ -138,7 +167,10 @@ Deploy from this repo. Pages Functions under `functions/api/*` deploy automatica
 ## 8) Verify
 
 - Anonymous custom app shell returns `200`.
-- Anonymous custom `/api/me` redirects to Access with the configured API audience.
+- Anonymous stable-staging `/api/me` returns LinkSim's JSON `401`; production
+  `/api/me` still redirects to Access.
+- Anonymous stable-staging `/api/auth/legacy-access/*` redirects to Access with
+  the configured legacy API audience.
 - The raw Pages root redirects to the custom domain.
 - Staging branch previews redirect to Access with the configured preview audience.
 - Sign in via GitHub (or OTP fallback)

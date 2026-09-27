@@ -25,6 +25,7 @@ d1_database_id   = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
 
 r2_bucket_name         = "linksim-avatars-staging"
 r2_bucket_jurisdiction = "default"
+history_r2_bucket_name = "linksim-history-staging"
 
 dns_records = {
   staging = {
@@ -50,12 +51,30 @@ access_applications = {
     ]
   }
   authenticated_api = {
-    name   = "LinkSim Staging Authenticated API"
-    domain = "staging.linksim.link/api/*"
-    type   = "self_hosted"
+    name   = "LinkSim Staging Legacy Migration API"
+    domain = "staging.linksim.link/api/auth/legacy-access/*"
+    destinations = [
+      { type = "public", uri = "staging.linksim.link/api/auth/legacy-access/*" },
+    ]
+    type = "self_hosted"
     policy_bindings = [
       {
         id         = "fd96072d-843b-4320-811a-281767b011ee"
+        precedence = 1
+      }
+    ]
+  }
+  public_api_exceptions = {
+    name   = "LinkSim Staging Application API"
+    domain = "staging.linksim.link/api/*"
+    destinations = [
+      { type = "public", uri = "staging.linksim.link/api/*" },
+      { type = "public", uri = "staging.linksim.link/copernicus/*" },
+    ]
+    type = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "d0a1003c-ce29-4f14-a635-58463e82020b"
         precedence = 1
       }
     ]

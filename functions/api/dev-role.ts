@@ -7,13 +7,13 @@ const isDevAuthEnabled = (env: Env): boolean => (env.ALLOW_INSECURE_DEV_AUTH ?? 
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
     if (!isDevAuthEnabled(env)) {
       return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
     }
 
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) {
       return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     }

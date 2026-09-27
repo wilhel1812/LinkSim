@@ -9,7 +9,7 @@ const setViewportWidth = (width: number) => {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
 };
 
-function Harness({ estimatedWidth }: { estimatedWidth: number }) {
+function Harness({ estimatedWidth, tier }: { estimatedWidth: number; tier?: "base" | "raised" }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -22,6 +22,7 @@ function Harness({ estimatedWidth }: { estimatedWidth: number }) {
         estimatedWidth={estimatedWidth}
         onClose={() => setOpen(false)}
         open={open}
+        tier={tier}
         triggerRef={triggerRef}
       >
         <div>Popover content</div>
@@ -58,6 +59,18 @@ describe("FloatingPopover", () => {
 
     await waitFor(() => {
       expect(document.querySelector(".ui-action-popover")).toHaveStyle({ left: "180px" });
+    });
+  });
+
+  it("raises a popover above an existing dialog when requested", async () => {
+    render(<Harness estimatedWidth={360} tier="raised" />);
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.getBoundingClientRect = () => new DOMRect(100, 100, 32, 32);
+
+    await userEvent.click(trigger);
+
+    await waitFor(() => {
+      expect(document.querySelector(".ui-action-popover")).toHaveStyle({ zIndex: "8200" });
     });
   });
 });

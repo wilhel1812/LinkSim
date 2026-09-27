@@ -13,6 +13,8 @@ Terraform manages these resources for both `staging` and `prod` environments:
 - Pages projects (`cloudflare_pages_project`)
   - `linksim-staging`
   - `linksim`
+  - stable-staging-only Durable Object namespace bindings, supplied after the
+    namespace is created by the reviewed Worker deployment
 - Pages custom domains (`cloudflare_pages_domain`)
   - `staging.linksim.link`
   - `linksim.link`
@@ -22,6 +24,8 @@ Terraform manages these resources for both `staging` and `prod` environments:
 - R2 buckets (`cloudflare_r2_bucket`)
   - `linksim-avatars-staging`
   - `linksim-avatars`
+  - stable staging history `linksim-history-staging`
+  - unbound production history `linksim-history`
 - DNS records in zone `linksim.link` (`cloudflare_dns_record`)
 - Access applications and Access policies for LinkSim hostnames
   - `cloudflare_zero_trust_access_application`
@@ -34,6 +38,14 @@ raw Pages hostname; and `pages_previews` protects wildcard branch previews.
 Discover and import every existing live application ID before apply; never
 replace an existing Access application just because it is absent from local
 state.
+
+The production history bucket is a root resource rather than an input to the
+Pages module. Its declaration and eventual creation do not add a
+`HISTORY_BUCKET` binding or `HISTORY_SCOPE`, so archive writes remain disabled.
+The dedicated `npm run tf:plan:prod-history` plan for its initial creation must
+pass `npm run tf:validate:prod-history-plan`; that validator rejects every plan
+with another resource change. Applying the saved plan is a separately approved
+production action.
 
 `pages_access_audience_keys` derives Pages `ACCESS_AUD` only from applications
 that issue authenticated JWTs. Bypass applications must never be accepted as
@@ -71,6 +83,14 @@ Secrets must not be committed to git and must not be stored in `terraform.tfvars
 - Cloudflare provider token: `TF_VAR_cloudflare_api_token`
 - Backend credentials: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
 - Pages secrets (example): `TF_VAR_pages_env_vars_secret='{"VITE_MAPTILER_KEY":"..."}'`
+- Staging auth namespace: set
+  `TF_VAR_pages_production_durable_object_namespaces='{"AUTH":"<namespace-id>"}'`
+  before any staging plan/apply after the private auth Worker is deployed. The
+  ID is infrastructure metadata, while `BETTER_AUTH_SECRET` remains only in the
+  staging GitHub environment and the Worker secret store. The secret must
+  contain at least 32 characters; deployment fails before binding Pages when it
+  is absent or shorter. Staging Terraform deliberately has no empty default for
+  the namespace map, so an apply cannot silently remove `AUTH`.
 
 ## Two-step safe rollout model
 
@@ -86,6 +106,12 @@ Goal: attach existing live resources to Terraform state without changing behavio
   same way as `access_applications`. The legacy single-app state address moves
   to `app["primary"]` without replacement.
 - Verify with `terraform plan` until diff is zero or only expected/documented drift.
+
+The stable-staging application API bypass is currently reconciled by
+`scripts/access-boundary.mjs` against fixed application IDs. The existing
+`public_api_exceptions` application is not yet present in remote Terraform state;
+issue #1155 tracks its permission-gated import. Do not treat the checked-in
+Terraform intent as proof that Access state adoption is complete.
 
 ### Step B: Management (controlled updates)
 

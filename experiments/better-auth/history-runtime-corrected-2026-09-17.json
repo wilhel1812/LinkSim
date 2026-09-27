@@ -1,0 +1,1461 @@
+{
+  "source": "Corrected save-valid fixtures; sanitized runtime CPU matched by order, path, status and time window",
+  "results": [
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648476799,
+      "status": 200,
+      "elapsedMs": 714,
+      "aggregate": {
+        "firstInvocation": true,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 2502084
+      },
+      "runtime": {
+        "firstInvocation": true,
+        "timestamp": 1789648477208,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 204,
+        "wallMs": 270,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648477514,
+      "status": 200,
+      "elapsedMs": 650,
+      "aggregate": {
+        "firstInvocation": true,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 2502084
+      },
+      "runtime": {
+        "firstInvocation": true,
+        "timestamp": 1789648477937,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 169,
+        "wallMs": 207,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648478164,
+      "status": 200,
+      "elapsedMs": 408,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 2502084
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648478390,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 116,
+        "wallMs": 152,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 4,
+      "startedAt": 1789648478572,
+      "status": 200,
+      "elapsedMs": 617,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 2502084
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648479008,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 123,
+        "wallMs": 161,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 5,
+      "startedAt": 1789648479189,
+      "status": 200,
+      "elapsedMs": 493,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 2502084
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648479473,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 154,
+        "wallMs": 188,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648479682,
+      "status": 200,
+      "elapsedMs": 356,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648479964,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 30,
+        "wallMs": 56,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648480038,
+      "status": 200,
+      "elapsedMs": 333,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648480298,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 37,
+        "wallMs": 53,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648480371,
+      "status": 200,
+      "elapsedMs": 356,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648480646,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 33,
+        "wallMs": 64,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 4,
+      "startedAt": 1789648480727,
+      "status": 200,
+      "elapsedMs": 363,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648481027,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 27,
+        "wallMs": 43,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 5,
+      "startedAt": 1789648481090,
+      "status": 200,
+      "elapsedMs": 338,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648481359,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 31,
+        "wallMs": 51,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648481444,
+      "status": 200,
+      "elapsedMs": 434,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 180540
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648481756,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 74,
+        "wallMs": 95,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648481878,
+      "status": 200,
+      "elapsedMs": 501,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 180540
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648482260,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 62,
+        "wallMs": 90,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648482379,
+      "status": 200,
+      "elapsedMs": 456,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 180540
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648482724,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 65,
+        "wallMs": 93,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 4,
+      "startedAt": 1789648482835,
+      "status": 200,
+      "elapsedMs": 742,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 180540
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648483446,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 74,
+        "wallMs": 113,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 5,
+      "startedAt": 1789648483577,
+      "status": 200,
+      "elapsedMs": 915,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 180540
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648484386,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 64,
+        "wallMs": 88,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648484492,
+      "status": 200,
+      "elapsedMs": 952,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648485362,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 43,
+        "wallMs": 64,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648485444,
+      "status": 200,
+      "elapsedMs": 1046,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648486427,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 26,
+        "wallMs": 40,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648486490,
+      "status": 200,
+      "elapsedMs": 2122,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648488532,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 35,
+        "wallMs": 62,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 4,
+      "startedAt": 1789648488613,
+      "status": 200,
+      "elapsedMs": 2059,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648490590,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 37,
+        "wallMs": 56,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 5,
+      "startedAt": 1789648490672,
+      "status": 200,
+      "elapsedMs": 3511,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 20,
+        "inputBytes": 2096940,
+        "rawBytes": 4189020,
+        "storedBytes": 4189020
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648494101,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 29,
+        "wallMs": 50,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648494210,
+      "status": 200,
+      "elapsedMs": 541,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 439169
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648494675,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 24,
+        "wallMs": 40,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648494751,
+      "status": 200,
+      "elapsedMs": 604,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 439169
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648495292,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 27,
+        "wallMs": 45,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648495355,
+      "status": 200,
+      "elapsedMs": 496,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 439169
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648495789,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 34,
+        "wallMs": 39,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648495852,
+      "status": 200,
+      "elapsedMs": 565,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648496385,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 6,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648496417,
+      "status": 200,
+      "elapsedMs": 405,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648496798,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 6,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648496822,
+      "status": 200,
+      "elapsedMs": 423,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648497221,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 7,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648497246,
+      "status": 200,
+      "elapsedMs": 353,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 10265
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648497572,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 6,
+        "wallMs": 9,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648497599,
+      "status": 200,
+      "elapsedMs": 322,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 10265
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648497892,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 7,
+        "wallMs": 10,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648497921,
+      "status": 200,
+      "elapsedMs": 289,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 10265
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648498179,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 9,
+        "wallMs": 12,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648498210,
+      "status": 200,
+      "elapsedMs": 314,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648498486,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 17,
+        "wallMs": 20,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648498524,
+      "status": 200,
+      "elapsedMs": 236,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648498734,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 4,
+        "wallMs": 6,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648498760,
+      "status": 200,
+      "elapsedMs": 247,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 262185,
+        "rawBytes": 524054,
+        "storedBytes": 524054
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648498984,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 3,
+        "wallMs": 6,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648499012,
+      "status": 200,
+      "elapsedMs": 77,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 97365
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499061,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 7,
+        "wallMs": 8,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648499089,
+      "status": 200,
+      "elapsedMs": 80,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 97365
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499142,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 7,
+        "wallMs": 7,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648499169,
+      "status": 200,
+      "elapsedMs": 84,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 97365
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499222,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 8,
+        "wallMs": 10,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648499253,
+      "status": 200,
+      "elapsedMs": 72,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499305,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648499325,
+      "status": 200,
+      "elapsedMs": 81,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499375,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648499406,
+      "status": 200,
+      "elapsedMs": 109,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499491,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648499517,
+      "status": 200,
+      "elapsedMs": 84,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499572,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648499601,
+      "status": 200,
+      "elapsedMs": 41,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499622,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 3,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648499642,
+      "status": 200,
+      "elapsedMs": 45,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 4069
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499662,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 2,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648499687,
+      "status": 200,
+      "elapsedMs": 42,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499707,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648499729,
+      "status": 200,
+      "elapsedMs": 41,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499749,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648499770,
+      "status": 200,
+      "elapsedMs": 47,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 65577,
+        "rawBytes": 130838,
+        "storedBytes": 130838
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499798,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 2,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648499818,
+      "status": 200,
+      "elapsedMs": 36,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 2387
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499835,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648499854,
+      "status": 200,
+      "elapsedMs": 42,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 2387
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499878,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648499896,
+      "status": 200,
+      "elapsedMs": 39,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 2387
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499916,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648499935,
+      "status": 200,
+      "elapsedMs": 37,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499954,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648499972,
+      "status": 200,
+      "elapsedMs": 48,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648499993,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648500020,
+      "status": 200,
+      "elapsedMs": 102,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500098,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 1,
+      "startedAt": 1789648500122,
+      "status": 200,
+      "elapsedMs": 335,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500150,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 2,
+      "startedAt": 1789648500457,
+      "status": 200,
+      "elapsedMs": 40,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500476,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "compress",
+      "sample": 3,
+      "startedAt": 1789648500497,
+      "status": 200,
+      "elapsedMs": 39,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 751
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500516,
+        "path": "/probe/compress",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 1,
+      "startedAt": 1789648500536,
+      "status": 200,
+      "elapsedMs": 38,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500555,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 2,
+      "startedAt": 1789648500574,
+      "status": 200,
+      "elapsedMs": 38,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500593,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "mode": "baseline",
+      "sample": 3,
+      "startedAt": 1789648500612,
+      "status": 200,
+      "elapsedMs": 46,
+      "aggregate": {
+        "firstInvocation": false,
+        "records": 1,
+        "inputBytes": 4137,
+        "rawBytes": 7958,
+        "storedBytes": 7958
+      },
+      "runtime": {
+        "firstInvocation": false,
+        "timestamp": 1789648500632,
+        "path": "/probe/baseline",
+        "status": 200,
+        "cpuMs": 0,
+        "wallMs": 1,
+        "outcome": "ok",
+        "version": "fada60f8-6a9c-4712-b178-50edbce024a6"
+      }
+    }
+  ]
+}

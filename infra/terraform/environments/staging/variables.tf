@@ -39,6 +39,18 @@ variable "pages_access_audience_keys" {
   default = []
 }
 
+variable "pages_production_durable_object_namespaces" {
+  type = map(string)
+
+  validation {
+    condition = (
+      length(var.pages_production_durable_object_namespaces) == 1 &&
+      can(regex("^[0-9a-f]{32}$", var.pages_production_durable_object_namespaces["AUTH"]))
+    )
+    error_message = "Stable staging requires exactly one AUTH Durable Object namespace ID."
+  }
+}
+
 variable "d1_database_name" {
   type = string
 }
@@ -59,6 +71,10 @@ variable "r2_bucket_name" {
 variable "r2_binding_name" {
   type    = string
   default = "AVATAR_BUCKET"
+}
+
+variable "history_r2_bucket_name" {
+  type = string
 }
 
 variable "r2_bucket_jurisdiction" {
@@ -82,7 +98,11 @@ variable "access_applications" {
   type = map(object({
     name   = string
     domain = string
-    type   = optional(string, "self_hosted")
+    destinations = optional(list(object({
+      type = optional(string, "public")
+      uri  = string
+    })))
+    type = optional(string, "self_hosted")
     policy_bindings = optional(list(object({
       id         = string
       precedence = number

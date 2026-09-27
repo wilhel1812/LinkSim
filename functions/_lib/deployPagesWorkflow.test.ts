@@ -19,6 +19,18 @@ const previewJob =
   workflow.split("  deploy-staging-preview:")[1]?.split("  deploy-staging:")[0] ?? "";
 
 describe("Deploy LinkSim Pages workflow", () => {
+  it("applies and probes the library history-window index before shared deployments", () => {
+    const migration = "db/migrations/2026-09-11_library_change_window.sql";
+    expect(previewJob).toContain(migration);
+    for (const [job, deploy] of [[stagingJob, "- name: Deploy staging with guardrails"], [productionJob, "- name: Deploy prod/main with guardrails"]]) {
+      const apply = job.indexOf(`--file ${migration}`);
+      const probe = job.indexOf("INDEXED BY idx_resource_changes_window");
+      expect(apply).toBeGreaterThan(-1);
+      expect(probe).toBeGreaterThan(apply);
+      expect(probe).toBeLessThan(job.indexOf(deploy));
+    }
+    expect(deployScript).toContain("INDEXED BY idx_resource_changes_window");
+  });
   it("deploys previews only for same-repository pull requests targeting staging", () => {
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain("      - staging");
@@ -50,6 +62,73 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("db/migrations/2026-08-20_site_notice.sql");
     expect(previewJob).toContain("db/migrations/2026-08-27_basemap_preferences.sql");
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
+  });
+
+  it("keeps the archive schema migration staging-only and probes it before deployment", () => {
+    const migration = "db/migrations/2026-09-18_history_archive.sql";
+    const probe = 'SELECT archive_key, archive_digest FROM resource_changes LIMIT 0;';
+    const step = "- name: Apply and verify staging history archive schema";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(previewJob).toContain(migration);
+    expect(previewJob.indexOf(migration)).toBeLessThan(previewJob.indexOf("- name: Deploy authenticated staging preview"));
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep.indexOf(probe)).toBeGreaterThan(-1);
+    expect(migrationStep.indexOf(`--file ${migration}`)).toBeGreaterThan(migrationStep.indexOf(probe));
+    expect(migrationStep.lastIndexOf(probe)).toBeGreaterThan(migrationStep.indexOf(`--file ${migration}`));
+    expect(productionJob).not.toContain(migration);
+    expect(productionJob).not.toContain(probe);
+    expect(deployScript).toContain('targetName === "staging"');
+    expect(deployScript).toContain('["details_json", "snapshot_json", "archive_key", "archive_digest"]');
+  });
+
+  it("applies and probes disabled archive-maintenance state on staging only", () => {
+    const migration = "db/migrations/2026-09-19_history_archive_maintenance.sql";
+    const probe = "SELECT singleton, utc_day, daily_attempted_objects, daily_archive_bytes, lifetime_archive_bytes, active_run_id, active_run_token, lease_expires_at, setup_run_id, setup_d1_rows_read, setup_d1_rows_written FROM history_archive_maintenance_budget WHERE singleton = 1;";
+    const step = "- name: Apply and verify staging history archive maintenance state";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep).toContain(`--file ${migration} --yes`);
+    expect(migrationStep).toContain(probe);
+    expect(migrationStep).toContain("reserved_scanned_rows, reserved_d1_rows_read, reserved_d1_rows_written, reserved_r2_puts, reserved_r2_gets");
+    expect(productionJob).not.toContain(migration);
+    expect(productionJob).not.toContain("history_archive_maintenance_budget");
+    expect(workflow).not.toContain("schedule:");
+  });
+
+  it("applies and probes the Better Auth schema on staging and only the explicit production auth cutover", () => {
+    const migration = "db/migrations/2026-09-19_better_auth_schema.sql";
+    const migrationAttempt = "db/migrations/2026-09-21_auth_migration_attempt.sql";
+    const privilegedRecovery = "db/migrations/2026-09-23_privileged_passkey_recovery.sql";
+    const probe = "db/probes/better-auth-schema.sql";
+    const step = "- name: Apply and verify staging Better Auth schema";
+    const deploy = "- name: Deploy staging with guardrails";
+    expect(previewJob).toContain(migration);
+    expect(previewJob).toContain(migrationAttempt);
+    expect(previewJob).toContain(privilegedRecovery);
+    expect(stagingJob).toContain(step);
+    const migrationStep = stagingJob.slice(stagingJob.indexOf(step), stagingJob.indexOf(deploy));
+    expect(migrationStep).toContain(`--file ${migration} --yes`);
+    expect(migrationStep).toContain(`--file ${migrationAttempt} --yes`);
+    expect(migrationStep).toContain(`--file ${privilegedRecovery} --yes`);
+    expect(migrationStep.indexOf(`--file ${migrationAttempt} --yes`))
+      .toBeLessThan(migrationStep.lastIndexOf(`--file ${probe}`));
+    expect(migrationStep).toContain(`--file ${probe}`);
+    const productionStep = "- name: Apply and verify production Better Auth schema";
+    const productionDeploy = "- name: Deploy prod/main with guardrails";
+    expect(productionJob).toContain(productionStep);
+    const productionMigrationStep = productionJob.slice(
+      productionJob.indexOf(productionStep),
+      productionJob.indexOf(productionDeploy),
+    );
+    expect(productionMigrationStep).toContain(
+      "if: github.event.inputs.target == 'prod-auth-cutover'",
+    );
+    expect(productionMigrationStep).toContain(`--file ${migration} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${migrationAttempt} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${privilegedRecovery} --yes`);
+    expect(productionMigrationStep).toContain(`--file ${probe}`);
   });
 
   it("validates workflow-derived preview and release values before quoted shell use", () => {
@@ -90,13 +169,21 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob.indexOf(accessStep)).toBeLessThan(previewJob.indexOf(commentStep));
   });
 
-  it("verifies staging Access only after the guarded Pages deployment", () => {
+  it("verifies staging Access before and after the guarded Pages deployment", () => {
     const deployStep = "- name: Deploy staging with guardrails";
-    const accessStep = "- name: Verify staging Access boundary";
-    expect(stagingJob).toContain(accessStep);
+    const accessPrecheck = "- name: Verify staging Access boundary before deploy";
+    const accessPostcheck = "- name: Re-verify staging Access boundary after deploy";
+    expect(stagingJob).toContain(accessPrecheck);
+    expect(stagingJob).toContain(accessPostcheck);
+    expect(stagingJob).toContain("node scripts/access-boundary.mjs check-access staging");
     expect(stagingJob).toContain("node scripts/access-boundary.mjs check staging");
+    expect(stagingJob.indexOf("node scripts/access-boundary.mjs check-access staging"))
+      .toBeLessThan(stagingJob.indexOf(deployStep));
+    expect(stagingJob.indexOf("node scripts/access-boundary.mjs check staging"))
+      .toBeGreaterThan(stagingJob.indexOf(deployStep));
     expect(stagingJob).not.toContain("node scripts/access-boundary.mjs apply staging");
-    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessStep));
+    expect(stagingJob.indexOf(accessPrecheck)).toBeLessThan(stagingJob.indexOf(deployStep));
+    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessPostcheck));
   });
 
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {
@@ -147,7 +234,10 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(productionJob).toContain(commitGateStep);
     expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
     expect(productionJob).toContain(
-      'node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only',
+      "DEPLOY_TARGET: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'prod-auth-cutover' || 'prod-main' }}",
+    );
+    expect(productionJob).toContain(
+      'node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target "$DEPLOY_TARGET" --verify-commit-only',
     );
     expect(productionJob.indexOf(commitGateStep)).toBeLessThan(
       productionJob.indexOf(simulationMigrationStep),
@@ -224,10 +314,50 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(deployScript).toContain("users.basemap_preferences_json");
   });
 
-  it("keeps MapTiler required and passes CARTO only as an optional build secret", () => {
-    expect(deployScript).toContain('staging: ["VITE_MAPTILER_KEY"]');
+  it("requires the staging auth pilot inputs and passes CARTO only as an optional build secret", () => {
+    expect(deployScript).toContain(
+      'staging: ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"]',
+    );
+    expect(deployScript).toContain('"staging-preview": ["VITE_MAPTILER_KEY"]');
+    expect(deployScript).toContain('"prod-main": ["VITE_MAPTILER_KEY"]');
     expect(deployScript).not.toContain('staging: ["VITE_MAPTILER_KEY", "VITE_CARTO_KEY"]');
     expect(workflow).toContain("VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}");
+    expect(stagingJob).toContain('VITE_BETTER_AUTH_PILOT: "true"');
+    expect(stagingJob).toContain("VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}");
+    expect(previewJob).not.toContain("VITE_BETTER_AUTH_PILOT");
+    expect(productionJob).toContain("github.event.inputs.target == 'prod-auth-cutover'");
+    expect(productionJob).toContain(
+      "VITE_BETTER_AUTH_PILOT: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'true' || '' }}",
+    );
+    expect(productionJob).toContain(
+      "VITE_TURNSTILE_SITE_KEY: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && secrets.VITE_TURNSTILE_SITE_KEY || '' }}",
+    );
+  });
+
+  it("keeps the production auth cutover on the protected release deployment path", () => {
+    expect(workflow).toContain("- prod-auth-cutover");
+    expect(workflow).toContain("APPROVE_PRODUCTION_AUTH_CUTOVER");
+    expect(productionJob).toContain("environment: production");
+    expect(productionJob).toContain("Apply and verify production Better Auth schema");
+    expect(productionJob).toContain("db/migrations/2026-09-19_better_auth_schema.sql");
+    expect(productionJob).toContain("db/migrations/2026-09-21_auth_migration_attempt.sql");
+    expect(productionJob).toContain("db/migrations/2026-09-23_privileged_passkey_recovery.sql");
+    expect(productionJob).toContain("db/probes/better-auth-schema.sql");
+    expect(productionJob).toContain("Configure production auth secrets");
+    expect(productionJob).toContain("workers/auth-runtime/wrangler.production.toml");
+    expect(productionJob).toContain('--target "$DEPLOY_TARGET"');
+    expect(productionJob).toContain("config/production-auth-mode.json");
+    expect(productionJob).toContain("steps.production_mode.outputs.auth_active == 'true'");
+    expect(productionJob).toContain('access_boundary=$ACCESS_BOUNDARY');
+    expect(productionJob).toContain(
+      'The legacy-only Access boundary requires production authentication to be active.',
+    );
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check-cutover production");
+    expect(productionJob).toContain("environment: production");
+    expect(deployScript).toContain('"prod-auth-cutover"');
+    expect(deployScript).toContain('configPath: wranglerProductionAuth');
+    expect(deployScript).toContain('scriptName: "linksim-auth-runtime-production"');
   });
 
   it("fetches the production baseline before validating a staging deployment", () => {
@@ -239,4 +369,22 @@ describe("Deploy LinkSim Pages workflow", () => {
       stagingJob.indexOf("Deploy staging with guardrails"),
     );
   });
+});
+
+
+it("requires the remote schema preflight for manual staging previews", () => {
+  const preflight = deployScript.split("async function verifyRemoteSchema")[1].split("let resourceChangesResult")[0];
+  expect(preflight).toContain('targetName !== "staging-preview"');
+});
+
+it("gates history candidate indexes before shared and manual preview deployments", () => {
+  const migration = "db/migrations/2026-09-17_library_history_candidates.sql";
+  const probe = "db/probes/library-history-candidates.sql";
+  expect(previewJob).toContain(migration);
+  for (const job of [stagingJob, productionJob]) {
+    expect(job.indexOf(`--file ${migration}`)).toBeGreaterThan(-1);
+    expect(job.indexOf(`--file ${probe}`)).toBeGreaterThan(job.indexOf(`--file ${migration}`));
+    expect(job.indexOf(`--file ${probe}`)).toBeLessThan(job.indexOf("- name: Deploy "));
+  }
+  expect(deployScript).toContain(probe);
 });

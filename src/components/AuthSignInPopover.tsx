@@ -1,0 +1,138 @@
+import { useCallback, useEffect, useState, type RefObject } from "react";
+import { Cloud, KeyRound } from "lucide-react";
+import { siGithub } from "simple-icons";
+import { FloatingPopover } from "./ui/FloatingPopover";
+
+export type AuthSignInMethod = "github" | "passkey";
+
+type AuthSignInPopoverProps = {
+  busyMethod: AuthSignInMethod | null;
+  onClose: () => void;
+  onGithub: (challengeContainer: HTMLElement) => void;
+  onLegacyMigration: () => void;
+  onPasskey: () => void;
+  open: boolean;
+  triggerRef: RefObject<HTMLElement | null>;
+};
+
+export function AuthSignInPopover({
+  busyMethod,
+  onClose,
+  onGithub,
+  onLegacyMigration,
+  onPasskey,
+  open,
+  triggerRef,
+}: AuthSignInPopoverProps) {
+  const [challengeContainer, setChallengeContainer] = useState<HTMLDivElement | null>(null);
+  const focusContent = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    window.setTimeout(() => {
+      if (node.isConnected) node.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+    }, 0);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!busyMethod) onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busyMethod, onClose, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    return () => {
+      window.setTimeout(() => trigger?.focus(), 0);
+    };
+  }, [open, triggerRef]);
+
+  const busy = busyMethod !== null;
+
+  return (
+    <FloatingPopover
+      className="auth-sign-in-popover"
+      estimatedHeight={280}
+      estimatedWidth={328}
+      onClose={busy ? () => undefined : onClose}
+      open={open}
+      pointerTail
+      tier="raised"
+      triggerRef={triggerRef}
+    >
+      <div aria-busy={busyMethod === "github" || undefined} aria-label="Sign in or sign up" className="auth-sign-in-popover-content" ref={focusContent} role="dialog">
+        <ul className="ui-settings-popover-list">
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label={busyMethod === "github" ? "Opening GitHub…" : "GitHub"}
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={() => {
+                if (challengeContainer) onGithub(challengeContainer);
+              }}
+              type="button"
+            >
+              <span className="ui-settings-toggle-label">
+                {busyMethod === "github" ? "Opening GitHub…" : "GitHub"}
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <svg aria-hidden="true" height="18" viewBox="0 0 24 24" width="18">
+                  <path d={siGithub.path} fill="currentColor" />
+                </svg>
+              </span>
+            </button>
+          </li>
+          <li className={`ui-settings-popover-row auth-sign-in-challenge-row ${busyMethod === "github" ? "is-active" : ""}`.trim()}>
+            <div className="auth-sign-in-challenge" ref={setChallengeContainer} aria-label="Anti-bot check" />
+          </li>
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label={busyMethod === "passkey" ? "Using passkey…" : "Passkey"}
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={onPasskey}
+              type="button"
+            >
+              <span className="ui-settings-toggle-label">
+                {busyMethod === "passkey" ? "Using passkey…" : "Passkey"}
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <KeyRound aria-hidden="true" size={18} strokeWidth={1.8} />
+              </span>
+            </button>
+          </li>
+          <li className="ui-settings-popover-row">
+            <button
+              aria-label="Move existing Cloudflare account"
+              className="ui-settings-row-toggle auth-sign-in-option"
+              disabled={busy}
+              onClick={onLegacyMigration}
+              type="button"
+            >
+              <span className="ui-settings-toggle-label">
+                Move existing Cloudflare account
+              </span>
+              <span className="ui-settings-toggle-icon">
+                <Cloud aria-hidden="true" size={18} strokeWidth={1.8} />
+              </span>
+            </button>
+          </li>
+          <li
+            aria-live="polite"
+            className="ui-settings-popover-row auth-sign-in-note"
+            role="status"
+          >
+            {busyMethod === "passkey"
+              ? "Follow your browser or device prompt to use your passkey."
+              : "New accounts start with GitHub. Used LinkSim before? Move your Cloudflare account first."}
+          </li>
+        </ul>
+      </div>
+    </FloatingPopover>
+  );
+}

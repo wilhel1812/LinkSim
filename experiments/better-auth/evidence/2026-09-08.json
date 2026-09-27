@@ -1,0 +1,409 @@
+{
+  "description": "Synthetic disposable probe; no completed provider callback or WebAuthn assertion. CPU fields are sanitized Wrangler tail events; missing events are not inferred.",
+  "origin": "https://linksim-auth-probe-1107.wilhelm-francke.workers.dev",
+  "completedAt": "2026-09-08T21:39:05.966Z",
+  "results": [
+    {
+      "path": "/probe/fixture",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 384,
+      "d1": {
+        "queries": 4,
+        "rowsRead": 24,
+        "rowsWritten": 7
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 475,
+      "d1": {
+        "queries": 6,
+        "rowsRead": 31,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 344,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 229,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 274,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 262,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 256,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 290,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 171,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 214,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 187,
+      "d1": {
+        "queries": 5,
+        "rowsRead": 27,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 377,
+      "d1": {
+        "queries": 7,
+        "rowsRead": 25,
+        "rowsWritten": 6
+      }
+    },
+    {
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 314,
+      "d1": {
+        "queries": 7,
+        "rowsRead": 28,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 293,
+      "d1": {
+        "queries": 7,
+        "rowsRead": 28,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/sign-in/social",
+      "status": 400,
+      "expected": 400,
+      "wallMs": 151,
+      "d1": {
+        "queries": 3,
+        "rowsRead": 22,
+        "rowsWritten": 3
+      }
+    },
+    {
+      "path": "/api/auth/sign-in/social",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 420,
+      "d1": {
+        "queries": 4,
+        "rowsRead": 26,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/sign-in/social",
+      "status": 400,
+      "expected": 400,
+      "wallMs": 363,
+      "d1": {
+        "queries": 4,
+        "rowsRead": 28,
+        "rowsWritten": 1
+      }
+    },
+    {
+      "path": "/api/auth/sign-in/social",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 385,
+      "d1": {
+        "queries": 4,
+        "rowsRead": 26,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/sign-out",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 282,
+      "d1": {
+        "queries": 8,
+        "rowsRead": 26,
+        "rowsWritten": 4
+      }
+    },
+    {
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "expected": 200,
+      "wallMs": 202,
+      "d1": {
+        "queries": 4,
+        "rowsRead": 25,
+        "rowsWritten": 1
+      }
+    }
+  ],
+  "events": [
+    {
+      "timestamp": 1788903529052,
+      "path": "/api/auth/get-session",
+      "status": 404,
+      "cpuMs": 0,
+      "wallMs": 0,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903529291,
+      "path": "/probe/fixture",
+      "status": 200,
+      "cpuMs": 7,
+      "wallMs": 147,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903530101,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 130,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903530364,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 125,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903530607,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 126,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903530873,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 6,
+      "wallMs": 121,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903531131,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 7,
+      "wallMs": 123,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903531415,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 9,
+      "wallMs": 129,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903531631,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 124,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903531806,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 6,
+      "wallMs": 123,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903532030,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 7,
+      "wallMs": 121,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903532347,
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "cpuMs": 9,
+      "wallMs": 185,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903532620,
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 181,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903532959,
+      "path": "/api/auth/passkey/generate-register-options",
+      "status": 200,
+      "cpuMs": 8,
+      "wallMs": 182,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903533202,
+      "path": "/api/auth/sign-in/social",
+      "status": 400,
+      "cpuMs": 4,
+      "wallMs": 88,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903533399,
+      "path": "/api/auth/sign-in/social",
+      "status": 200,
+      "cpuMs": 9,
+      "wallMs": 270,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903544970,
+      "path": "/api/auth/sign-in/social",
+      "status": 400,
+      "cpuMs": 6,
+      "wallMs": 107,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903545316,
+      "path": "/api/auth/sign-in/social",
+      "status": 200,
+      "cpuMs": 7,
+      "wallMs": 144,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903545539,
+      "path": "/api/auth/sign-out",
+      "status": 200,
+      "cpuMs": 10,
+      "wallMs": 203,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    },
+    {
+      "timestamp": 1788903545790,
+      "path": "/api/auth/get-session",
+      "status": 200,
+      "cpuMs": 9,
+      "wallMs": 116,
+      "outcome": "ok",
+      "version": "f1685c5d-931b-4fa8-b579-2d9c694a45b1"
+    }
+  ]
+}

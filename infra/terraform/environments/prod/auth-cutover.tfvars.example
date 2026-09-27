@@ -1,0 +1,17 @@
+# Copy these reviewed values into the active production terraform.tfvars in the
+# separately approved cutover candidate. Replace the namespace placeholder with
+# the ID created for linksim-auth-runtime-production. Never apply this example
+# file directly.
+
+pages_production_durable_object_namespaces = {
+  AUTH = "REPLACE_WITH_32_CHARACTER_NAMESPACE_ID"
+}
+
+pages_production_env_vars_plain = {
+  AUTH_SESSION_SOURCE                         = "transition"
+  AUTH_DUAL_LOGIN_MIGRATION_ENABLED           = "true"
+  AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED    = "false"
+  AUTH_LEGACY_CLAIM_ENABLED                   = "true"
+  AUTH_REGISTRATION_ENABLED                   = "true"
+  AUTH_LEGACY_CLAIM_DEADLINE                  = "REPLACE_WITH_RECORDED_90_DAY_UTC_DEADLINE"
+}

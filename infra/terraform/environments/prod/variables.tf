@@ -34,6 +34,29 @@ variable "pages_env_vars_secret" {
   sensitive = true
 }
 
+variable "pages_production_env_vars_plain" {
+  description = "Non-secret variables present only on the production branch. Empty until the approved auth cutover candidate."
+  type        = map(string)
+  default     = {}
+}
+
+variable "pages_production_durable_object_namespaces" {
+  description = "Production-only Durable Object namespace IDs. Empty until the approved auth cutover candidate."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = (
+      length(var.pages_production_durable_object_namespaces) == 0 ||
+      (
+        length(var.pages_production_durable_object_namespaces) == 1 &&
+        can(regex("^[0-9a-f]{32}$", var.pages_production_durable_object_namespaces["AUTH"]))
+      )
+    )
+    error_message = "Production auth requires exactly one 32-character AUTH Durable Object namespace ID."
+  }
+}
+
 variable "pages_access_audience_keys" {
   type    = set(string)
   default = []

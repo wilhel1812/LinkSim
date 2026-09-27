@@ -3,6 +3,24 @@ export type DbVisibility = "private" | "public_read" | "public_write";
 export type ResourceRole = "viewer" | "editor" | "admin";
 export type UserRole = "admin" | "moderator" | "user" | "pending";
 
+export const BETTER_AUTH_MAPPED_IDENTITY_CLAIM = "__linksim_better_auth_mapped";
+
+export type AuthRuntimeSessionResult = {
+  status: number;
+  authUserId?: string;
+  fresh?: boolean;
+  setCookies?: string[];
+};
+
+export type AuthRuntimeStub = {
+  checkSession(request: Request): Promise<AuthRuntimeSessionResult>;
+  fetch(request: Request): Promise<Response>;
+};
+
+export type AuthRuntimeNamespace = {
+  getByName(name: string): AuthRuntimeStub;
+};
+
 export type Grant = {
   userId: string;
   role: ResourceRole;
@@ -23,6 +41,16 @@ export type LibrarySnapshotPayload = {
 
 export type Env = {
   DB: D1Database;
+  AUTH?: AuthRuntimeNamespace;
+  AUTH_SESSION_SOURCE?: "access" | "transition" | "better-auth";
+  AUTH_DUAL_LOGIN_MIGRATION_ENABLED?: string;
+  AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED?: string;
+  AUTH_LEGACY_CLAIM_ENABLED?: string;
+  AUTH_REGISTRATION_ENABLED?: string;
+  // Disabled unless explicitly enabled after runtime/storage validation.
+  HISTORY_DETAILS_COMPRESSION?: string;
+  HISTORY_BUCKET?: R2Bucket;
+  HISTORY_SCOPE?: string;
   AVATAR_BUCKET?: R2Bucket;
   AVATAR_PUBLIC_BASE_URL?: string;
   AVATAR_FALLBACK_ORIGIN?: string;
@@ -47,5 +75,12 @@ export type AuthContext = {
   userId: string;
   tokenPayload: Record<string, unknown>;
   verifiedIdpEmail?: string;
-  source?: "jwt" | "headers" | "dev";
+  source?: "jwt" | "headers" | "dev" | "better-auth";
+  authUserId?: string;
+  setCookieHeaders?: string[];
+};
+
+export type AuthRequestData = Record<string, unknown> & {
+  authPromise?: Promise<AuthContext | null>;
+  authResponseCookies?: string[];
 };

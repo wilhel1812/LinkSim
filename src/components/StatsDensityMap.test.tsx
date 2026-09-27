@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 const mockFitBounds = vi.fn();
@@ -48,6 +48,32 @@ vi.mock("react-map-gl/maplibre", () => ({
 import { StatsDensityMap } from "./StatsDensityMap";
 
 describe("StatsDensityMap", () => {
+  beforeEach(() => {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: vi.fn((contextId: string) => contextId === "webgl2" ? {} : null),
+    });
+  });
+
+  it("reuses the unavailable state when only WebGL 1 is available", () => {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: vi.fn((contextId: string) => contextId === "webgl" ? {} : null),
+    });
+
+    render(
+      <StatsDensityMap
+        accentColor="var(--accent)"
+        bins={[{ latBand: 60, lonBand: 10, count: 5 }]}
+        surfaceColor="var(--surface)"
+        theme="light"
+      />,
+    );
+
+    expect(screen.getByText("Site density map unavailable because WebGL2 is required.")).toHaveClass("stats-empty");
+    expect(screen.queryByTestId("mock-map")).not.toBeInTheDocument();
+  });
+
   it("uses centered controls and a shared surface hover popup anchored to the bin center", async () => {
     render(
       <StatsDensityMap

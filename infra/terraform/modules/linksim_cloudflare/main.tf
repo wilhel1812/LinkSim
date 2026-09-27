@@ -35,6 +35,11 @@ locals {
   }
 
   pages_env_vars = merge(local.pages_env_vars_plain, local.pages_env_vars_secret)
+
+  pages_production_env_vars = merge(local.pages_env_vars, {
+    for name, value in var.pages_production_env_vars_plain :
+    name => { type = "plain_text", value = value }
+  })
 }
 
 resource "cloudflare_pages_project" "project" {
@@ -59,17 +64,23 @@ resource "cloudflare_pages_project" "project" {
     }
     production = {
       compatibility_date = var.pages_compatibility_date
+      durable_object_namespaces = {
+        for name, namespace_id in var.pages_production_durable_object_namespaces :
+        name => { namespace_id = namespace_id }
+      }
       d1_databases = {
         (var.d1_binding_name) = {
           id = var.d1_database_id
         }
       }
-      r2_buckets = {
+      r2_buckets = merge({
         (var.r2_binding_name) = {
           name = var.r2_bucket_name
         }
-      }
-      env_vars = local.pages_env_vars
+        }, var.history_r2_bucket_name == null ? {} : {
+        HISTORY_BUCKET = { name = var.history_r2_bucket_name }
+      })
+      env_vars = local.pages_production_env_vars
     }
   }
 
@@ -140,10 +151,11 @@ resource "cloudflare_dns_record" "records" {
 resource "cloudflare_zero_trust_access_application" "app" {
   for_each = var.access_applications
 
-  account_id = var.account_id
-  name       = each.value.name
-  domain     = each.value.domain
-  type       = each.value.type
+  account_id   = var.account_id
+  name         = each.value.name
+  domain       = each.value.domain
+  destinations = each.value.destinations
+  type         = each.value.type
 
   policies = [
     for binding in each.value.policy_bindings : {
