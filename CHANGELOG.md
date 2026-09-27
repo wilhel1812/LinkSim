@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.29.8] - 2026-09-27
+
+### Internal
+- Rescheduled the reviewed production authentication cutover to 15:40 UTC after the 15:00 UTC target passed, preserving the exact 90-day legacy-claim period without changing authentication behavior. (#1107)
+
 ## [0.29.7] - 2026-09-27
 
 ### Internal

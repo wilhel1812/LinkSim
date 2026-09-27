@@ -31,8 +31,8 @@ included.
   was loaded into the protected environment secret, and the expected user ID
   was updated to match it. The temporary local handoff copy was removed; no
   credential value is recorded here.
-- `AUTH_CANARY_CUTOVER_AT` was removed after the missed 13:30 UTC window.
-  Set it to `2026-09-27T15:00:00.000Z` only after final release gates pass;
+- `AUTH_CANARY_CUTOVER_AT` was removed again after the missed 15:00 UTC window.
+  Set it to `2026-09-27T15:40:00.000Z` only after final release gates pass;
   scheduled production probes are currently dormant. The initial server-side session expiry
   is `2026-10-04T11:07:16.689Z`; Better Auth has a one-day rolling update age.
   Verify that probing extends the expiry after the first day, and rotate the
@@ -109,19 +109,22 @@ auth releases and applies migrations idempotently if needed.
 - The 10:00 and 11:00 UTC targets passed while protected release gates remained
   open; neither was a public cutover. The maintainer then asked to move the
   pending 15:00 UTC window earlier. The 13:30 UTC target then passed without
-  public cutover while protected gates remained open. The reviewed activation
-  window is now `2026-09-27T15:00:00Z` (`2026-09-27 17:00 CEST`). If final candidate validation
+  public cutover while protected gates remained open. The 15:00 UTC target also
+  passed before Access changed, after staging, canary, and the exact-tree
+  production PR checks passed. Production remains behind broad Access and
+  `v0.29.1`; the production canary was disarmed again. The proposed next
+  activation window is `2026-09-27T15:40:00Z` (`2026-09-27 17:40 CEST`). If final candidate validation
   is not complete by then, advance the timestamp and prepare a new candidate;
   never backdate the cutover.
 - The corresponding 90-day legacy-claim deadline is
-  `2026-12-26T15:00:00.000Z`.
+  `2026-12-26T15:40:00.000Z`.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
 - The `v0.29.1` candidate keeps Better Auth active and broad Access available,
   but permanently disables new privileged passkey-recovery attempts after the
   administrator bootstrap.
-- The immutable `v0.29.2` through `v0.29.6` candidates were not promoted after
-  release-review findings or missed cutover windows. The `v0.29.7` candidate
+- The immutable `v0.29.2` through `v0.29.7` candidates were not promoted after
+  release-review findings or missed cutover windows. The `v0.29.8` candidate
   keeps Better Auth active and privileged passkey recovery disabled, and
   expects the legacy-only Access boundary before production deployment.
