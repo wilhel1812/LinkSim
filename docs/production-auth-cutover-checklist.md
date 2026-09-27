@@ -118,6 +118,11 @@ the application boundary is verified.
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
+  The `production-canary` environment is restricted to the exact `main` branch
+  and has the selected administrator user ID, but the cookie and cutover time
+  remain unset. The administrator account is an accepted weaker substitute for
+  the preferred ordinary account. This gate remains open until a fresh session
+  and the approved window are configured.
 - [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
@@ -131,24 +136,33 @@ the application boundary is verified.
   for the current release, so its absence is non-blocking and this gate is
   complete. The waiver does not remove automated accessibility coverage or the
   completed human sign-off.
-- [ ] Create a production-only GitHub OAuth application with callback
+- [x] Create a production-only GitHub OAuth application with callback
   `https://linksim.link/api/auth/callback/github`.
-- [ ] Create a production-only Turnstile widget for `linksim.link`.
-- [ ] Prepare distinct production values for `BETTER_AUTH_SECRET`,
+- [x] Create a production-only Turnstile widget for `linksim.link`.
+- [x] Prepare distinct production values for `BETTER_AUTH_SECRET`,
   `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TURNSTILE_SITE_KEY`, and
   `TURNSTILE_SECRET_KEY`. Never copy staging values.
 - [ ] Prepare the protected client build inputs from
   `config/production-auth-build.env.example`: set `VITE_BETTER_AUTH_PILOT=true`
   and replace `VITE_TURNSTILE_SITE_KEY` with the public key from that exact
   production widget. Verify both values are present in the release build.
-- [ ] Run `node scripts/access-boundary.mjs plan-cutover production` with a
+- [x] Run `node scripts/access-boundary.mjs plan-cutover production` with a
   read-only Access token. It must show exactly one change:
   `linksim.link/api/*` to `linksim.link/api/auth/legacy-access/*`.
+  Completed on 2026-09-27 with exactly that one-change plan. The temporary
+  scoped token was deleted after the rehearsal.
 - [ ] Before cutover, `node scripts/access-boundary.mjs plan-rollback production`
   must show zero changes because the broad boundary is already restored. Repeat
   it after the Access change and require exactly the inverse one-change plan.
-- [ ] Review the production Better Auth schema probe and migrations. Confirm
+  The pre-cutover zero-change plan passed on 2026-09-27. This item remains open
+  for the required post-Access inverse plan.
+- [x] Review the production Better Auth schema probe and migrations. Confirm
   normal production automation skips them while auth mode remains inactive.
+  The ordered migrations, probe and idempotence rerun passed on a disposable
+  EEUR D1 database built from `db/schema.sql`; the database and temporary token
+  were deleted. A production-data export was not taken because Wrangler warned
+  it could make production D1 unavailable. See
+  `experiments/better-auth/evidence/2026-09-27-production-auth-release-prep.md`.
 - [ ] Prepare and review the activation candidate that changes
   `config/production-auth-mode.json` to `active: true` while keeping
   `accessBoundary: broad`. Prepare a separate post-Access candidate that keeps

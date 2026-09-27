@@ -105,6 +105,20 @@ export const ACCESS_BOUNDARIES = Object.freeze({
         mutable: false,
       },
       {
+        key: "publicApi",
+        appId: "c2f633a7-f5f2-4f34-a68e-b1a661e94f25",
+        name: "LinkSim Public API Exceptions",
+        domain: "linksim.link/api/v1/calculate*",
+        destinationUris: [
+          "linksim.link/api/v1/calculate*",
+          "linksim.link/copernicus/*",
+          "linksim.link/api/public-simulation*",
+        ],
+        policyId: PUBLIC_API_POLICY_ID,
+        decision: "bypass",
+        mutable: false,
+      },
+      {
         key: "api",
         domain: "linksim.link/api/*",
         policyId: AUTHENTICATED_POLICY_ID,
@@ -157,7 +171,7 @@ export const PRODUCTION_ACCESS_CUTOVER_BOUNDARY = Object.freeze({
       mutable: true,
       currentName: "LinkSim Authenticated API",
       currentDomain: "linksim.link/api/*",
-      currentDestinationUris: [],
+      currentDestinationUris: ["linksim.link/api/*"],
       currentPolicyId: application.policyId,
     };
   }),
