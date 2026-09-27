@@ -186,8 +186,11 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(productionTerraformMain).toContain("pages_production_env_vars_plain");
     expect(productionTerraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
     expect(productionTerraformVariables).toContain('variable "pages_production_env_vars_plain"');
-    expect(production).not.toContain("pages_production_durable_object_namespaces");
-    expect(production).not.toContain("AUTH_SESSION_SOURCE");
+    expect(production).toMatch(/pages_production_durable_object_namespaces\s*=\s*\{\s*AUTH = "65dd69a2040945c984470a4db8bb7efd"\s*\}/);
+    expect(production).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
+    expect(production).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
+    expect(production).toMatch(/AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED\s+= "false"/);
+    expect(production).toMatch(/AUTH_LEGACY_CLAIM_DEADLINE\s+= "2026-12-26T11:00:00.000Z"/);
     expect(productionAuthCutoverTfvars).toContain("pages_production_durable_object_namespaces");
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
