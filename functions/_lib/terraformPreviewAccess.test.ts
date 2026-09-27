@@ -193,7 +193,7 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(production).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
     expect(production).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
     expect(production).toMatch(/AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED\s+= "false"/);
-    expect(production).toMatch(/AUTH_LEGACY_CLAIM_DEADLINE\s+= "2026-12-26T13:30:00.000Z"/);
+    expect(production).toMatch(/AUTH_LEGACY_CLAIM_DEADLINE\s+= "2026-12-26T15:00:00.000Z"/);
     expect(productionAuthCutoverTfvars).toContain("pages_production_durable_object_namespaces");
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);

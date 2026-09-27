@@ -66,7 +66,7 @@ describe("staging auth runtime isolation", () => {
       expect(config).toContain('database_id = "d669aac0-37ea-4c68-9b27-ece888e1966a"');
       expect(config).not.toContain("linksim_staging");
       expect(config).not.toContain("a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c");
-      expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-26T13:30:00.000Z"');
+      expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-26T15:00:00.000Z"');
       expect(config).toContain('AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"');
       expect(config).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"');
       expect(config).toContain('AUTH_LEGACY_CLAIM_ENABLED = "true"');

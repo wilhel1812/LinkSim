@@ -12,7 +12,7 @@ const evaluatePolicy = (expression: string) => {
     [
       "--input-type=module",
       "--eval",
-      `import { validatePackageVersionParity, validateStagingVersionState, isTaggedSkippedPatchCandidate } from ${JSON.stringify(scriptPath)};
+      `import { validatePackageVersionParity, validateStagingVersionState, isTaggedSkippedPatchCandidate, isTagInStagingHistory } from ${JSON.stringify(scriptPath)};
        try {
          const result = ${expression};
          console.log(JSON.stringify({ ok: true, value: result }));
@@ -130,6 +130,24 @@ describe("staging version-state policy", () => {
         lockfileContent: ${JSON.stringify(lockfileContent)},
       })`),
     ).toEqual({ ok: true, value: true });
+  });
+
+  it("accepts an exact-tree release tag only when its tree is in staging history", () => {
+    expect(
+      evaluatePolicy(`isTagInStagingHistory({
+        taggedCommitIsAncestor: false,
+        taggedTree: "verified-tree",
+        stagingHistoryTrees: ["older-tree", "verified-tree"],
+      })`),
+    ).toEqual({ ok: true, value: true });
+
+    expect(
+      evaluatePolicy(`isTagInStagingHistory({
+        taggedCommitIsAncestor: false,
+        taggedTree: "unrelated-tree",
+        stagingHistoryTrees: ["older-tree", "verified-tree"],
+      })`),
+    ).toEqual({ ok: true, value: false });
   });
 
   it.each(["0.28.0", "0.26.4", "0.25.9", "2.0.0", "0.27.0-beta"])(

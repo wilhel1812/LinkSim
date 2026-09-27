@@ -69,6 +69,14 @@ export const isTaggedSkippedPatchCandidate = ({
   label: `tagged ${expectedVersion} candidate`,
 }) === expectedVersion;
 
+export const isTagInStagingHistory = ({
+  taggedCommitIsAncestor,
+  taggedTree,
+  stagingHistoryTrees,
+}) => taggedCommitIsAncestor || (
+  Boolean(taggedTree) && stagingHistoryTrees.includes(taggedTree)
+);
+
 export const validateStagingVersionState = ({
   productionVersion,
   stagingVersion,
@@ -119,7 +127,7 @@ export const validateStagingVersionState = ({
       `Staging version ${staging.value} must explicitly select either next patch ` +
         `${production.major}.${production.minor}.${production.patch + 1} or next minor ` +
         `${production.major}.${production.minor + 1}.0 or next major ` +
-        `${production.major + 1}.0.0, unless every skipped patch candidate has a tag on staging.`,
+        `${production.major + 1}.0.0, unless every skipped patch candidate has a verified tag in staging history.`,
     );
   }
 
@@ -159,19 +167,33 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
   const production = parseBaseVersion(productionVersion);
   const staging = parseBaseVersion(stagingVersion);
   const skippedPatchTags = [];
+  let stagingHistoryTrees;
   if (staging.major === production.major && staging.minor === production.minor) {
     for (let patch = production.patch + 1; patch < staging.patch; patch += 1) {
       const tag = `v${production.major}.${production.minor}.${patch}`;
       try {
-        runGit(["merge-base", "--is-ancestor", `refs/tags/${tag}`, "HEAD"]);
         const tagRef = `refs/tags/${tag}`;
+        let taggedCommitIsAncestor = true;
+        try {
+          runGit(["merge-base", "--is-ancestor", tagRef, "HEAD"]);
+        } catch {
+          taggedCommitIsAncestor = false;
+        }
+        if (!taggedCommitIsAncestor && !stagingHistoryTrees) {
+          stagingHistoryTrees = runGit(["log", "--format=%T", "HEAD"]).trim().split("\n");
+        }
+        if (!isTagInStagingHistory({
+          taggedCommitIsAncestor,
+          taggedTree: taggedCommitIsAncestor ? "" : runGit(["rev-parse", `${tagRef}^{tree}`]).trim(),
+          stagingHistoryTrees: stagingHistoryTrees ?? [],
+        })) continue;
         if (isTaggedSkippedPatchCandidate({
           expectedVersion: `${production.major}.${production.minor}.${patch}`,
           packageContent: runGit(["show", `${tagRef}:package.json`]),
           lockfileContent: runGit(["show", `${tagRef}:package-lock.json`]),
         })) skippedPatchTags.push(tag);
       } catch {
-        // Missing, non-ancestral, or malformed candidate tags cannot justify a skipped patch.
+        // Missing, unrelated, or malformed candidate tags cannot justify a skipped patch.
       }
     }
   }
