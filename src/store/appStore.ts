@@ -114,6 +114,7 @@ const readStorage = <T,>(key: string, fallback: T): T => {
 let hydrated = false;
 let syncTimer: number | null = null;
 let syncInFlight = false;
+let syncAccountGeneration = 0;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
 let lastSyncedPayloadDigest: string | null = (() => {
@@ -1503,6 +1504,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
   setCurrentUser: (user) => {
+    if (get().currentUser?.id !== user?.id) {
+      syncAccountGeneration += 1;
+      if (syncTimer !== null) window.clearTimeout(syncTimer);
+      syncTimer = null;
+      syncInFlight = false;
+      hydrated = false;
+      set({ syncBusy: false, isInitializing: false });
+    }
     if (!user) {
       set({ currentUser: null, authState: "signed_out" });
       return;
@@ -1527,9 +1536,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (incomingRestored) {
         get().cancelTerrainLoad();
         localStorage.setItem(ACTIVE_LIBRARY_ACCOUNT_KEY, user.id);
-        if (syncTimer !== null) window.clearTimeout(syncTimer);
-        syncTimer = null;
-        hydrated = false;
         localMutationRevision = 0;
         syncedMutationRevision = 0;
         dirtySiteIds = new Set();
@@ -1590,6 +1596,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
   initializeCloudSync: async () => {
+    const generationAtStart = syncAccountGeneration;
+    const userIdAtStart = get().currentUser?.id;
+    const isCurrentAccount = () =>
+      syncAccountGeneration === generationAtStart && get().currentUser?.id === userIdAtStart;
     const applyStartupSelection = !hydrated;
     console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing...", isInitializing: true });
@@ -1599,6 +1609,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       })();
       console.log("[appStore] Fetching cloud library...", lastFetchedAt ? `(delta since ${lastFetchedAt})` : "(full)");
       const cloud = await fetchCloudLibrary(lastFetchedAt ? { since: lastFetchedAt } : undefined);
+      if (!isCurrentAccount()) return;
       const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
         sites: trustedCloud.siteLibrary.length,
@@ -1624,6 +1635,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const digest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(current.siteLibrary, current.simulationPresets, current.currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
         if (digest !== lastSyncedPayloadDigest) {
           requiresFullPush = true;
           set({ syncBusy: false, isInitializing: false });
@@ -1691,6 +1703,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         remotePayloadDigest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(fixedCloudSites, fixedCloudSims, currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
       } else {
         const cloudPresets = trustedCloud.simulationPresets;
 
@@ -1709,6 +1722,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         remotePayloadDigest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(cloudSites, cloudPresets as SimulationPreset[], currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
         set({
           syncPending: false,
           pendingChangesCount: 0,
@@ -1730,6 +1744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentState.currentUser,
       );
       const currentPayloadDigest = await computeSyncPayloadDigest(currentPayload.payload);
+      if (!isCurrentAccount()) return;
       if (currentPayloadDigest === lastSyncedPayloadDigest) {
         console.log("[appStore] initializeCloudSync SUCCESS - no startup sync needed");
         set({
@@ -1749,6 +1764,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       set({ syncPending: true, syncBusy: true });
       syncTimer = window.setTimeout(async () => {
+        if (!isCurrentAccount()) return;
         if (!get().isOnline) {
           set({
             syncBusy: false,
@@ -1784,7 +1800,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             skipped: skippedCount,
           });
           await pushCloudLibrary(payload);
+          if (!isCurrentAccount()) return;
           const digest = await digestPromise;
+          if (!isCurrentAccount()) return;
           lastSyncedPayloadDigest = digest;
           writeStorage(SYNC_DIGEST_KEY, digest);
           console.log("[appStore] Post-init Push SUCCESS");
@@ -1800,6 +1818,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             isInitializing: false,
           });
         } catch (error) {
+          if (!isCurrentAccount()) return;
           console.error("[appStore] Post-init sync FAILED:", error);
           const message = getUiErrorMessage(error);
           set({
@@ -1810,14 +1829,17 @@ export const useAppStore = create<AppState>((set, get) => ({
             isInitializing: false,
           });
         } finally {
-          syncInFlight = false;
-          set({ syncBusy: false, isInitializing: false });
-          if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
-            get().performCloudSyncPush(false);
+          if (isCurrentAccount()) {
+            syncInFlight = false;
+            set({ syncBusy: false, isInitializing: false });
+            if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
+              get().performCloudSyncPush(false);
+            }
           }
         }
       }, SYNC_DEBOUNCE_MS);
     } catch (error) {
+      if (!isCurrentAccount()) return;
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       if (isAuthRelatedErrorMessage(message)) {
@@ -1836,6 +1858,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   performCloudSyncPush: (recordMutation = true) => {
     const schedulePush = (recordMutation: boolean): void => {
       if (!hydrated) return;
+      const generationAtSchedule = syncAccountGeneration;
+      const userIdAtSchedule = get().currentUser?.id;
+      const isCurrentAccount = () =>
+        syncAccountGeneration === generationAtSchedule && get().currentUser?.id === userIdAtSchedule;
       const pendingChangesCount = recordMutation ? recordLocalMutation() : Math.max(0, localMutationRevision - syncedMutationRevision);
       if (get().authState === "signed_out" || !get().currentUser?.id || !get().isOnline) {
         set({ syncPending: true, syncStatus: "error", pendingChangesCount,
@@ -1849,6 +1875,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ syncPending: true, syncStatus: "synced", pendingChangesCount, syncErrorMessage: null,
         syncStatusMessage: `${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}` });
       syncTimer = window.setTimeout(async () => {
+        if (!isCurrentAccount()) return;
         if (syncInFlight) {
           set({ syncPending: true, syncStatusMessage: "Waiting for active sync to finish..." });
           return;
@@ -1866,6 +1893,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           let info = isFullPush ? fullInfo : buildDeltaSyncPayloadInfo(siteLibrary, simulationPresets, currentUser);
           if (!isFullPush && info.payload.siteLibrary.length === 0 && info.payload.simulationPresets.length === 0) {
             const digest = await fullDigestPromise;
+            if (!isCurrentAccount()) return;
             if (digest === lastSyncedPayloadDigest) {
               remaining = markSyncedThrough(revisionAtStart);
               dirtySiteIds = new Set();
@@ -1882,7 +1910,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           const sentSites = new Map(info.payload.siteLibrary.map((entry) => [entry.id, JSON.stringify(entry)]));
           const sentSimulations = new Map(info.payload.simulationPresets.map((entry) => [entry.id, JSON.stringify(entry)]));
           await pushCloudLibrary(info.payload);
+          if (!isCurrentAccount()) return;
           const fullDigestAtStart = await fullDigestPromise;
+          if (!isCurrentAccount()) return;
           const latest = get();
           for (const [id, encoded] of sentSites) {
             const current = latest.siteLibrary.find((entry) => entry.id === id);
@@ -1900,6 +1930,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           set({ syncPending: remaining > 0, pendingChangesCount: remaining, syncStatus: "synced",
             lastSyncedAt: new Date().toISOString(), syncErrorMessage: null, syncStatusMessage: "Changes saved" });
         } catch (error) {
+          if (!isCurrentAccount()) return;
           const message = getUiErrorMessage(error);
           if (isAuthRelatedErrorMessage(message)) set({ currentUser: null, authState: "signed_out" });
           set({ syncPending: true, syncStatus: "error", syncErrorMessage: message,
@@ -1907,9 +1938,11 @@ export const useAppStore = create<AppState>((set, get) => ({
               ? "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes."
               : `Save failed: ${message}` });
         } finally {
-          syncInFlight = false;
-          set({ syncBusy: false });
-          if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
+          if (isCurrentAccount()) {
+            syncInFlight = false;
+            set({ syncBusy: false });
+            if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
+          }
         }
       }, SYNC_DEBOUNCE_MS);
     };
@@ -1951,12 +1984,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     syncInFlight = true;
+    const generationAtStart = syncAccountGeneration;
+    const userIdAtStart = get().currentUser?.id;
+    const isCurrentAccount = () =>
+      syncAccountGeneration === generationAtStart && get().currentUser?.id === userIdAtStart;
     const revisionAtStart = localMutationRevision;
     let completed = false;
     let remaining = Math.max(0, localMutationRevision - syncedMutationRevision);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
     try {
       const deletionState = await fetchCloudLibrary();
+      if (!isCurrentAccount()) return;
       get().applyDeletedSiteTombstones([...deletionState.deletedSiteIds, ...deletionState.removedSiteIds]);
       get().applyDeletedSimulationTombstones([...deletionState.deletedSimulationIds, ...deletionState.removedSimulationIds]);
       const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
@@ -1967,16 +2005,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       const sentSites = new Map(payload.siteLibrary.map((entry) => [entry.id, JSON.stringify(entry)]));
       const sentSimulations = new Map(payload.simulationPresets.map((entry) => [entry.id, JSON.stringify(entry)]));
       const payloadDigest = await computeSyncPayloadDigest(payload);
+      if (!isCurrentAccount()) return;
       console.log("[appStore] Pushing local data to cloud:", {
         sites: editableSites.length,
         simulations: editableSims.length,
         skipped: skippedCount,
       });
       await pushCloudLibrary(payload);
+      if (!isCurrentAccount()) return;
       lastSyncedPayloadDigest = payloadDigest;
       writeStorage(SYNC_DIGEST_KEY, payloadDigest);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
+      if (!isCurrentAccount()) return;
       const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
         sites: trustedCloud.siteLibrary.length,
@@ -2026,6 +2067,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       console.log("[appStore] performManualCloudSync SUCCESS");
     } catch (error) {
+      if (!isCurrentAccount()) return;
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       if (isAuthRelatedErrorMessage(message)) {
@@ -2038,10 +2080,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncStatusMessage: `Sync failed: ${message}`,
       });
     } finally {
-      syncInFlight = false;
-      set({ syncBusy: false });
-      if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
-        get().performCloudSyncPush(false);
+      if (isCurrentAccount()) {
+        syncInFlight = false;
+        set({ syncBusy: false });
+        if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
+          get().performCloudSyncPush(false);
+        }
       }
     }
   },
