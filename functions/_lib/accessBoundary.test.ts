@@ -109,12 +109,26 @@ const productionApps = () => [
     decision: "bypass",
   }),
   makeApp({
+    id: "c2f633a7-f5f2-4f34-a68e-b1a661e94f25",
+    name: "LinkSim Public API Exceptions",
+    domain: "linksim.link/api/v1/calculate*",
+    aud: "production-public-api-aud",
+    policyId: PUBLIC_API_POLICY_ID,
+    decision: "bypass",
+    destinations: [
+      { type: "public", uri: "linksim.link/api/v1/calculate*" },
+      { type: "public", uri: "linksim.link/copernicus/*" },
+      { type: "public", uri: "linksim.link/api/public-simulation*" },
+    ],
+  }),
+  makeApp({
     id: "production-api",
     name: "LinkSim Authenticated API",
     domain: "linksim.link/api/*",
     aud: "ad63aaad91fb903f77154106fc69bb0fe7b845bfeb87ce09287b0c6dc92027b2",
     policyId: AUTH_POLICY_ID,
     decision: "allow",
+    destinations: [{ type: "public", uri: "linksim.link/api/*" }],
   }),
 ];
 
@@ -190,7 +204,7 @@ describe("Cloudflare Access boundary reconciliation", () => {
         toDomain: "linksim.link/api/auth/legacy-access/*",
       }]);
 
-    current[1] = makeApp({
+    current[2] = makeApp({
       id: "production-api",
       name: "LinkSim Legacy Migration API",
       domain: "linksim.link/api/auth/legacy-access/*",
@@ -239,7 +253,7 @@ describe("Cloudflare Access boundary reconciliation", () => {
     )).toThrow("Unexpected overlapping Access application");
 
     const drifted = productionApps();
-    drifted[1] = { ...drifted[1], domain: "linksim.link/api/private/*" };
+    drifted[2] = { ...drifted[2], domain: "linksim.link/api/private/*" };
     expect(() => planAccessBoundary(drifted, PRODUCTION_ACCESS_CUTOVER_BOUNDARY))
       .toThrow("Expected exactly one Access application");
   });
