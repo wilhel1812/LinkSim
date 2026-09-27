@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.29.9] - 2026-09-27
+
+### Fixed
+- Separated locally cached Library data and the open Simulation workspace when switching accounts in the same browser, and kept a recovery copy of the pre-separation cache. (#1234)
+- Prevented sync and Library edits from treating another account's cached role as permission to update its Sites or Simulations, while retaining current-account collaborator edits. (#1234)
+
 ## [0.29.8] - 2026-09-27
 
 ### Fixed
