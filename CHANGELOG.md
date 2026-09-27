@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.29.4] - 2026-09-27
+
+### Internal
+- Corrected production cutover evidence and canary readiness to the reviewed 15:00 UTC window without moving earlier immutable candidate tags or changing the authentication behavior. (#1107)
+
 ## [0.29.3] - 2026-09-27
 
 ### Security

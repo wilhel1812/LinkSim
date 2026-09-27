@@ -122,8 +122,11 @@ the application boundary is verified.
   the operator receives failures without exposing the credential.
   The `production-canary` environment is restricted to the exact `main` branch.
   A fresh, migrated ordinary-user session is in its protected secret and its
-  expected user ID matches that account. The cutover time remains unset until
-  the reviewed release window is ready; the canary gate remains open until then.
+  expected user ID matches that account. Its cutover time is set to
+  `2026-09-27T15:00:00.000Z`; scheduled probes remain dormant before that time.
+  The session initially expires before the end of the first week, so verify
+  rolling renewal after the first day and rotate it before expiry if needed.
+  The canary gate remains open until a protected production probe succeeds.
 - [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
