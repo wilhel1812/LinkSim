@@ -101,15 +101,18 @@ describe("authenticated Pages preview Terraform intent", () => {
     );
   });
 
-  it("uses the same staging-only D1 and R2 variables for preview and production", () => {
+  it("keeps staging preview bindings while preserving the bare production preview", () => {
     const preview = moduleSource.split("    preview = {")[1]?.split("    production = {")[0] ?? "";
     expect(preview).toContain("id = var.d1_database_id");
     expect(preview).toContain("name = var.r2_bucket_name");
+    expect(preview).toContain("var.pages_preview_bindings_enabled ?");
+    expect(productionTerraformMain).toContain("pages_preview_bindings_enabled             = false");
     expect(moduleSource).not.toContain("ignore_changes  = [deployment_configs]");
     expect(moduleSource).toContain("deployment_configs.preview.wrangler_config_hash");
     expect(moduleSource).toContain(
-      'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value',
+      'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"]',
     );
+    expect(moduleSource).toContain('deployment_configs.production.env_vars["VITE_MAPTILER_KEY"]');
   });
 
   it("binds private history only to stable staging, never previews or production", () => {
