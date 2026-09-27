@@ -15,6 +15,19 @@ pages_env_vars_plain = {
   CALC_API_PROXY_RATE_LIMIT_PER_MINUTE            = "120"
 }
 
+pages_production_durable_object_namespaces = {
+  AUTH = "65dd69a2040945c984470a4db8bb7efd"
+}
+
+pages_production_env_vars_plain = {
+  AUTH_SESSION_SOURCE                      = "transition"
+  AUTH_DUAL_LOGIN_MIGRATION_ENABLED        = "true"
+  AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"
+  AUTH_LEGACY_CLAIM_ENABLED                = "true"
+  AUTH_REGISTRATION_ENABLED                = "true"
+  AUTH_LEGACY_CLAIM_DEADLINE               = "2026-12-26T13:30:00.000Z"
+}
+
 pages_access_audience_keys = ["authenticated_api"]
 
 # Keep secrets out of tfvars. Inject at runtime, for example:
