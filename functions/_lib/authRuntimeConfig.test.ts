@@ -68,7 +68,7 @@ describe("staging auth runtime isolation", () => {
       expect(config).not.toContain("a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c");
       expect(config).toContain('AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-26T10:00:00.000Z"');
       expect(config).toContain('AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"');
-      expect(config).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"');
+      expect(config).toContain('AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "false"');
       expect(config).toContain('AUTH_LEGACY_CLAIM_ENABLED = "true"');
       expect(config).toContain('AUTH_REGISTRATION_ENABLED = "true"');
     }
