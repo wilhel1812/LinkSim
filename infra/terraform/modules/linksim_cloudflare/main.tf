@@ -50,17 +50,17 @@ resource "cloudflare_pages_project" "project" {
   deployment_configs = {
     preview = {
       compatibility_date = var.pages_compatibility_date
-      d1_databases = {
+      d1_databases = var.pages_preview_bindings_enabled ? {
         (var.d1_binding_name) = {
           id = var.d1_database_id
         }
-      }
-      r2_buckets = {
+      } : null
+      r2_buckets = var.pages_preview_bindings_enabled ? {
         (var.r2_binding_name) = {
           name = var.r2_bucket_name
         }
-      }
-      env_vars = local.pages_env_vars
+      } : null
+      env_vars = var.pages_preview_bindings_enabled ? local.pages_env_vars : null
     }
     production = {
       compatibility_date = var.pages_compatibility_date
@@ -86,13 +86,13 @@ resource "cloudflare_pages_project" "project" {
 
   lifecycle {
     # Direct-upload deployments update these hashes, while Cloudflare redacts
-    # secret values on read. Ignore only those non-convergent values; continue
-    # managing bindings, variable names/types, and all plain-text values.
+    # secret values on read. Preserve the existing MapTiler secret entry and
+    # continue managing bindings and all plain-text values.
     ignore_changes = [
       deployment_configs.preview.wrangler_config_hash,
       deployment_configs.production.wrangler_config_hash,
-      deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value,
-      deployment_configs.production.env_vars["VITE_MAPTILER_KEY"].value,
+      deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"],
+      deployment_configs.production.env_vars["VITE_MAPTILER_KEY"],
     ]
     prevent_destroy = true
   }

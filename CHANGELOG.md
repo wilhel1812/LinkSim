@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.29.4] - 2026-09-27
+
+### Internal
+- Corrected production cutover evidence and canary readiness to the reviewed 15:00 UTC window without moving earlier immutable candidate tags or changing the authentication behavior. (#1107)
+
+## [0.29.3] - 2026-09-27
+
+### Security
+- Rescheduled the reviewed production authentication cutover to 2026-09-27 15:00 UTC after the earlier slot passed, preserving the exact 90-day legacy-claim window. (#1107)
+- Retained the legacy-only Access boundary, active Better Auth configuration, and disabled privileged passkey recovery from the verified 0.29.2 candidate. (#1107)
+
+### Internal
+- Allowed a later patch candidate only when every intervening, unshipped patch has a correctly versioned tag on staging, preserving immutable release tags after a cutover window is rescheduled. (#1107)
+
+## [0.29.2] - 2026-09-27
+
+### Security
+- Prepared the reviewed legacy-only Access boundary for the public authentication cutover while keeping Better Auth active and privileged passkey recovery disabled. (#1107)
+- Moved the approved cutover timestamp forward to 2026-09-27 11:00 UTC and kept the legacy-claim deadline exactly 90 days later. (#1107)
+
 ## [0.29.1] - 2026-09-27
 
 ### Security

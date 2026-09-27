@@ -1,7 +1,8 @@
 # Production auth release preparation — 2026-09-27
 
-This record covers preparation that does not change production routing, deploy a
-production build, or migrate the production database. Credential values are not
+This record began with pre-activation preparation and now tracks the final
+cutover candidate. Production `v0.29.1` runs Better Auth behind broad
+Cloudflare Access; public routing has not changed. Credential values are not
 included.
 
 ## Protected credentials
@@ -21,16 +22,21 @@ included.
 
 ## Canary readiness
 
-- A staging canary probe passed on 2026-09-26 against
-  `https://staging.linksim.link/api/me` for the configured ordinary staging
-  account.
+- The protected staging canary passed again after the `v0.29.3` staging deploy
+  in workflow run `36316447116`, against
+  `https://staging.linksim.link/api/me` for the configured ordinary account.
 - The `production-canary` environment is restricted to the exact `main` branch
-  with no tag rule. Its expected user ID is configured for the administrator
-  account selected for this release. This is weaker than the preferred
-  ordinary-user canary and is an explicitly accepted limitation.
-- The production canary cookie and `AUTH_CANARY_CUTOVER_AT` remain unset. They
-  require a fresh production session and the approved production window, so the
-  canary gate is not complete and no scheduled production probe can activate.
+  with no tag rule. On 2026-09-27, the maintainer migrated and signed in an
+  ordinary, non-admin account. Its fresh production Better Auth session cookie
+  was loaded into the protected environment secret, and the expected user ID
+  was updated to match it. The temporary local handoff copy was removed; no
+  credential value is recorded here.
+- `AUTH_CANARY_CUTOVER_AT` is `2026-09-27T15:00:00.000Z`. Scheduled production
+  probes are dormant before that time. The initial server-side session expiry
+  is `2026-10-04T11:07:16.689Z`; Better Auth has a one-day rolling update age.
+  Verify that probing extends the expiry after the first day, and rotate the
+  credential before expiry if it does not. The canary gate remains open until
+  a protected production probe succeeds after cutover.
 
 ## Access boundary plans
 
@@ -50,9 +56,10 @@ Read, the final read-only plans reported:
 ```
 
 The first result is the cutover plan. The second is the pre-cutover rollback
-plan. No Access application or policy was mutated. The temporary token was
-deleted after the plans and D1 rehearsal, and its absence was verified in the
-account token inventory.
+plan. No Access application or policy has been mutated. The original rehearsal
+token was deleted after the plans and D1 rehearsal; a separately scoped
+temporary cutover token is held outside this repository and must be revoked
+after the production window.
 
 ## D1 migration rehearsal
 
@@ -80,36 +87,37 @@ logs and temporary directory were also removed. This proves ordering, schema,
 index and idempotence behavior on the current base schema, but not migration
 behavior against a copy of live production rows.
 
-The production workflow applies and probes the Better Auth schema only when the
-explicit target is `prod-auth-cutover` or the immutable release candidate has
-`config/production-auth-mode.json.active` set to `true`. Normal production
-automation therefore continues to skip these migrations while auth mode is
-inactive.
+The protected `v0.29.0` production deployment applied the additive Better Auth
+schema. A read-only production probe on 2026-09-27 passed all 18 statements
+with zero rows written. The workflow continues to probe this schema on active
+auth releases and applies migrations idempotently if needed.
 
-## Remaining before production activation
+## Remaining before public activation
 
-- Create a fresh production Better Auth session for the selected canary account
-  and store only its session cookie in `production-canary`.
-- Choose the production cutover timestamp and set
-  `AUTH_CANARY_CUTOVER_AT`; derive the exact legacy-claim deadline as 90 days
-  after that timestamp.
-- Build, review, and stage the immutable `v0.29.0`, `v0.29.1`, and `v0.29.2`
-  candidates. These are preparation only; merging to `main`, deploying
-  production, changing Access, and applying the production D1 migrations remain
-  separately gated production actions.
+- Verify the final immutable candidate on staging and approve its protected
+  main promotion without moving the superseded `v0.29.2` or `v0.29.3` tags.
+- At the reviewed window, narrow exactly one Access application, immediately
+  promote the exact tagged candidate, and run the protected production canary.
+- Restore broad Access first if a rollback trigger occurs. Continue the
+  recorded first-hour, first-day, and first-week monitoring after success.
 
 ## Approved release window
 
 - The maintainer approved completing the production rollout on 2026-09-27.
-- The planned activation timestamp is `2026-09-27T10:00:00Z`
-  (`2026-09-27 12:00 CEST`). If candidate validation is not complete by that
-  time, the timestamp must move forward before the activation candidate is
-  frozen; it must never be backdated.
+- The 10:00 and 11:00 UTC targets passed while protected release gates remained
+  open; neither was a public cutover. The reviewed activation window is now
+  `2026-09-27T15:00:00Z` (`2026-09-27 17:00 CEST`). If final candidate validation
+  is not complete by then, advance the timestamp and prepare a new candidate;
+  never backdate the cutover.
 - The corresponding 90-day legacy-claim deadline is
-  `2026-12-26T10:00:00.000Z`.
+  `2026-12-26T15:00:00.000Z`.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
 - The `v0.29.1` candidate keeps Better Auth active and broad Access available,
   but permanently disables new privileged passkey-recovery attempts after the
   administrator bootstrap.
+- The immutable `v0.29.2` and `v0.29.3` candidates were not promoted after
+  their release gates changed. The `v0.29.4` candidate keeps Better Auth active
+  and privileged passkey recovery disabled, and changes the expected Access
+  boundary to `legacy` for the public cutover.

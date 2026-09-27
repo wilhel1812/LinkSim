@@ -120,11 +120,13 @@ the application boundary is verified.
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
-  The `production-canary` environment is restricted to the exact `main` branch
-  and has the selected administrator user ID, but the cookie and cutover time
-  remain unset. The administrator account is an accepted weaker substitute for
-  the preferred ordinary account. This gate remains open until a fresh session
-  and the approved window are configured.
+  The `production-canary` environment is restricted to the exact `main` branch.
+  A fresh, migrated ordinary-user session is in its protected secret and its
+  expected user ID matches that account. Its cutover time is set to
+  `2026-09-27T15:00:00.000Z`; scheduled probes remain dormant before that time.
+  The session initially expires before the end of the first week, so verify
+  rolling renewal after the first day and rotate it before expiry if needed.
+  The canary gate remains open until a protected production probe succeeds.
 - [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,

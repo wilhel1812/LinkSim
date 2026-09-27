@@ -101,15 +101,18 @@ describe("authenticated Pages preview Terraform intent", () => {
     );
   });
 
-  it("uses the same staging-only D1 and R2 variables for preview and production", () => {
+  it("keeps staging preview bindings while preserving the bare production preview", () => {
     const preview = moduleSource.split("    preview = {")[1]?.split("    production = {")[0] ?? "";
     expect(preview).toContain("id = var.d1_database_id");
     expect(preview).toContain("name = var.r2_bucket_name");
+    expect(preview).toContain("var.pages_preview_bindings_enabled ?");
+    expect(productionTerraformMain).toContain("pages_preview_bindings_enabled             = false");
     expect(moduleSource).not.toContain("ignore_changes  = [deployment_configs]");
     expect(moduleSource).toContain("deployment_configs.preview.wrangler_config_hash");
     expect(moduleSource).toContain(
-      'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value',
+      'deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"]',
     );
+    expect(moduleSource).toContain('deployment_configs.production.env_vars["VITE_MAPTILER_KEY"]');
   });
 
   it("binds private history only to stable staging, never previews or production", () => {
@@ -186,8 +189,11 @@ describe("authenticated Pages preview Terraform intent", () => {
     expect(productionTerraformMain).toContain("pages_production_env_vars_plain");
     expect(productionTerraformVariables).toContain('variable "pages_production_durable_object_namespaces"');
     expect(productionTerraformVariables).toContain('variable "pages_production_env_vars_plain"');
-    expect(production).not.toContain("pages_production_durable_object_namespaces");
-    expect(production).not.toContain("AUTH_SESSION_SOURCE");
+    expect(production).toMatch(/pages_production_durable_object_namespaces\s*=\s*\{\s*AUTH = "65dd69a2040945c984470a4db8bb7efd"\s*\}/);
+    expect(production).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
+    expect(production).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
+    expect(production).toMatch(/AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED\s+= "false"/);
+    expect(production).toMatch(/AUTH_LEGACY_CLAIM_DEADLINE\s+= "2026-12-26T15:00:00.000Z"/);
     expect(productionAuthCutoverTfvars).toContain("pages_production_durable_object_namespaces");
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_SESSION_SOURCE\s+= "transition"/);
     expect(productionAuthCutoverTfvars).toMatch(/AUTH_DUAL_LOGIN_MIGRATION_ENABLED\s+= "true"/);
