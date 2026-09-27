@@ -6,6 +6,9 @@
 - Rescheduled the reviewed production authentication cutover to 2026-09-27 15:00 UTC after the earlier slot passed, preserving the exact 90-day legacy-claim window. (#1107)
 - Retained the legacy-only Access boundary, active Better Auth configuration, and disabled privileged passkey recovery from the verified 0.29.2 candidate. (#1107)
 
+### Internal
+- Allowed a later patch candidate only when every intervening, unshipped patch has a tag on staging, preserving immutable release tags after a cutover window is rescheduled. (#1107)
+
 ## [0.29.2] - 2026-09-27
 
 ### Security

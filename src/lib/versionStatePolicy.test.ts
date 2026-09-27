@@ -86,6 +86,29 @@ describe("staging version-state policy", () => {
     });
   });
 
+  it("accepts a later patch only when every skipped candidate has a tag", () => {
+    expect(
+      evaluatePolicy(`validateStagingVersionState({
+        productionVersion: "0.26.2",
+        stagingVersion: "0.26.4",
+        treesMatch: false,
+        skippedPatchTags: ["v0.26.3"],
+      })`),
+    ).toEqual({
+      ok: true,
+      value: { state: "development-line", progression: "tagged-skipped-patch" },
+    });
+
+    expect(
+      evaluatePolicy(`validateStagingVersionState({
+        productionVersion: "0.26.2",
+        stagingVersion: "0.26.5",
+        treesMatch: false,
+        skippedPatchTags: ["v0.26.3"],
+      })`).ok,
+    ).toBe(false);
+  });
+
   it.each(["0.28.0", "0.26.4", "0.25.9", "2.0.0", "0.27.0-beta"])(
     "rejects implicit, skipped, or malformed line %s",
     (stagingVersion) => {

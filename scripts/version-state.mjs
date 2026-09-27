@@ -64,6 +64,7 @@ export const validateStagingVersionState = ({
   productionVersion,
   stagingVersion,
   treesMatch,
+  skippedPatchTags = [],
 }) => {
   const production = parseBaseVersion(productionVersion, "production version");
   const staging = parseBaseVersion(stagingVersion, "staging version");
@@ -87,6 +88,14 @@ export const validateStagingVersionState = ({
     staging.major === production.major &&
     staging.minor === production.minor &&
     staging.patch === production.patch + 1;
+  const isTaggedSkippedPatch =
+    staging.major === production.major &&
+    staging.minor === production.minor &&
+    staging.patch > production.patch + 1 &&
+    Array.from(
+      { length: staging.patch - production.patch - 1 },
+      (_, index) => `v${production.major}.${production.minor}.${production.patch + index + 1}`,
+    ).every((tag) => skippedPatchTags.includes(tag));
   const isNextMinor =
     staging.major === production.major &&
     staging.minor === production.minor + 1 &&
@@ -96,12 +105,12 @@ export const validateStagingVersionState = ({
     staging.minor === 0 &&
     staging.patch === 0;
 
-  if (!isNextPatch && !isNextMinor && !isNextMajor) {
+  if (!isNextPatch && !isTaggedSkippedPatch && !isNextMinor && !isNextMajor) {
     throw new Error(
       `Staging version ${staging.value} must explicitly select either next patch ` +
         `${production.major}.${production.minor}.${production.patch + 1} or next minor ` +
         `${production.major}.${production.minor + 1}.0 or next major ` +
-        `${production.major + 1}.0.0.`,
+        `${production.major + 1}.0.0, unless every skipped patch candidate has a tag on staging.`,
     );
   }
 
@@ -109,6 +118,8 @@ export const validateStagingVersionState = ({
     state: "development-line",
     progression: isNextPatch
       ? "next-patch"
+      : isTaggedSkippedPatch
+        ? "tagged-skipped-patch"
       : isNextMinor
         ? "next-minor"
         : "next-major",
@@ -136,6 +147,20 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
     ),
     label: "production",
   });
+  const production = parseBaseVersion(productionVersion);
+  const staging = parseBaseVersion(stagingVersion);
+  const skippedPatchTags = [];
+  if (staging.major === production.major && staging.minor === production.minor) {
+    for (let patch = production.patch + 1; patch < staging.patch; patch += 1) {
+      const tag = `v${production.major}.${production.minor}.${patch}`;
+      try {
+        runGit(["merge-base", "--is-ancestor", `refs/tags/${tag}`, "HEAD"]);
+        skippedPatchTags.push(tag);
+      } catch {
+        // Missing or non-ancestral candidate tags cannot justify skipping a patch.
+      }
+    }
+  }
 
   let treesMatch = true;
   try {
@@ -154,6 +179,7 @@ export const validateCurrentStagingVersionState = ({ productionRef = "origin/mai
       productionVersion,
       stagingVersion,
       treesMatch,
+      skippedPatchTags,
     }),
   };
 };
