@@ -32,7 +32,7 @@ included.
   was updated to match it. The temporary local handoff copy was removed; no
   credential value is recorded here.
 - `AUTH_CANARY_CUTOVER_AT` was removed again after the missed 15:00 UTC window.
-  Set it to `2026-09-27T15:40:00.000Z` only after final release gates pass;
+  Set it to the actual UTC public cutover time only after final release gates pass;
   scheduled production probes are currently dormant. The initial server-side session expiry
   is `2026-10-04T11:07:16.689Z`; Better Auth has a one-day rolling update age.
   Verify that probing extends the expiry after the first day, and rotate the
