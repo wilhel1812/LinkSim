@@ -4,13 +4,13 @@ import { pathToFileURL } from "node:url";
 
 const EXPECTED_VERSION = "2026-08-12-identity-lifecycle-v1";
 
-export const parseWranglerRows = (stdout) => {
+export const parseWranglerRows = (stdout, label = "D1 identity lifecycle probe") => {
   const start = stdout.indexOf("[");
   const end = stdout.lastIndexOf("]");
   if (start < 0 || end < start) throw new Error("Unable to parse Wrangler D1 JSON output.");
   const payload = JSON.parse(stdout.slice(start, end + 1));
   const rows = payload.flatMap((entry) => Array.isArray(entry?.results) ? entry.results : []);
-  if (rows.length === 0) throw new Error("D1 identity lifecycle probe returned no rows.");
+  if (rows.length === 0) throw new Error(`${label} returned no rows.`);
   return rows;
 };
 

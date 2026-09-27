@@ -3,7 +3,14 @@ import {
   jwtVerify,
   type JWTPayload,
 } from "jose";
-import type { AuthContext, Env } from "./types";
+import { resolveCurrentAuthIdentity, resolveMappedAuthIdentityByVerifiedEmail } from "./authIdentityMap";
+import {
+  BETTER_AUTH_MAPPED_IDENTITY_CLAIM,
+  type AuthContext,
+  type AuthRequestData,
+  type AuthRuntimeSessionResult,
+  type Env,
+} from "./types";
 
 
 export class AuthVerificationTimeoutError extends Error {
@@ -13,10 +20,28 @@ export class AuthVerificationTimeoutError extends Error {
   }
 }
 
+export class AuthRuntimeUnavailableError extends Error {
+  constructor() {
+    super("Authentication runtime unavailable");
+    this.name = "AuthRuntimeUnavailableError";
+  }
+}
+
 type AccessTokenVerifier = (token: string, env: Env) => Promise<JWTPayload>;
+const ACCESS_MIGRATION_MAX_AGE_SECONDS = 5 * 60;
+const ACCESS_MIGRATION_CLOCK_SKEW_SECONDS = 30;
 
 const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 const VERIFIED_IDP_EMAIL_CLAIM = "__linksim_verified_idp_email";
+const authRequestCache = new WeakMap<Request, Promise<AuthContext | null>>();
+const authResponseCookieCache = new WeakMap<Request, string[]>();
+const FORWARDED_AUTH_HEADERS = [
+  "cookie",
+  "content-type",
+  "accept",
+  "user-agent",
+  "cf-connecting-ip",
+] as const;
 
 const normalizeTeamDomain = (raw: string): string => {
   const trimmed = raw.trim();
@@ -64,6 +89,40 @@ const verifyAccessToken: AccessTokenVerifier = async (token, env) => {
     audience: audiences,
   });
   return payload;
+};
+
+export const verifyFreshAccessJwt = async (
+  request: Request,
+  env: Env,
+  nowMs = Date.now(),
+  verifier: AccessTokenVerifier = verifyAccessToken,
+): Promise<{ userId: string; issuedAt: string } | null> => {
+  const token = request.headers.get("cf-access-jwt-assertion")
+    ?? request.headers.get("Cf-Access-Jwt-Assertion")
+    ?? "";
+  if (!token.trim()) return null;
+  const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
+  const configured = configuredAccessAudiences(env);
+  if (!teamDomain || configured.size === 0) return null;
+  try {
+    const payload = await verifier(token.trim(), env) as Record<string, unknown>;
+    if (payload.iss !== `https://${teamDomain}` || !hasConfiguredAudience(payload, env)) return null;
+    const subject = typeof payload.sub === "string" ? payload.sub.trim() : "";
+    const issuedAt = typeof payload.iat === "number" ? payload.iat : Number.NaN;
+    const expiresAt = typeof payload.exp === "number" ? payload.exp : Number.NaN;
+    const nowSeconds = Math.floor(nowMs / 1000);
+    if (
+      !subject
+      || !Number.isFinite(issuedAt)
+      || !Number.isFinite(expiresAt)
+      || expiresAt <= nowSeconds
+      || issuedAt > nowSeconds + ACCESS_MIGRATION_CLOCK_SKEW_SECONDS
+      || nowSeconds - issuedAt > ACCESS_MIGRATION_MAX_AGE_SECONDS
+    ) return null;
+    return { userId: subject, issuedAt: new Date(issuedAt * 1000).toISOString() };
+  } catch {
+    return null;
+  }
 };
 
 const normalizeUserId = (request: Request): string => {
@@ -239,7 +298,7 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
   };
 };
 
-export const verifyAuth = async (
+const verifyAccessAuth = async (
   request: Request,
   env: Env,
   verifier: AccessTokenVerifier = verifyAccessToken,
@@ -283,4 +342,152 @@ export const verifyAuth = async (
   }
   emitAuthLog(env, { result: "fail", reason: "no_auth_context", ...authSignals });
   return null;
+};
+
+type BetterAuthResult =
+  | { kind: "no-session"; setCookieHeaders: string[] }
+  | { kind: "authenticated"; authUserId: string; setCookieHeaders: string[] };
+
+const checkBetterAuthSession = async (
+  request: Request,
+  env: Env,
+): Promise<BetterAuthResult> => {
+  if (!env.AUTH) throw new AuthRuntimeUnavailableError();
+
+  const headers = new Headers();
+  for (const name of FORWARDED_AUTH_HEADERS) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  const requestOrigin = new URL(request.url).origin;
+  if (request.headers.get("origin") === requestOrigin) {
+    headers.set("origin", requestOrigin);
+  }
+
+  let result: AuthRuntimeSessionResult;
+  try {
+    result = await env.AUTH.getByName("auth").checkSession(new Request(
+      `${requestOrigin}/api/auth/get-session`,
+      { method: "GET", headers },
+    ));
+  } catch {
+    throw new AuthRuntimeUnavailableError();
+  }
+
+  const setCookieHeaders = Array.isArray(result.setCookies)
+    ? result.setCookies.filter((cookie): cookie is string => typeof cookie === "string" && cookie.length > 0)
+    : [];
+  if (result.status === 401) return { kind: "no-session", setCookieHeaders };
+  if (result.status !== 200 || typeof result.authUserId !== "string" || !result.authUserId.trim()) {
+    throw new AuthRuntimeUnavailableError();
+  }
+
+  const authUserId = result.authUserId.trim();
+  return { kind: "authenticated", authUserId, setCookieHeaders };
+};
+
+const resolveBetterAuthContext = async (
+  env: Env,
+  session: Extract<BetterAuthResult, { kind: "authenticated" }>,
+): Promise<AuthContext | null> => {
+  let mapping;
+  try {
+    mapping = await resolveCurrentAuthIdentity(env.DB, session.authUserId);
+  } catch {
+    // Once Better Auth has authenticated a session, never switch that request
+    // to an Access identity because application identity resolution failed.
+    throw new AuthRuntimeUnavailableError();
+  }
+  if (!mapping) return null;
+  return {
+    userId: mapping.linksimUserId,
+    authUserId: session.authUserId,
+    source: "better-auth",
+    setCookieHeaders: session.setCookieHeaders,
+    tokenPayload: {
+      [BETTER_AUTH_MAPPED_IDENTITY_CLAIM]: true,
+    },
+  };
+};
+
+const resolveTransitionAccessContext = async (
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier,
+): Promise<AuthContext | null> => {
+  const access = await verifyAccessAuth(request, env, verifier);
+  if (!access || (access.source !== "jwt" && access.source !== "headers")) return access;
+  const rawEmail = access.verifiedIdpEmail ?? "";
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return access;
+  try {
+    const mapped = await resolveMappedAuthIdentityByVerifiedEmail(env.DB, email);
+    if (!mapped) return access;
+    return {
+      ...access,
+      userId: mapped.linksimUserId,
+      verifiedIdpEmail: email,
+      tokenPayload: {
+        ...access.tokenPayload,
+        [BETTER_AUTH_MAPPED_IDENTITY_CLAIM]: true,
+      },
+    };
+  } catch {
+    throw new AuthRuntimeUnavailableError();
+  }
+};
+
+const verifyConfiguredAuth = async (
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier,
+  data?: AuthRequestData,
+): Promise<AuthContext | null> => {
+  const source = env.AUTH_SESSION_SOURCE ?? "access";
+  if (source === "access") return verifyAccessAuth(request, env, verifier);
+
+  let betterAuth: BetterAuthResult;
+  try {
+    betterAuth = await checkBetterAuthSession(request, env);
+  } catch (error) {
+    if (source === "better-auth") throw error;
+    emitAuthLog(env, { result: "fallback", source: "better-auth", reason: "runtime_unavailable" });
+    return resolveTransitionAccessContext(request, env, verifier);
+  }
+
+  if (betterAuth.kind === "authenticated") {
+    const context = await resolveBetterAuthContext(env, betterAuth);
+    authResponseCookieCache.set(request, betterAuth.setCookieHeaders);
+    if (data) data.authResponseCookies = betterAuth.setCookieHeaders;
+    emitAuthLog(env, {
+      result: context ? "ok" : "fail",
+      source: "better-auth",
+      reason: context ? undefined : "identity_mapping_invalid",
+    });
+    return context;
+  }
+  authResponseCookieCache.set(request, betterAuth.setCookieHeaders);
+  if (data) data.authResponseCookies = betterAuth.setCookieHeaders;
+  if (source === "better-auth") return null;
+
+  return resolveTransitionAccessContext(request, env, verifier);
+};
+
+export const authResponseCookies = (request: Request, data?: AuthRequestData): string[] =>
+  data?.authResponseCookies ?? authResponseCookieCache.get(request) ?? [];
+
+export const verifyAuth = (
+  request: Request,
+  env: Env,
+  data?: AuthRequestData,
+  verifier: AccessTokenVerifier = verifyAccessToken,
+): Promise<AuthContext | null> => {
+  if (data?.authPromise) return data.authPromise;
+  let pending = authRequestCache.get(request);
+  if (!pending) {
+    pending = verifyConfiguredAuth(request, env, verifier, data);
+    authRequestCache.set(request, pending);
+  }
+  if (data) data.authPromise = pending;
+  return pending;
 };

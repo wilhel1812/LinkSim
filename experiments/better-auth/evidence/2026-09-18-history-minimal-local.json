@@ -1,0 +1,527 @@
+{
+  "source": "synthetic local gateway + Durable Object + D1 + R2; elapsed time is not CPU",
+  "schema": "minimal fixture",
+  "requests": 26,
+  "results": [
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "elapsedMs": 74,
+      "objectElapsedMs": 56,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 11981,
+        "bytesAfter": 229,
+        "archiveBytes": 13124
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 20,
+      "objectElapsedMs": 9,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 11981
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "elapsedMs": 7,
+      "objectElapsedMs": 5,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "elapsedMs": 11,
+      "objectElapsedMs": 4,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 11981,
+        "bytesAfter": 229,
+        "archiveBytes": 13124
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 11,
+      "objectElapsedMs": 7,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 11981
+      }
+    },
+    {
+      "scenario": "small",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "elapsedMs": 35,
+      "objectElapsedMs": 25,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "elapsedMs": 26,
+      "objectElapsedMs": 21,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 196301,
+        "bytesAfter": 229,
+        "archiveBytes": 204308
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 45,
+      "objectElapsedMs": 26,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196301
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "elapsedMs": 36,
+      "objectElapsedMs": 15,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "elapsedMs": 10,
+      "objectElapsedMs": 8,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 196301,
+        "bytesAfter": 229,
+        "archiveBytes": 204308
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 3,
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196301
+      }
+    },
+    {
+      "scenario": "large",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "elapsedMs": 6,
+      "objectElapsedMs": 4,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "elapsedMs": 21,
+      "objectElapsedMs": 18,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 786125,
+        "bytesAfter": 229,
+        "archiveBytes": 805832
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 5,
+      "objectElapsedMs": 4,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 786125
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "elapsedMs": 8,
+      "objectElapsedMs": 6,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "elapsedMs": 21,
+      "objectElapsedMs": 19,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 1,
+        "r2Gets": 1
+      },
+      "result": {
+        "scanned": 1,
+        "candidates": 1,
+        "converted": 1,
+        "conflicts": 0,
+        "nextId": 1,
+        "bytesBefore": 786125,
+        "bytesAfter": 229,
+        "archiveBytes": 805832
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 6,
+      "objectElapsedMs": 4,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 786125
+      }
+    },
+    {
+      "scenario": "max-record",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "elapsedMs": 9,
+      "objectElapsedMs": 7,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/archive?id=1",
+      "elapsedMs": 96,
+      "objectElapsedMs": 94,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 10,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 10,
+        "bytesBefore": 3142250,
+        "bytesAfter": 2290,
+        "archiveBytes": 3339321
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/archive?id=11",
+      "elapsedMs": 92,
+      "objectElapsedMs": 90,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 10,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 20,
+        "bytesBefore": 3142190,
+        "bytesAfter": 2320,
+        "archiveBytes": 3339270
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 5,
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 314225
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "repetitive",
+      "path": "/restore?id=1",
+      "elapsedMs": 6,
+      "objectElapsedMs": 5,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/archive?id=1",
+      "elapsedMs": 99,
+      "objectElapsedMs": 97,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 10,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 10,
+        "bytesBefore": 3142250,
+        "bytesAfter": 2290,
+        "archiveBytes": 3339321
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/archive?id=11",
+      "elapsedMs": 99,
+      "objectElapsedMs": 97,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 10,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 20,
+        "bytesBefore": 3142190,
+        "bytesAfter": 2320,
+        "archiveBytes": 3339270
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/hydrate?id=1",
+      "elapsedMs": 4,
+      "objectElapsedMs": 2,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 314225
+      }
+    },
+    {
+      "scenario": "max-batch",
+      "entropy": "varied",
+      "path": "/restore?id=1",
+      "elapsedMs": 6,
+      "objectElapsedMs": 4,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 1,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    }
+  ]
+}

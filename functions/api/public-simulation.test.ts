@@ -44,12 +44,12 @@ describe("api/public-simulation", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "guest" });
+    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "guest", authSource: null });
     expect(fetchPublicSimulationBundleMock).not.toHaveBeenCalled();
   });
 
   it("reports authenticated and revoked auth-status states", async () => {
-    verifyAuthMock.mockResolvedValue({ userId: "user-42", tokenPayload: {} });
+    verifyAuthMock.mockResolvedValue({ userId: "user-42", tokenPayload: {}, source: "jwt" });
     fetchUserProfileMock
       .mockResolvedValueOnce({ id: "user-42", accountState: "approved" })
       .mockResolvedValueOnce({ id: "user-42", accountState: "revoked" });
@@ -64,10 +64,12 @@ describe("api/public-simulation", () => {
     await expect(authenticated.json()).resolves.toEqual({
       authenticated: true,
       authState: "authenticated",
+      authSource: "access",
     });
     await expect(revoked.json()).resolves.toEqual({
       authenticated: false,
       authState: "revoked",
+      authSource: "access",
     });
     expect(fetchPublicSimulationBundleMock).not.toHaveBeenCalled();
   });
@@ -76,7 +78,7 @@ describe("api/public-simulation", () => {
     "Identity subject is no longer current",
     "Identity is blocked by an administrator",
   ])("reports lifecycle rejection as revoked in auth-status mode: %s", async (message) => {
-    verifyAuthMock.mockResolvedValueOnce({ userId: "user-42", tokenPayload: {} });
+    verifyAuthMock.mockResolvedValueOnce({ userId: "user-42", tokenPayload: {}, source: "jwt" });
     ensureUserMock.mockRejectedValueOnce(new Error(message));
 
     const res = await onRequestGet(
@@ -84,7 +86,7 @@ describe("api/public-simulation", () => {
     );
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "revoked" });
+    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "revoked", authSource: "access" });
   });
 
   it("surfaces auth verification failures in auth-status mode", async () => {

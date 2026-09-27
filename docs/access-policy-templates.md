@@ -28,12 +28,17 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 
 ### Access boundary
 - Keep the app shell route publicly reachable so deep links can load without Access challenge.
-- Keep authenticated APIs protected with Access (`/api/me`, `/api/library`, `/api/users*`, admin/mod endpoints).
+- In production, keep authenticated APIs protected with Access until cutover.
+  In stable staging, bypass `/api/*` so LinkSim's Better Auth guard is
+  authoritative and protect only `/api/auth/legacy-access/*` with Access.
 - Keep `/api/public-simulation` reachable without Access challenge.
 
 ### App authorization model
-- First successful Access login creates the LinkSim user profile.
-- Treat Access as identity proof for signed-in users.
+- On stable staging, first successful Better Auth GitHub login claims one
+  eligible legacy identity or creates a LinkSim user profile.
+- Treat Better Auth as the stable-staging identity proof; Access remains the
+  production identity proof until cutover and the legacy migration proof on its
+  reserved staging path.
 - Treat LinkSim visibility/role checks as the data authorization source.
 - Anonymous deep-link users must only load the shared/public Simulation bundle resolved by deep link.
 - Guest mode must not expose library browsing/discovery of unrelated objects.

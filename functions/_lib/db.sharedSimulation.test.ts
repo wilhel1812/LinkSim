@@ -1,3 +1,4 @@
+import { decodeHistoryDetails } from "./historyDetails";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteSiteResource,
@@ -314,8 +315,9 @@ class FakeDb {
 
   all(sql: string, bound: unknown[] = []): AnyRow[] {
     if (sql.includes("SELECT live.id") && sql.includes("current_role")) {
-      const userId = String(bound[0] ?? "");
-      const kind = String(bound[2] ?? "") as "site" | "simulation";
+      const offset = sql.includes("audience_resources AS") ? 1 : 0;
+      const userId = String(bound[offset + 1] ?? "");
+      const kind = String(bound[offset] ?? "") as "site" | "simulation";
       const rows = kind === "site" ? this.sites : this.simulations;
       const roles = kind === "site" ? this.siteRoles : this.simulationRoles;
       return [...rows.values()]
@@ -352,7 +354,7 @@ class FakeDb {
       const table = pragmaMatch[1] ?? "";
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
     }
-    if (sql.includes("FROM users ORDER BY created_at DESC")) return this.users;
+    if (sql.includes("FROM users") && sql.includes("ORDER BY created_at DESC")) return this.users;
     if (sql.includes("CASE WHEN email_public = 1") && sql.includes("FROM users")) {
       return this.users.map((row) => ({
         id: row.id,
@@ -454,9 +456,9 @@ class FakeDb {
         })
         .map((change) => ({ id: change.resource_id }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM simulations s")) {
+    if (sql.includes("SELECT s.payload_json") && /\b(?:FROM|JOIN) simulations s/.test(sql)) {
       const userId = String(bound[2] ?? "");
-      const isAdmin = Number(bound[1] ?? 0) === 1;
+      const isAdmin = !sql.includes("visible_resources");
       return [...this.simulations.values()]
         .filter((row) => (isAdmin || row.status === "active") && (isAdmin || row.owner_user_id === userId || row.visibility !== "private"))
         .map((row) => ({
@@ -481,9 +483,9 @@ class FakeDb {
           last_actor_avatar_thumb_key: row.last_actor_avatar_thumb_key ?? null,
         }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) {
+    if (sql.includes("SELECT s.payload_json") && /\b(?:FROM|JOIN) sites s/.test(sql)) {
       const userId = String(bound[2] ?? "");
-      const isAdmin = Number(bound[1] ?? 0) === 1;
+      const isAdmin = !sql.includes("visible_resources");
       return [...this.sites.values()]
         .filter((row) => isAdmin || row.owner_user_id === userId || row.visibility !== "private")
         .map((row) => ({
@@ -759,6 +761,44 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it.each([undefined, "gzip-v1"])("preserves save, history privacy and revert with compression %s", async (compression) => {
+    const db = new FakeDb();
+    const env = { DB: db, HISTORY_DETAILS_COMPRESSION: compression } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    const actor = { id: "owner-1", isAdmin: false, isModerator: false };
+    const before = {
+      id: "sim-compact",
+      name: "Compact",
+      visibility: "private" as const,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        sites: Array.from({ length: 40 }, (_, id) => ({
+          id: `site-${id}`,
+          name: "Synthetic site",
+          position: { lat: 60, lon: 10 },
+          groundElevationM: 100,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        })),
+        links: [],
+      },
+    };
+    await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [before] });
+    const after = { ...before, name: "Compact renamed", snapshot: { sites: [], links: [] } };
+    await upsertLibrarySnapshot(env, actor, { siteLibrary: [], simulationPresets: [after] });
+    const change = db.resourceChanges.at(-1)!;
+    const stored = String(change.details_json);
+    expect(stored.includes("__linksimHistoryV1")).toBe(compression === "gzip-v1");
+    expect(JSON.parse(await decodeHistoryDetails(stored)).diff.snapshot).toEqual({ before: before.snapshot, after: after.snapshot });
+    const history = await fetchResourceChanges(env, "simulation", before.id, actor);
+    expect(JSON.stringify(history)).not.toContain("__linksimHistoryV1");
+    expect(JSON.stringify(history)).not.toContain("position");
+    expect(await revertResourceFromChangeCopy(env, "simulation", before.id, Number(db.resourceChanges[0].id), actor)).toEqual({ ok: true });
+    expect(JSON.parse(String(db.simulations.get(before.id)?.payload_json)).snapshot).toEqual(before.snapshot);
+  });
+
   it("falls back to updated_at for legacy Sites without created_at metadata", async () => {
     const db = new FakeDb();
     db.sites.set("site-legacy-date", {
@@ -1512,6 +1552,14 @@ describe("resource change authorization", () => {
           { userId: "viewer-1", role: "viewer" },
           { userId: "editor-1", role: "editor" },
         ],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        position: { lat: 60, lon: 10 },
+        groundElevationM: 100,
+        antennaHeightM: 10,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
       }),
     });
     db.siteRoles.set("site-1:viewer-1", "viewer");
@@ -1528,6 +1576,8 @@ describe("resource change authorization", () => {
         name: "Private Simulation",
         visibility: "private",
         sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        snapshot: { sites: [], links: [], systems: [], networks: [] },
       }),
     });
     db.simulationRoles.set("sim-1:viewer-1", "viewer");
@@ -1578,6 +1628,13 @@ describe("resource change authorization", () => {
             { userId: "editor-1", role: "editor" },
           ],
           position: { lat: 60, lon: 10 },
+          createdAt: "2026-01-01T00:00:00.000Z",
+          groundElevationM: 100,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
         }),
       },
       {
@@ -1594,6 +1651,8 @@ describe("resource change authorization", () => {
           name: "Private Simulation",
           visibility: "private",
           sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: { sites: [], links: [], systems: [], networks: [] },
         }),
       },
     );
@@ -1701,6 +1760,44 @@ describe("resource change authorization", () => {
     await expect(revertResourceFromChangeCopy(env, "site", "site-1", 1, actor("editor-1")))
       .resolves.toEqual({ ok: true });
     expect(db.resourceChanges.at(-1)?.note).toBe("Revert copy from change #1");
+  });
+
+  it.each([
+    ["site", "site-1", 1],
+    ["simulation", "sim-1", 2],
+  ] as const)("fails a %s revert closed when history only contains metadata", async (kind, resourceId, changeId) => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof revertResourceFromChangeCopy>[0];
+    const rows = kind === "site" ? db.sites : db.simulations;
+    const change = db.resourceChanges.find((candidate) => candidate.id === changeId);
+    change!.snapshot_json = JSON.stringify({
+      id: resourceId,
+      name: kind === "site" ? "Private Site" : "Private Simulation",
+      visibility: "private",
+      sharedWith: [],
+    });
+    const beforePayload = rows.get(resourceId)?.payload_json;
+    const beforeHistory = structuredClone(db.resourceChanges);
+
+    await expect(revertResourceFromChangeCopy(env, kind, resourceId, changeId, actor("owner-1")))
+      .resolves.toEqual({ ok: false, reason: "snapshot_incomplete" });
+
+    expect(rows.get(resourceId)?.payload_json).toBe(beforePayload);
+    expect(db.resourceChanges).toEqual(beforeHistory);
+  });
+
+  it("fails a non-object history snapshot closed without writing", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof revertResourceFromChangeCopy>[0];
+    db.resourceChanges[1]!.snapshot_json = "null";
+    const beforeResource = structuredClone(db.simulations.get("sim-1"));
+    const beforeHistory = structuredClone(db.resourceChanges);
+
+    await expect(revertResourceFromChangeCopy(env, "simulation", "sim-1", 2, actor("owner-1")))
+      .resolves.toEqual({ ok: false, reason: "snapshot_invalid" });
+
+    expect(db.simulations.get("sim-1")).toEqual(beforeResource);
+    expect(db.resourceChanges).toEqual(beforeHistory);
   });
 
   it("does not disclose whether a missing resource has historical rows", async () => {

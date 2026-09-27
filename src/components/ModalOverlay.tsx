@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type ModalOverlayProps = {
@@ -35,24 +35,27 @@ export function ModalOverlay({ children, onClose, tier = "base", className, susp
     return base + layer;
   }, [layer, tier]);
 
+  const focusableElements = useCallback(() =>
+    Array.from(modalRef.current?.querySelectorAll<HTMLElement>([
+      "button:not([disabled])",
+      "[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "iframe:not([tabindex='-1'])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",")) ?? []).filter(
+      (element) => !element.hasAttribute("hidden")
+        && element.getAttribute("aria-hidden") !== "true"
+        && !element.hasAttribute("data-modal-focus-sentinel"),
+    ), []);
+
   useEffect(() => {
     if (suspended) return;
     openModalCount += 1;
     openModalStack.push(modalId);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const focusableSelector = [
-      "button:not([disabled])",
-      "[href]",
-      "input:not([disabled])",
-      "select:not([disabled])",
-      "textarea:not([disabled])",
-      "[tabindex]:not([tabindex='-1'])",
-    ].join(",");
-    const focusableElements = () =>
-      Array.from(modalRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []).filter(
-        (element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true",
-      );
     (focusableElements()[0] ?? modalRef.current)?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       const top = openModalStack[openModalStack.length - 1];
@@ -92,7 +95,7 @@ export function ModalOverlay({ children, onClose, tier = "base", className, susp
       }
       if (!suspendedRef.current) previousFocusRef.current?.focus();
     };
-  }, [modalId, suspended]);
+  }, [focusableElements, modalId, suspended]);
 
   return createPortal(
     <div
@@ -113,7 +116,22 @@ export function ModalOverlay({ children, onClose, tier = "base", className, susp
       tabIndex={-1}
       {...rest}
     >
+      <span
+        aria-hidden="true"
+        data-modal-focus-sentinel="start"
+        onFocus={() => {
+          const focusable = focusableElements();
+          (focusable[focusable.length - 1] ?? modalRef.current)?.focus();
+        }}
+        tabIndex={suspended ? -1 : 0}
+      />
       {children}
+      <span
+        aria-hidden="true"
+        data-modal-focus-sentinel="end"
+        onFocus={() => (focusableElements()[0] ?? modalRef.current)?.focus()}
+        tabIndex={suspended ? -1 : 0}
+      />
     </div>,
     document.body,
   );

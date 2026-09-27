@@ -1,0 +1,672 @@
+{
+  "baselineCommit": "bb981074a108cf07ed3093ae1fd167a948ebe48e",
+  "baselineWorkerVersion": "d41e8815-50ce-4350-be09-7297f4ee63bc",
+  "versions": {
+    "betterAuth": "1.7.3",
+    "simpleWebAuthn": "13.3.3",
+    "workerd": "1.20260804.1"
+  },
+  "method": {
+    "runtime": "local workerd through installed Miniflare; synthetic local D1 only",
+    "warmupPerPhase": 10,
+    "requestsPerPhase": 100,
+    "profilerSamplingIntervalMicroseconds": 100,
+    "oauth": "mocked GitHub and Turnstile responses; initiation plus callback in one local invocation",
+    "passkey": "upstream v13.3.3 verifyAuthenticationResponse fixture; verifier only, excludes Better Auth session/challenge/database handling",
+    "instrumentationControl": "session-instrumented used the unchanged baseline configuration in every recorded run; console logging disabled",
+    "limitations": [
+      "Sampled non-idle profile duration is not Cloudflare production CPU billing.",
+      "Single process per run with repeated auth-instance construction; initialize is not isolate cold-start measurement.",
+      "Different runs and phase order include JIT, garbage collection, profiler and local D1 effects; no statistical speedup claim.",
+      "No real OAuth credentials, cookies, passkey private keys or production data captured."
+    ]
+  },
+  "runs": {
+    "workerd": [
+      {
+        "mode": "initialize",
+        "count": 100,
+        "sampledActiveMs": 300.242,
+        "sampledIdleMs": 90.525,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 90.525
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 29.005
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 23.316
+          },
+          {
+            "frame": "(anonymous):437",
+            "sampledMs": 19.106
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 13.672
+          },
+          {
+            "frame": "$constructor.~standard:3770",
+            "sampledMs": 12.981
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 10.795
+          },
+          {
+            "frame": "createConfiguredEndpoint:49492",
+            "sampledMs": 10.399
+          }
+        ]
+      },
+      {
+        "mode": "session-api",
+        "count": 100,
+        "sampledActiveMs": 246.378,
+        "sampledIdleMs": 34.6,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 34.6
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 34.156
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 31.978
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 7.985
+          },
+          {
+            "frame": "forEach:0",
+            "sampledMs": 6.37
+          },
+          {
+            "frame": "filterOutputFields:48623",
+            "sampledMs": 6.351
+          },
+          {
+            "frame": "getCryptoKey2:48974",
+            "sampledMs": 6.261
+          },
+          {
+            "frame": "transformSingleOutput:21759",
+            "sampledMs": 5.776
+          }
+        ]
+      },
+      {
+        "mode": "session-http",
+        "count": 100,
+        "sampledActiveMs": 403.548,
+        "sampledIdleMs": 44.954,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 44.954
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 39.191
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 31.151
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 15.348
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 15.273
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 11.894
+          },
+          {
+            "frame": "signInSocial:60059",
+            "sampledMs": 9.241
+          },
+          {
+            "frame": "transformSingleOutput:21759",
+            "sampledMs": 9.152
+          }
+        ]
+      },
+      {
+        "mode": "session-instrumented",
+        "count": 100,
+        "sampledActiveMs": 389.392,
+        "sampledIdleMs": 58.731,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 58.731
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 33.206
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 28.317
+          },
+          {
+            "frame": "(garbage collector):0",
+            "sampledMs": 14.838
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 14.169
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 10.866
+          },
+          {
+            "frame": "getEnvVar:47",
+            "sampledMs": 9.579
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 9.198
+          }
+        ]
+      },
+      {
+        "mode": "oauth",
+        "count": 100,
+        "sampledActiveMs": 1035.499,
+        "sampledIdleMs": 69.944,
+        "hotspots": [
+          {
+            "frame": "(program):0",
+            "sampledMs": 86.378
+          },
+          {
+            "frame": "(idle):0",
+            "sampledMs": 69.944
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 48.243
+          },
+          {
+            "frame": "getEnvVar:47",
+            "sampledMs": 39.747
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 35.28
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 27.251
+          },
+          {
+            "frame": "fetch:81743",
+            "sampledMs": 23.689
+          },
+          {
+            "frame": "URL:0",
+            "sampledMs": 22.374
+          }
+        ]
+      }
+    ],
+    "baseline": [
+      {
+        "mode": "initialize",
+        "count": 100,
+        "sampledActiveMs": 327.737,
+        "sampledIdleMs": 87.634,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 87.634
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 24.196
+          },
+          {
+            "frame": "init2:3431",
+            "sampledMs": 23.683
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 22.439
+          },
+          {
+            "frame": "(anonymous):437",
+            "sampledMs": 17.202
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 13.472
+          },
+          {
+            "frame": "_:3470",
+            "sampledMs": 11.379
+          },
+          {
+            "frame": "createConfiguredEndpoint:66666",
+            "sampledMs": 10.891
+          }
+        ]
+      },
+      {
+        "mode": "session-api",
+        "count": 100,
+        "sampledActiveMs": 260.498,
+        "sampledIdleMs": 42.524,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 42.524
+          },
+          {
+            "frame": "createInternalContext:66379",
+            "sampledMs": 41.704
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 33.268
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 6.933
+          },
+          {
+            "frame": "filterOutputFields:65797",
+            "sampledMs": 6.552
+          },
+          {
+            "frame": "(anonymous):78548",
+            "sampledMs": 6.545
+          },
+          {
+            "frame": "parseCookies2:66263",
+            "sampledMs": 6.08
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 5.416
+          }
+        ]
+      },
+      {
+        "mode": "session-http",
+        "count": 100,
+        "sampledActiveMs": 475.024,
+        "sampledIdleMs": 63.796,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 63.796
+          },
+          {
+            "frame": "safeStringify:66479",
+            "sampledMs": 42.587
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 40.07
+          },
+          {
+            "frame": "handler:80236",
+            "sampledMs": 24.782
+          },
+          {
+            "frame": "init2:3431",
+            "sampledMs": 18.588
+          },
+          {
+            "frame": "fetch:81765",
+            "sampledMs": 17.482
+          },
+          {
+            "frame": "createInternalContext:66379",
+            "sampledMs": 14.336
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 12.639
+          }
+        ]
+      },
+      {
+        "mode": "session-instrumented",
+        "count": 100,
+        "sampledActiveMs": 406.632,
+        "sampledIdleMs": 53.828,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 53.828
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 31.226
+          },
+          {
+            "frame": "handler:80236",
+            "sampledMs": 28.764
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 18.879
+          },
+          {
+            "frame": "createInternalContext:66379",
+            "sampledMs": 14.151
+          },
+          {
+            "frame": "fetch:81765",
+            "sampledMs": 11.85
+          },
+          {
+            "frame": "(garbage collector):0",
+            "sampledMs": 11.706
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 11.68
+          }
+        ]
+      },
+      {
+        "mode": "oauth",
+        "count": 100,
+        "sampledActiveMs": 990.39,
+        "sampledIdleMs": 66.735,
+        "hotspots": [
+          {
+            "frame": "(program):0",
+            "sampledMs": 99.403
+          },
+          {
+            "frame": "(idle):0",
+            "sampledMs": 66.735
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 47.904
+          },
+          {
+            "frame": "handler:80236",
+            "sampledMs": 44.959
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 34.307
+          },
+          {
+            "frame": "getEnvVar:1496",
+            "sampledMs": 32.428
+          },
+          {
+            "frame": "createInternalContext:66379",
+            "sampledMs": 17.676
+          },
+          {
+            "frame": "URL:0",
+            "sampledMs": 17.066
+          }
+        ]
+      },
+      {
+        "mode": "passkey-verification",
+        "count": 100,
+        "sampledActiveMs": 109.304,
+        "sampledIdleMs": 67.847,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 67.847
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 14.469
+          },
+          {
+            "frame": "verify:0",
+            "sampledMs": 8.473
+          },
+          {
+            "frame": "base64.toArrayBuffer:44554",
+            "sampledMs": 6.906
+          },
+          {
+            "frame": "importKey:0",
+            "sampledMs": 5.681
+          },
+          {
+            "frame": "decodeClientDataJSON:45439",
+            "sampledMs": 5.544
+          },
+          {
+            "frame": "localFromBER:46281",
+            "sampledMs": 5.305
+          },
+          {
+            "frame": "verifyAuthenticationResponse:61556",
+            "sampledMs": 4.524
+          }
+        ]
+      }
+    ],
+    "joins": [
+      {
+        "mode": "initialize",
+        "count": 100,
+        "sampledActiveMs": 276.824,
+        "sampledIdleMs": 85.242,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 85.242
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 22.155
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 20.877
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 15.299
+          },
+          {
+            "frame": "(anonymous):437",
+            "sampledMs": 12.882
+          },
+          {
+            "frame": "toAuthEndpoints:61456",
+            "sampledMs": 10.956
+          },
+          {
+            "frame": "(garbage collector):0",
+            "sampledMs": 8.328
+          },
+          {
+            "frame": "string:2573",
+            "sampledMs": 7.306
+          }
+        ]
+      },
+      {
+        "mode": "session-api",
+        "count": 100,
+        "sampledActiveMs": 170.961,
+        "sampledIdleMs": 39.171,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 39.171
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 32.156
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 30.376
+          },
+          {
+            "frame": "filterOutputFields:48623",
+            "sampledMs": 5.96
+          },
+          {
+            "frame": "parseCookies2:49089",
+            "sampledMs": 5.225
+          },
+          {
+            "frame": "verify:0",
+            "sampledMs": 4.997
+          },
+          {
+            "frame": "getCryptoKey2:48974",
+            "sampledMs": 3.607
+          },
+          {
+            "frame": "processJoinedResults:42777",
+            "sampledMs": 3.545
+          }
+        ]
+      },
+      {
+        "mode": "session-http",
+        "count": 100,
+        "sampledActiveMs": 313.411,
+        "sampledIdleMs": 35.883,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 35.883
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 18.854
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 18.439
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 13.767
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 13.762
+          },
+          {
+            "frame": "meta:18669",
+            "sampledMs": 9.094
+          },
+          {
+            "frame": "getEndpoints:61541",
+            "sampledMs": 7.039
+          },
+          {
+            "frame": "fetch:81743",
+            "sampledMs": 7.012
+          }
+        ]
+      },
+      {
+        "mode": "session-instrumented",
+        "count": 100,
+        "sampledActiveMs": 341.992,
+        "sampledIdleMs": 44.691,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 44.691
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 20.763
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 17.874
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 16.676
+          },
+          {
+            "frame": "(garbage collector):0",
+            "sampledMs": 14.106
+          },
+          {
+            "frame": "createInternalContext:49205",
+            "sampledMs": 12.325
+          },
+          {
+            "frame": "run:0",
+            "sampledMs": 8.828
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 8.467
+          }
+        ]
+      },
+      {
+        "mode": "oauth",
+        "count": 100,
+        "sampledActiveMs": 817.175,
+        "sampledIdleMs": 81.808,
+        "hotspots": [
+          {
+            "frame": "(idle):0",
+            "sampledMs": 81.808
+          },
+          {
+            "frame": "(program):0",
+            "sampledMs": 57.601
+          },
+          {
+            "frame": "fetch:0",
+            "sampledMs": 36.676
+          },
+          {
+            "frame": "handler:63062",
+            "sampledMs": 28.011
+          },
+          {
+            "frame": "getEnvVar:47",
+            "sampledMs": 24.774
+          },
+          {
+            "frame": "toJson:455",
+            "sampledMs": 24.309
+          },
+          {
+            "frame": "init2:1982",
+            "sampledMs": 23.334
+          },
+          {
+            "frame": "(garbage collector):0",
+            "sampledMs": 17.043
+          }
+        ]
+      }
+    ]
+  }
+}

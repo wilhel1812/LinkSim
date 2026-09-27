@@ -12,7 +12,9 @@ import { validateCurrentStagingVersionState } from "./version-state.mjs";
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
 const wranglerProd = path.join(root, "wrangler.toml");
+const wranglerProductionAuth = path.join(root, "wrangler.production-auth.toml");
 const wranglerStaging = path.join(root, "wrangler.staging.toml");
+const wranglerStagingPreview = path.join(root, "wrangler.staging-preview.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
 const distDir = path.join(root, "dist");
 const releaseManifestPath = path.join(distDir, "release.json");
@@ -20,9 +22,10 @@ const ENV_FILES_FOR_VITE = [".env", ".env.local", ".env.production", ".env.produ
 const LINK_PROFILE_CHART_PATH = path.join(root, "src", "components", "LinkProfileChart.tsx");
 
 const REQUIRED_ENV_BY_TARGET = {
-  staging: ["VITE_MAPTILER_KEY"],
+  staging: ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"],
   "staging-preview": ["VITE_MAPTILER_KEY"],
   "prod-main": ["VITE_MAPTILER_KEY"],
+  "prod-auth-cutover": ["VITE_MAPTILER_KEY", "VITE_BETTER_AUTH_PILOT", "VITE_TURNSTILE_SITE_KEY"],
 };
 
 const TARGETS = {
@@ -36,18 +39,26 @@ const TARGETS = {
       name: "linksim-staging",
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
+      historyBucketName: "linksim-history-staging",
+      authRuntime: {
+        name: "AUTH",
+        className: "AuthRuntime",
+        scriptName: "linksim-auth-runtime-staging",
+      },
     },
   },
   "staging-preview": {
     projectName: "linksim-staging",
     branch: "CURRENT",
     requiredBranch: "",
-    configPath: wranglerStaging,
+    configPath: wranglerStagingPreview,
     environmentLabel: "staging-preview",
     expected: {
       name: "linksim-staging",
       databaseName: "linksim_staging",
       bucketName: "linksim-avatars-staging",
+      historyBucketName: "",
+      authRuntime: null,
     },
   },
   "prod-main": {
@@ -60,9 +71,33 @@ const TARGETS = {
       name: "linksim",
       databaseName: "linksim",
       bucketName: "linksim-avatars",
+      historyBucketName: "",
+      authRuntime: null,
+    },
+  },
+  "prod-auth-cutover": {
+    projectName: "linksim",
+    branch: "main",
+    requiredBranch: "main",
+    configPath: wranglerProductionAuth,
+    environmentLabel: "production-auth-cutover",
+    expected: {
+      name: "linksim",
+      databaseName: "linksim",
+      bucketName: "linksim-avatars",
+      historyBucketName: "",
+      authRuntime: {
+        name: "AUTH",
+        className: "AuthRuntime",
+        scriptName: "linksim-auth-runtime-production",
+      },
+      authSessionSource: "transition",
     },
   },
 };
+
+const isProductionTarget = (targetName) =>
+  targetName === "prod-main" || targetName === "prod-auth-cutover";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -114,6 +149,20 @@ const parseTomlValue = (content, key) => {
   const match = line.match(/=\s*"([^"]+)"/);
   return match ? match[1] : "";
 };
+
+const parseR2Bindings = (content) => content.split("[[r2_buckets]]").slice(1).map((section) => {
+  const body = section.split(/\n\s*\[/)[0];
+  return { binding: parseTomlValue(body, "binding"), bucketName: parseTomlValue(body, "bucket_name") };
+});
+
+const parseDurableObjectBindings = (content) => content.split("[[durable_objects.bindings]]").slice(1).map((section) => {
+  const body = section.split(/\n\s*\[/)[0];
+  return {
+    name: parseTomlValue(body, "name"),
+    className: parseTomlValue(body, "class_name"),
+    scriptName: parseTomlValue(body, "script_name"),
+  };
+});
 
 const parseDotEnv = (content) => {
   const parsed = {};
@@ -198,7 +247,7 @@ const parseWranglerJsonPayload = (stdout) => {
 };
 
 async function verifyRemoteSchema(targetName, databaseName) {
-  if (targetName !== "staging" && targetName !== "prod-main") return;
+  if (targetName !== "staging" && targetName !== "staging-preview" && !isProductionTarget(targetName)) return;
   // CI workflows apply and verify required migrations before invoking this deploy script.
   // Keep the local preflight for operators with D1 read access.
   if (process.env.GITHUB_ACTIONS === "true") return;
@@ -228,6 +277,12 @@ async function verifyRemoteSchema(targetName, databaseName) {
       ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
       { capture: true },
     );
+    await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_window WHERE resource_kind = 'site' AND changed_at >= '2000-01-01' LIMIT 0;"],
+      { capture: true },
+    );
+    await run(wrangler, ["d1", "execute", databaseName, "--remote", "--file", "db/probes/library-history-candidates.sql"], { capture: true });
     usersResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(users);"],
@@ -249,13 +304,15 @@ async function verifyRemoteSchema(targetName, databaseName) {
   const first = parsed[0];
   const rows = Array.isArray(first?.results) ? first.results : [];
   const columns = new Set(rows.map((row) => String(row?.name ?? "")).filter(Boolean));
-  const required = ["details_json", "snapshot_json"];
+  const required = targetName === "staging"
+    ? ["details_json", "snapshot_json", "archive_key", "archive_digest"]
+    : ["details_json", "snapshot_json"];
   const missing = required.filter((column) => !columns.has(column));
   assert(
     missing.length === 0,
     `Preflight failed: D1 schema missing columns in resource_changes: ${missing.join(
       ", ",
-    )}. Apply migration db/migrations/2026-03-15_changelog_details.sql before deploy.`,
+    )}. Apply the required resource_changes migrations before deploy.`,
   );
 
   const simulationsParsed = parseWranglerJsonPayload(simulationsResult.stdout);
@@ -312,20 +369,20 @@ async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
   const headTags =
-    targetName === "prod-main"
+    isProductionTarget(targetName)
       ? (await run("git", ["tag", "--points-at", "HEAD"], { capture: true })).stdout
           .split("\n")
           .map((line) => line.trim())
           .filter(Boolean)
       : [];
   const expectedReleaseTag =
-    targetName === "prod-main"
+    isProductionTarget(targetName)
       ? `v${JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version}`
       : "";
   const status = await run("git", ["status", "--porcelain"], { capture: true });
   assert(status.stdout.trim().length === 0, "Preflight failed: unexpected dirty files before deploy.");
   if (target.requiredBranch) {
-    const isTaggedProdCheckout = targetName === "prod-main" && headTags.includes(expectedReleaseTag);
+    const isTaggedProdCheckout = isProductionTarget(targetName) && headTags.includes(expectedReleaseTag);
     assert(
       branch === target.requiredBranch || isTaggedProdCheckout,
       `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}' or the tagged release commit.`,
@@ -347,20 +404,32 @@ async function preflight(targetName, target) {
 
   const name = parseTomlValue(configText, "name");
   const databaseName = parseTomlValue(configText, "database_name");
-  const bucketName = parseTomlValue(configText, "bucket_name");
+  const r2Bindings = parseR2Bindings(configText);
+  const durableObjectBindings = parseDurableObjectBindings(configText);
+  const expectedR2Bindings = [{ binding: "AVATAR_BUCKET", bucketName: target.expected.bucketName }];
+  if (target.expected.historyBucketName) {
+    expectedR2Bindings.push({ binding: "HISTORY_BUCKET", bucketName: target.expected.historyBucketName });
+  }
   assert(name === target.expected.name, `Preflight failed: config name '${name}' != '${target.expected.name}'.`);
   assert(
     databaseName === target.expected.databaseName,
     `Preflight failed: database_name '${databaseName}' != '${target.expected.databaseName}'.`,
   );
-  assert(
-    bucketName === target.expected.bucketName,
-    `Preflight failed: bucket_name '${bucketName}' != '${target.expected.bucketName}'.`,
-  );
+  assert(JSON.stringify(r2Bindings) === JSON.stringify(expectedR2Bindings),
+    `Preflight failed: unexpected R2 bindings for ${targetName}.`);
+  assert(parseTomlValue(configText, "HISTORY_SCOPE") === (targetName === "staging" ? "staging" : ""),
+    `Preflight failed: unexpected HISTORY_SCOPE for ${targetName}.`);
+  const expectedDurableObjectBindings = target.expected.authRuntime ? [target.expected.authRuntime] : [];
+  assert(JSON.stringify(durableObjectBindings) === JSON.stringify(expectedDurableObjectBindings),
+    `Preflight failed: unexpected Durable Object bindings for ${targetName}.`);
+  const expectedAuthSessionSource = target.expected.authSessionSource
+    ?? (targetName === "staging" ? "better-auth" : "");
+  assert(parseTomlValue(configText, "AUTH_SESSION_SOURCE") === expectedAuthSessionSource,
+    `Preflight failed: unexpected AUTH_SESSION_SOURCE for ${targetName}.`);
 
   await verifyRemoteSchema(targetName, databaseName);
 
-  if (targetName === "prod-main") {
+  if (isProductionTarget(targetName)) {
     await run("node", ["scripts/validate-prod-release.mjs"]);
   }
 
@@ -405,8 +474,8 @@ async function main() {
 
   if (process.argv.includes("--verify-commit-only")) {
     assert(
-      targetName === "prod-main",
-      "--verify-commit-only is only valid for the prod-main target.",
+      isProductionTarget(targetName),
+      "--verify-commit-only is only valid for a production target.",
     );
     const currentCommit = await getGitRef(["rev-parse", "--short", "HEAD"]);
     const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);

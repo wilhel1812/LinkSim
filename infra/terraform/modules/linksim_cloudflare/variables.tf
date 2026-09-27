@@ -42,6 +42,18 @@ variable "pages_env_vars_secret" {
   sensitive   = true
 }
 
+variable "pages_production_env_vars_plain" {
+  description = "Non-secret Pages vars present only on this project's production branch."
+  type        = map(string)
+  default     = {}
+}
+
+variable "pages_production_durable_object_namespaces" {
+  description = "Durable Object namespace IDs bound only to the Pages production branch, keyed by binding name."
+  type        = map(string)
+  default     = {}
+}
+
 variable "pages_access_audience_keys" {
   description = "Access application keys whose computed AUD values are published to Pages ACCESS_AUD."
   type        = set(string)
@@ -81,6 +93,12 @@ variable "r2_binding_name" {
   default     = "AVATAR_BUCKET"
 }
 
+variable "history_r2_bucket_name" {
+  description = "Optional private history bucket bound only to this project's production branch."
+  type        = string
+  default     = null
+}
+
 variable "r2_bucket_jurisdiction" {
   description = "R2 jurisdiction segment used by import ID."
   type        = string
@@ -105,7 +123,11 @@ variable "access_applications" {
   type = map(object({
     name   = string
     domain = string
-    type   = optional(string, "self_hosted")
+    destinations = optional(list(object({
+      type = optional(string, "public")
+      uri  = string
+    })))
+    type = optional(string, "self_hosted")
     policy_bindings = optional(list(object({
       id         = string
       precedence = number

@@ -13,9 +13,9 @@ const withoutInternalIdentity = <T extends Record<string, unknown>>(profile: T):
   return ordinaryProfile;
 };
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) {
       return withCors(request, json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS }));
     }
@@ -38,9 +38,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 };
 
-export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) {
       return withCors(request, json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS }));
     }

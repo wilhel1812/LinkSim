@@ -24,9 +24,9 @@ const extForType = (contentType: string): string => {
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     if (!env.AVATAR_BUCKET) {
       return withCors(request, json({ error: "Avatar storage bucket not configured." }, { status: 503 }));

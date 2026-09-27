@@ -18,10 +18,17 @@ export type CloudUser = {
   isApproved: boolean;
   role?: "admin" | "moderator" | "user" | "pending";
   accountState?: "pending" | "approved" | "revoked";
+  authMigrationState?: "migrated" | "not_migrated";
   approvedAt?: string | null;
   approvedByUserId?: string | null;
   createdAt: string;
   updatedAt: string | null;
+};
+
+export type CloudUserDirectory = {
+  users: CloudUser[];
+  authMigrationAvailable: boolean;
+  authMigrationProgress: { migrated: number; total: number } | null;
 };
 
 export type ResourceChange = {
@@ -129,6 +136,7 @@ export type DeepLinkAuthState = "guest" | "authenticated" | "revoked";
 export type AuthStatusResult = {
   authenticated: boolean;
   authState: DeepLinkAuthState;
+  authSource: "access" | "better-auth" | "dev" | null;
 };
 export type DeepLinkStatusResult = {
   status: DeepLinkStatus;
@@ -140,6 +148,7 @@ export type DeepLinkStatusResult = {
 const normalizeAuthStatus = (data: {
   authenticated?: unknown;
   authState?: unknown;
+  authSource?: unknown;
 }): AuthStatusResult => {
   const authState: DeepLinkAuthState =
     data.authState === "authenticated" || data.authState === "revoked" || data.authState === "guest"
@@ -150,6 +159,10 @@ const normalizeAuthStatus = (data: {
   return {
     authenticated: data.authenticated === true,
     authState,
+    authSource:
+      data.authSource === "access" || data.authSource === "better-auth" || data.authSource === "dev"
+        ? data.authSource
+        : null,
   };
 };
 
@@ -360,8 +373,31 @@ export const updateMyProfile = (patch: CloudUserProfilePatch): Promise<CloudUser
 };
 
 export const fetchUsers = async (): Promise<CloudUser[]> => {
-  const data = await apiCall<{ users: CloudUser[] }>("/api/users", { method: "GET" });
-  return Array.isArray(data.users) ? data.users : [];
+  const data = await fetchUserDirectory();
+  return data.users;
+};
+
+export const fetchUserDirectory = async (): Promise<CloudUserDirectory> => {
+  const data = await apiCall<{
+    users: CloudUser[];
+    authMigrationAggregateAvailable?: boolean;
+    authMigrationProgress?: { migrated?: unknown; total?: unknown };
+  }>("/api/users", { method: "GET" });
+  const migrated = data.authMigrationProgress?.migrated;
+  const total = data.authMigrationProgress?.total;
+  const authMigrationProgress = typeof migrated === "number"
+    && Number.isFinite(migrated)
+    && migrated >= 0
+    && typeof total === "number"
+    && Number.isFinite(total)
+    && total >= migrated
+    ? { migrated, total }
+    : null;
+  return {
+    users: Array.isArray(data.users) ? data.users : [],
+    authMigrationAvailable: data.authMigrationAggregateAvailable === true && authMigrationProgress !== null,
+    authMigrationProgress,
+  };
 };
 
 export const fetchCollaboratorDirectory = async (): Promise<CollaboratorDirectoryUser[]> => {
@@ -523,7 +559,8 @@ export const fetchAuthStatus = async (): Promise<AuthStatusResult> => {
   const data = await apiCall<{
     authenticated?: unknown;
     authState?: unknown;
-  }>("/api/public-simulation?mode=auth", { method: "GET" });
+    authSource?: unknown;
+  }>("/api/public-simulation?mode=auth", { method: "GET", cache: "no-store" });
   return normalizeAuthStatus(data);
 };
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-map-gl/maplibre";
-import type { StyleSpecification } from "maplibre-gl";
+import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import {
   captureBasemapPaintSnapshot,
   resolveBasemapPaintUpdates,
@@ -12,6 +12,20 @@ type BasemapThemeTintProps = {
   colorTheme: UiColorTheme;
   enabled: boolean;
   theme: UiThemeMode;
+};
+
+type PaintPropertyName = Parameters<MapLibreMap["setPaintProperty"]>[1];
+type PaintPropertyValue = Parameters<MapLibreMap["setPaintProperty"]>[2];
+
+const setBasemapPaintProperty = (
+  map: MapLibreMap,
+  update: BasemapPaintSnapshotEntry,
+): void => {
+  map.setPaintProperty(
+    update.layerId,
+    update.property as PaintPropertyName,
+    update.value as PaintPropertyValue,
+  );
 };
 
 export function BasemapThemeTint({ colorTheme, enabled, theme }: BasemapThemeTintProps) {
@@ -29,7 +43,7 @@ export function BasemapThemeTint({ colorTheme, enabled, theme }: BasemapThemeTin
     const apply = () => {
       const settings = settingsRef.current;
       for (const update of resolveBasemapPaintUpdates(snapshotRef.current, settings.enabled, settings.colorTheme, settings.theme)) {
-        if (map.getLayer(update.layerId)) map.setPaintProperty(update.layerId, update.property, update.value);
+        if (map.getLayer(update.layerId)) setBasemapPaintProperty(map, update);
       }
     };
     const captureAndApply = () => {
@@ -42,7 +56,7 @@ export function BasemapThemeTint({ colorTheme, enabled, theme }: BasemapThemeTin
     return () => {
       map.off("style.load", captureAndApply);
       for (const update of resolveBasemapPaintUpdates(snapshotRef.current, false, settingsRef.current.colorTheme, settingsRef.current.theme)) {
-        if (map.getLayer(update.layerId)) map.setPaintProperty(update.layerId, update.property, update.value);
+        if (map.getLayer(update.layerId)) setBasemapPaintProperty(map, update);
       }
       snapshotRef.current = [];
     };
@@ -51,7 +65,7 @@ export function BasemapThemeTint({ colorTheme, enabled, theme }: BasemapThemeTin
   useEffect(() => {
     if (!map || snapshotRef.current.length === 0) return;
     for (const update of resolveBasemapPaintUpdates(snapshotRef.current, enabled, colorTheme, theme)) {
-      if (map.getLayer(update.layerId)) map.setPaintProperty(update.layerId, update.property, update.value);
+      if (map.getLayer(update.layerId)) setBasemapPaintProperty(map, update);
     }
   }, [colorTheme, enabled, map, theme]);
 

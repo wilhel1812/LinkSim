@@ -14,6 +14,9 @@ uses the default direct `staging` -> `main` path or the approved exact-tree
 - [ ] `npm run build` passes on the release candidate.
 - [ ] Staging verification was completed on `https://staging.linksim.link`.
 - [ ] Verified production promotion will use the exact same release tree that was verified on staging.
+- [ ] For an authentication cutover, the separately approved
+  [production authentication cutover checklist](production-auth-cutover-checklist.md)
+  is complete and attached to the release evidence.
 
 ## Version and notes
 - [ ] The development-line SemVer in `package.json` is intentional and newer than the previous production version.

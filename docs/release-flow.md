@@ -130,7 +130,11 @@
 - GitHub Actions deploy workflow triggers automatically on push to `staging` and `main`:
   - Push to `staging` → `deploy-staging` job → https://staging.linksim.link
   - Push to `main` → `deploy-prod-main` job → https://linksim.link
-- Manual override available via `workflow_dispatch` with explicit target selection (`staging` or `prod-main`).
+- Manual override is available via `workflow_dispatch` with explicit target
+  selection (`staging` or `prod-main`). The separately approved authentication
+  cutover uses `prod-auth-cutover`, the protected production environment, the
+  tagged release tree, and the exact confirmation documented in
+  `docs/production-auth-cutover-checklist.md`.
 - `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
 - `staging` runs in the `staging` environment.
 - Both branches require CI quality gates (`CI Quality Gates / verify` + `PR Branch Policy / enforce`) to pass before merge.
@@ -153,3 +157,4 @@
 | `deploy:staging` | https://staging.linksim.link | Test environment (`staging` branch) |
 | `deploy:staging:preview` | Preview URL | Side-by-side comparison |
 | `deploy:prod:main` | https://linksim.link | Production release |
+| `prod-auth-cutover` workflow target | https://linksim.link | Separately approved protected production authentication cutover |

@@ -1,0 +1,26 @@
+name = "linksim-auth-runtime-staging"
+main = "index.ts"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[vars]
+AUTH_ORIGIN = "https://staging.linksim.link"
+AUTH_LEGACY_CLAIM_DEADLINE = "2026-12-19T23:59:59.999Z"
+AUTH_DUAL_LOGIN_MIGRATION_ENABLED = "true"
+AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED = "true"
+AUTH_LEGACY_CLAIM_ENABLED = "true"
+AUTH_REGISTRATION_ENABLED = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linksim_staging"
+database_id = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuthRuntime"]

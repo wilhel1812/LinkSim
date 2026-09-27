@@ -1,13 +1,22 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CloudUser } from "../../lib/cloudUser";
 import { SettingsPanel } from "./SettingsPanel";
 
+const { signOutBetterAuthPilotMock } = vi.hoisted(() => ({
+  signOutBetterAuthPilotMock: vi.fn(),
+}));
+
+vi.mock("../../lib/betterAuthPilot", () => ({
+  isBetterAuthPilotEnabled: () => true,
+  signOutBetterAuthPilot: signOutBetterAuthPilotMock,
+}));
+
 // Stub sub-sections so SettingsPanel tests focus on panel-level behaviour.
 vi.mock("./sections/ProfileSection", () => ({
-  ProfileSection: ({ onSignOut }: { onSignOut?: () => void }) => (
-    <div data-testid="profile-section">
+  ProfileSection: ({ onSignOut, passkeysEnabled }: { onSignOut?: () => void; passkeysEnabled?: boolean }) => (
+    <div data-passkeys-enabled={String(passkeysEnabled)} data-testid="profile-section">
       Profile Section
       {onSignOut ? <button onClick={onSignOut}>Sign out</button> : null}
     </div>
@@ -61,9 +70,11 @@ vi.mock("../../store/appStore", () => ({
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks();
   // Reset to non-admin, signed-out state.
   mockState.currentUser = null;
   mockState.authState = "checking";
+  signOutBetterAuthPilotMock.mockResolvedValue(undefined);
 
   // Stub history methods to avoid jsdom URL errors.
   vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
@@ -86,19 +97,29 @@ beforeEach(() => {
 
 describe("SettingsPanel", () => {
   it("renders the Settings dialog with a close button", () => {
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: /settings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /close settings/i })).toBeInTheDocument();
   });
 
   it("shows the Profile section by default (initialSection = null)", () => {
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={vi.fn()} />);
     expect(screen.getByTestId("profile-section")).toBeInTheDocument();
     expect(screen.queryByTestId("preferences-section")).not.toBeInTheDocument();
   });
 
+  it("enables passkey management only for an authoritative Better Auth session", () => {
+    render(<SettingsPanel onSignedOut={vi.fn()} authSource="better-auth" initialSection={null} onClose={vi.fn()} />);
+    expect(screen.getByTestId("profile-section")).toHaveAttribute("data-passkeys-enabled", "true");
+  });
+
+  it.each(["access", "dev", null] as const)("keeps passkey management disabled for %s", (authSource) => {
+    render(<SettingsPanel onSignedOut={vi.fn()} authSource={authSource} initialSection={null} onClose={vi.fn()} />);
+    expect(screen.getByTestId("profile-section")).toHaveAttribute("data-passkeys-enabled", "false");
+  });
+
   it("shows the Preferences section when initialSection = 'preferences'", () => {
-    render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection="preferences" onClose={vi.fn()} />);
     expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-section")).not.toBeInTheDocument();
   });
@@ -116,7 +137,7 @@ describe("SettingsPanel", () => {
       defaultFrequencyPresetId: "old-radio",
       basemapPreferences: { version: 1, customSources: [] },
     };
-    render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection="preferences" onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Apply radio response" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply late map response" }));
@@ -138,7 +159,7 @@ describe("SettingsPanel", () => {
       isApproved: true,
     } as CloudUser;
     mockState.authState = "signed_in";
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /admin/i })).not.toBeInTheDocument();
   });
 
@@ -152,20 +173,20 @@ describe("SettingsPanel", () => {
       isApproved: true,
     } as CloudUser;
     mockState.authState = "signed_in";
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={vi.fn()} />);
     expect(screen.getByRole("button", { name: /admin/i })).toBeInTheDocument();
   });
 
   it("calls onClose when the close button is clicked", () => {
     const onClose = vi.fn();
-    render(<SettingsPanel initialSection={null} onClose={onClose} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: /close settings/i }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("calls onClose when the Escape key is pressed", () => {
     const onClose = vi.fn();
-    render(<SettingsPanel initialSection={null} onClose={onClose} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -175,7 +196,7 @@ describe("SettingsPanel", () => {
     const outsideButton = document.createElement("button");
     document.body.append(outsideButton);
     outsideButton.focus();
-    render(<SettingsPanel initialSection={null} onClose={onClose} suspended />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={onClose} suspended />);
 
     fireEvent.keyDown(window, { key: "Escape" });
 
@@ -184,7 +205,7 @@ describe("SettingsPanel", () => {
     outsideButton.remove();
   });
 
-  it("clears the authenticated-session marker on explicit sign out", () => {
+  it("revokes Better Auth before asking the shell to complete explicit sign out", async () => {
     mockState.currentUser = {
       id: "u1",
       username: "Alice",
@@ -196,14 +217,85 @@ describe("SettingsPanel", () => {
     mockState.authState = "signed_in";
     localStorage.setItem("linksim:had-authenticated-session:v1", "1");
 
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    const onClose = vi.fn();
+    const onSignedOut = vi.fn();
+    render(<SettingsPanel onSignedOut={onSignedOut} authSource="better-auth" initialSection={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+    await waitFor(() => expect(signOutBetterAuthPilotMock).toHaveBeenCalledOnce());
+    expect(onSignedOut).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("retains the local authenticated state when Better Auth revocation fails", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    signOutBetterAuthPilotMock.mockRejectedValue(new Error("revocation failed"));
+    const onSignOutError = vi.fn();
+
+    render(<SettingsPanel onSignedOut={vi.fn()} authSource="better-auth" initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(signOutBetterAuthPilotMock).toHaveBeenCalledOnce());
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+    expect(mockState.setAuthState).not.toHaveBeenCalledWith("signed_out");
+    expect(onSignOutError).toHaveBeenCalledWith("revocation failed");
+  });
+
+  it("keeps Access-only logout independent of the Better Auth runtime", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+
+    render(<SettingsPanel onSignedOut={vi.fn()} authSource="access" initialSection={null} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(mockState.setAuthState).toHaveBeenCalledWith("signed_out"));
+    expect(signOutBetterAuthPilotMock).not.toHaveBeenCalled();
     expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull();
   });
 
+  it("fails closed while the pilot authentication source is unresolved", async () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    const onSignOutError = vi.fn();
+
+    render(<SettingsPanel onSignedOut={vi.fn()} authSource={null} initialSection={null} onClose={vi.fn()} onSignOutError={onSignOutError} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(onSignOutError).toHaveBeenCalledWith("Sign-in status is still loading. Try again."));
+    expect(signOutBetterAuthPilotMock).not.toHaveBeenCalled();
+    expect(mockState.setAuthState).not.toHaveBeenCalledWith("signed_out");
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
+  });
+
   it("switches to Preferences section when its nav item is clicked", () => {
-    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection={null} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /preferences/i }));
     expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-section")).not.toBeInTheDocument();
@@ -216,7 +308,7 @@ describe("SettingsPanel", () => {
       removeEventListener: vi.fn(),
     }));
 
-    render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
+    render(<SettingsPanel onSignedOut={vi.fn()} initialSection="preferences" onClose={vi.fn()} />);
     expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open Settings sections" }));

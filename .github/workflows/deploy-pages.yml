@@ -22,6 +22,12 @@ on:
         options:
           - staging
           - prod-main
+          - prod-auth-cutover
+      production_auth_cutover_confirmation:
+        description: "Type APPROVE_PRODUCTION_AUTH_CUTOVER for the separately approved cutover"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   classify_changes:
@@ -32,12 +38,12 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Checkout event commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -81,7 +87,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout pull request head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -95,7 +101,7 @@ jobs:
             echo "Invalid preview base SHA." >&2
             exit 1
           fi
-          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql db/migrations/2026-08-27_basemap_preferences.sql; then
+          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql db/migrations/2026-08-20_site_notice.sql db/migrations/2026-08-27_basemap_preferences.sql db/migrations/2026-09-11_library_change_window.sql db/migrations/2026-09-17_library_history_candidates.sql db/migrations/2026-09-18_history_archive.sql db/migrations/2026-09-19_history_archive_maintenance.sql db/migrations/2026-09-19_better_auth_schema.sql db/migrations/2026-09-21_auth_migration_attempt.sql db/migrations/2026-09-23_privileged_passkey_recovery.sql; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -104,7 +110,7 @@ jobs:
 
       - name: Setup Node
         if: steps.identity_schema.outputs.changed != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -143,7 +149,7 @@ jobs:
 
       - name: Update pull request preview comment
         if: steps.identity_schema.outputs.changed != 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
         with:
@@ -212,7 +218,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: staging
           fetch-depth: 0
@@ -221,13 +227,16 @@ jobs:
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify staging Access boundary before deploy
+        run: node scripts/access-boundary.mjs check-access staging
 
       - name: Apply staging Simulation lifecycle migration
         env:
@@ -268,15 +277,85 @@ jobs:
           fi
           npx wrangler d1 execute linksim_staging --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"
 
+      - name: Apply and verify staging library history index
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-11_library_change_window.sql --yes
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-17_library_history_candidates.sql --yes
+          npx wrangler d1 execute linksim_staging --remote --file db/probes/library-history-candidates.sql
+          npx wrangler d1 execute linksim_staging --remote --command "SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_window WHERE resource_kind = 'site' AND changed_at >= '2000-01-01' LIMIT 0;"
+
+      - name: Apply and verify staging history archive schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim_staging --remote --command "SELECT archive_key, archive_digest FROM resource_changes LIMIT 0;"; then
+            npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-18_history_archive.sql --yes
+          fi
+          npx wrangler d1 execute linksim_staging --remote --command "SELECT archive_key, archive_digest FROM resource_changes LIMIT 0;"
+
+      - name: Apply and verify staging history archive maintenance state
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-19_history_archive_maintenance.sql --yes
+          npx wrangler d1 execute linksim_staging --remote --command "SELECT singleton, utc_day, daily_attempted_objects, daily_archive_bytes, lifetime_archive_bytes, active_run_id, active_run_token, lease_expires_at, setup_run_id, setup_d1_rows_read, setup_d1_rows_written FROM history_archive_maintenance_budget WHERE singleton = 1;"
+          npx wrangler d1 execute linksim_staging --remote --command "SELECT run_id, status, next_after_id, reserved_scanned_rows, reserved_d1_rows_read, reserved_d1_rows_written, reserved_r2_puts, reserved_r2_gets, failure_code FROM history_archive_maintenance_runs LIMIT 0;"
+
+      - name: Apply and verify staging Better Auth schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim_staging --remote --file db/probes/better-auth-schema.sql; then
+            npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-19_better_auth_schema.sql --yes
+          fi
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-21_auth_migration_attempt.sql --yes
+          npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-09-23_privileged_passkey_recovery.sql --yes
+          npx wrangler d1 execute linksim_staging --remote --file db/probes/better-auth-schema.sql
+
+      - name: Configure staging auth secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.BETTER_AUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.BETTER_AUTH_GITHUB_CLIENT_SECRET }}
+          TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+        run: |
+          test "${#BETTER_AUTH_SECRET}" -ge 32
+          test -n "$GITHUB_CLIENT_ID"
+          test -n "$GITHUB_CLIENT_SECRET"
+          test -n "$TURNSTILE_SITE_KEY"
+          test -n "$TURNSTILE_SECRET_KEY"
+          printf '%s' "$BETTER_AUTH_SECRET" | npx wrangler secret put BETTER_AUTH_SECRET --config workers/auth-runtime/wrangler.staging.toml
+          printf '%s' "$GITHUB_CLIENT_ID" | npx wrangler secret put GITHUB_CLIENT_ID --config workers/auth-runtime/wrangler.staging.toml
+          printf '%s' "$GITHUB_CLIENT_SECRET" | npx wrangler secret put GITHUB_CLIENT_SECRET --config workers/auth-runtime/wrangler.staging.toml
+          printf '%s' "$TURNSTILE_SITE_KEY" | npx wrangler secret put TURNSTILE_SITE_KEY --config workers/auth-runtime/wrangler.staging.toml
+          printf '%s' "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY --config workers/auth-runtime/wrangler.staging.toml
+
+      - name: Deploy private staging auth runtime
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config workers/auth-runtime/wrangler.staging.toml
+
       - name: Deploy staging with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
           VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
+          VITE_BETTER_AUTH_PILOT: "true"
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
         run: npm run deploy:staging
 
-      - name: Verify staging Access boundary
+      - name: Re-verify staging Access boundary after deploy
         run: node scripts/access-boundary.mjs check staging
 
   deploy-prod-main:
@@ -286,7 +365,10 @@ jobs:
       needs.classify_changes.outputs.docs_only != 'true' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
+        (github.event_name == 'workflow_dispatch' && (
+          github.event.inputs.target == 'prod-main' ||
+          github.event.inputs.target == 'prod-auth-cutover'
+        ))
       )
     runs-on: ubuntu-latest
     environment: production
@@ -294,14 +376,14 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -325,9 +407,36 @@ jobs:
           fi
           git worktree add --detach "$RUNNER_TEMP/linksim-release" "$RELEASE_TAG"
 
+      - name: Resolve persistent production authentication mode
+        id: production_mode
+        working-directory: ${{ runner.temp }}/linksim-release
+        run: |
+          AUTH_ACTIVE="$(node -p "String(require('./config/production-auth-mode.json').active)")"
+          ACCESS_BOUNDARY="$(node -p "String(require('./config/production-auth-mode.json').accessBoundary)")"
+          if [ "$AUTH_ACTIVE" != "true" ] && [ "$AUTH_ACTIVE" != "false" ]; then
+            echo "Production authentication mode must be exactly true or false." >&2
+            exit 1
+          fi
+          if [ "$ACCESS_BOUNDARY" != "broad" ] && [ "$ACCESS_BOUNDARY" != "legacy" ]; then
+            echo "Production Access boundary must be exactly broad or legacy." >&2
+            exit 1
+          fi
+          if [ "$AUTH_ACTIVE" = "false" ] && [ "$ACCESS_BOUNDARY" != "broad" ]; then
+            echo "The legacy-only Access boundary requires production authentication to be active." >&2
+            exit 1
+          fi
+          echo "auth_active=$AUTH_ACTIVE" >> "$GITHUB_OUTPUT"
+          echo "access_boundary=$ACCESS_BOUNDARY" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         working-directory: ${{ runner.temp }}/linksim-release
         run: npm ci
+
+      - name: Validate explicit production auth cutover approval
+        if: github.event.inputs.target == 'prod-auth-cutover'
+        env:
+          AUTH_CUTOVER_CONFIRMATION: ${{ github.event.inputs.production_auth_cutover_confirmation }}
+        run: test "$AUTH_CUTOVER_CONFIRMATION" = "APPROVE_PRODUCTION_AUTH_CUTOVER"
 
       - name: Validate release gate
         working-directory: ${{ runner.temp }}/linksim-release
@@ -339,13 +448,20 @@ jobs:
         working-directory: ${{ runner.temp }}/linksim-release
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: node scripts/access-boundary.mjs check production
+          PRODUCTION_ACCESS_BOUNDARY: ${{ steps.production_mode.outputs.access_boundary }}
+        run: |
+          if [ "$PRODUCTION_ACCESS_BOUNDARY" = "legacy" ]; then
+            node scripts/access-boundary.mjs check-cutover production
+          else
+            node scripts/access-boundary.mjs check production
+          fi
 
       - name: Validate production workflow commit
         working-directory: ${{ runner.temp }}/linksim-release
         env:
           DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
-        run: node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only
+          DEPLOY_TARGET: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'prod-auth-cutover' || 'prod-main' }}
+        run: node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target "$DEPLOY_TARGET" --verify-commit-only
 
       - name: Apply production Simulation lifecycle migration
         working-directory: ${{ runner.temp }}/linksim-release
@@ -390,6 +506,62 @@ jobs:
           fi
           npx wrangler d1 execute linksim --remote --command "SELECT basemap_preferences_json FROM users LIMIT 0;"
 
+      - name: Apply and verify production library history index
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 execute linksim --remote --file db/migrations/2026-09-11_library_change_window.sql --yes
+          npx wrangler d1 execute linksim --remote --file db/migrations/2026-09-17_library_history_candidates.sql --yes
+          npx wrangler d1 execute linksim --remote --file db/probes/library-history-candidates.sql
+          npx wrangler d1 execute linksim --remote --command "SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_window WHERE resource_kind = 'site' AND changed_at >= '2000-01-01' LIMIT 0;"
+
+      - name: Apply and verify production Better Auth schema
+        if: github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true'
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim --remote --file db/probes/better-auth-schema.sql; then
+            npx wrangler d1 execute linksim --remote --file db/migrations/2026-09-19_better_auth_schema.sql --yes
+          fi
+          npx wrangler d1 execute linksim --remote --file db/migrations/2026-09-21_auth_migration_attempt.sql --yes
+          npx wrangler d1 execute linksim --remote --file db/migrations/2026-09-23_privileged_passkey_recovery.sql --yes
+          npx wrangler d1 execute linksim --remote --file db/probes/better-auth-schema.sql
+
+      - name: Configure production auth secrets
+        if: github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true'
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.BETTER_AUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.BETTER_AUTH_GITHUB_CLIENT_SECRET }}
+          TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+        run: |
+          test "${#BETTER_AUTH_SECRET}" -ge 32
+          test -n "$GITHUB_CLIENT_ID"
+          test -n "$GITHUB_CLIENT_SECRET"
+          test -n "$TURNSTILE_SITE_KEY"
+          test -n "$TURNSTILE_SECRET_KEY"
+          printf '%s' "$BETTER_AUTH_SECRET" | npx wrangler secret put BETTER_AUTH_SECRET --config workers/auth-runtime/wrangler.production.toml
+          printf '%s' "$GITHUB_CLIENT_ID" | npx wrangler secret put GITHUB_CLIENT_ID --config workers/auth-runtime/wrangler.production.toml
+          printf '%s' "$GITHUB_CLIENT_SECRET" | npx wrangler secret put GITHUB_CLIENT_SECRET --config workers/auth-runtime/wrangler.production.toml
+          printf '%s' "$TURNSTILE_SITE_KEY" | npx wrangler secret put TURNSTILE_SITE_KEY --config workers/auth-runtime/wrangler.production.toml
+          printf '%s' "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY --config workers/auth-runtime/wrangler.production.toml
+
+      - name: Deploy private production auth runtime
+        if: github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true'
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config workers/auth-runtime/wrangler.production.toml
+
       - name: Deploy prod/main with guardrails
         working-directory: ${{ runner.temp }}/linksim-release
         env:
@@ -397,5 +569,19 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
           VITE_CARTO_KEY: ${{ secrets.VITE_CARTO_KEY }}
+          VITE_BETTER_AUTH_PILOT: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'true' || '' }}
+          VITE_TURNSTILE_SITE_KEY: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && secrets.VITE_TURNSTILE_SITE_KEY || '' }}
           DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
-        run: npm run build:bundle && npm run build:verify && node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main
+          DEPLOY_TARGET: ${{ (github.event.inputs.target == 'prod-auth-cutover' || steps.production_mode.outputs.auth_active == 'true') && 'prod-auth-cutover' || 'prod-main' }}
+        run: npm run build:bundle && npm run build:verify && node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target "$DEPLOY_TARGET"
+
+      - name: Re-verify production Access boundary after deploy
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          PRODUCTION_ACCESS_BOUNDARY: ${{ steps.production_mode.outputs.access_boundary }}
+        run: |
+          if [ "$PRODUCTION_ACCESS_BOUNDARY" = "legacy" ]; then
+            node scripts/access-boundary.mjs check-cutover production
+          else
+            node scripts/access-boundary.mjs check production
+          fi

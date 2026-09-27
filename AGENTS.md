@@ -51,7 +51,11 @@
 - Use existing theme variables/tokens; do not hardcode UI colors or fonts. Discuss and define a shared semantic token first when a new category is genuinely required.
 - Every UI icon needs accessible text. Icon-only controls require an explicit `aria-label` and matching `title` where applicable; decorative inline icons use `aria-hidden="true"`.
 - Any modal or popover that can open above another dialog must use `tier="raised"` in `ModalOverlay`.
-- Use `getUiErrorMessage()` from `src/lib/uiError.ts` when catching UI errors.
+- User-facing errors must name the failed operation and, when the user can act,
+  explain the next step. Do not display raw browser or transport text such as
+  `Load failed` or `Failed to fetch`, HTTP boilerplate, or internal exception
+  details. Use an operation-specific error helper where one exists and
+  `getUiErrorMessage()` as the shared sanitizer or fallback.
 
 ## Native Codex Pull Request Review
 

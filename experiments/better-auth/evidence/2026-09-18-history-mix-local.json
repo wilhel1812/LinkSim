@@ -1,0 +1,378 @@
+{
+  "source": "synthetic local gateway + Durable Object + D1 + R2; elapsed time is not CPU",
+  "schema": "application history table and indexes",
+  "fixture": "mixed-audience with one deleted Site",
+  "requests": 19,
+  "results": [
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=1",
+      "elapsedMs": 98,
+      "objectElapsedMs": 95,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 30,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 10,
+        "bytesBefore": 1963136,
+        "bytesAfter": 2416,
+        "archiveBytes": 2043231
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=11",
+      "elapsedMs": 73,
+      "objectElapsedMs": 71,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 30,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 20,
+        "bytesBefore": 1963145,
+        "bytesAfter": 2425,
+        "archiveBytes": 2043249
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=21",
+      "elapsedMs": 72,
+      "objectElapsedMs": 71,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 30,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 30,
+        "bytesBefore": 1963190,
+        "bytesAfter": 2470,
+        "archiveBytes": 2043302
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=31",
+      "elapsedMs": 75,
+      "objectElapsedMs": 73,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 28,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 40,
+        "bytesBefore": 1963167,
+        "bytesAfter": 2446,
+        "archiveBytes": 2043275
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=41",
+      "elapsedMs": 68,
+      "objectElapsedMs": 66,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 20,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 50,
+        "bytesBefore": 1963020,
+        "bytesAfter": 2300,
+        "archiveBytes": 2043100
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=51",
+      "elapsedMs": 69,
+      "objectElapsedMs": 67,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 20,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 60,
+        "bytesBefore": 1963020,
+        "bytesAfter": 2300,
+        "archiveBytes": 2043100
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=61",
+      "elapsedMs": 86,
+      "objectElapsedMs": 85,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 20,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 70,
+        "bytesBefore": 1963020,
+        "bytesAfter": 2300,
+        "archiveBytes": 2043100
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=71",
+      "elapsedMs": 69,
+      "objectElapsedMs": 66,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 20,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 80,
+        "bytesBefore": 1963020,
+        "bytesAfter": 2300,
+        "archiveBytes": 2043100
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=81",
+      "elapsedMs": 77,
+      "objectElapsedMs": 75,
+      "metrics": {
+        "queries": 11,
+        "rowsRead": 20,
+        "rowsWritten": 20,
+        "r2Puts": 10,
+        "r2Gets": 10
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 10,
+        "converted": 10,
+        "conflicts": 0,
+        "nextId": 90,
+        "bytesBefore": 1963020,
+        "bytesAfter": 2300,
+        "archiveBytes": 2043100
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/archive?id=91",
+      "elapsedMs": 60,
+      "objectElapsedMs": 58,
+      "metrics": {
+        "queries": 10,
+        "rowsRead": 19,
+        "rowsWritten": 18,
+        "r2Puts": 9,
+        "r2Gets": 9
+      },
+      "result": {
+        "scanned": 10,
+        "candidates": 9,
+        "converted": 9,
+        "conflicts": 0,
+        "nextId": 100,
+        "bytesBefore": 1766718,
+        "bytesAfter": 2070,
+        "archiveBytes": 1838790
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/hydrate?id=1",
+      "objectElapsedMs": 2,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196300
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/hydrate?id=3",
+      "objectElapsedMs": 1,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196345
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/hydrate?id=38",
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196366
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/hydrate?id=39",
+      "objectElapsedMs": 2,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "found": true,
+        "bytes": 196302
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/hydrate?id=100",
+      "objectElapsedMs": 0,
+      "metrics": {
+        "queries": 1,
+        "rowsRead": 1,
+        "rowsWritten": 0,
+        "r2Puts": 0,
+        "r2Gets": 0
+      },
+      "result": {
+        "found": true,
+        "bytes": 139
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/restore?id=1",
+      "objectElapsedMs": 2,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 3,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/restore?id=3",
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 3,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/restore?id=38",
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 3,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    },
+    {
+      "scenario": "mixed",
+      "path": "/restore?id=39",
+      "objectElapsedMs": 3,
+      "metrics": {
+        "queries": 2,
+        "rowsRead": 2,
+        "rowsWritten": 2,
+        "r2Puts": 0,
+        "r2Gets": 1
+      },
+      "result": {
+        "restored": true
+      }
+    }
+  ]
+}

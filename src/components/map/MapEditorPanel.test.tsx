@@ -183,6 +183,18 @@ describe("MapEditorPanel", () => {
     expect(screen.getByText("Moved site")).toBeInTheDocument();
   });
 
+  it("clears an existing Site description through the editor", async () => {
+    render(<MapEditorPanel isMobile={false} />);
+
+    const description = await screen.findByLabelText("Description");
+    expect(description).toHaveValue("Ridge");
+
+    await userEvent.clear(description);
+    await userEvent.click(screen.getByRole("button", { name: "Save Site" }));
+
+    expect(useAppStore.getState().siteLibrary[0]?.description).toBeUndefined();
+  });
+
   it("reveals directional settings only while the antenna toggle is enabled and retains drafts", async () => {
     render(<MapEditorPanel isMobile={false} />);
 
@@ -650,6 +662,44 @@ describe("MapEditorPanel", () => {
     expect(
       await screen.findByText("Change Log · Mesh Plan"),
     ).toBeInTheDocument();
+  });
+
+  it("clears an existing Simulation description through the editor", async () => {
+    useAppStore.setState({
+      simulationPresets: [
+        {
+          id: "sim-clear-description",
+          name: "Clear Description Plan",
+          description: "Temporary description",
+          visibility: "private",
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: "sim-clear-description",
+        isNew: false,
+        label: "Clear Description Plan",
+        anchorRect,
+      },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    const description = await screen.findByLabelText("Description");
+    expect(description).toHaveValue("Temporary description");
+
+    await userEvent.clear(description);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(useAppStore.getState().simulationPresets[0]?.description).toBeUndefined();
   });
 
   it("confirms Simulation deletion and preserves the editor when deletion fails", async () => {

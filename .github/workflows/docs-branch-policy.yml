@@ -30,7 +30,7 @@ jobs:
 
       - name: Checkout trusted base policy
         if: ${{ startsWith(github.event.pull_request.head.ref, 'docs/') }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0

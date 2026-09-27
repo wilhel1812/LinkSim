@@ -1,4 +1,6 @@
-import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
+import { encodeHistoryDetails } from "./historyDetails";
+import { hydrateHistoryRow, type ArchiveEnv } from "./historyArchive";
+import { BETTER_AUTH_MAPPED_IDENTITY_CLAIM, type CloudResourceRecord, type DbVisibility, type Env, type Grant, type ResourceRole, type UserRole, type Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
 import {
   normalizeUserSimulationDefaultsPreference,
@@ -15,6 +17,7 @@ import {
   LIBRARY_SIMULATION_MAX_BYTES,
   LIBRARY_SITE_MAX_BYTES,
   LibraryValidationError,
+  validateLibraryPayload,
 } from "../../src/lib/libraryLimits";
 import { thumbnailAvatarUrl } from "../../src/lib/avatarLimits";
 import { normalizeUserBasemapPreferences, type UserBasemapPreferences } from "../../src/lib/basemapPreferences";
@@ -596,6 +599,12 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_sequence ON resource_changes(resource_kind, resource_id, id)"),
+        // Keep local bootstrap compatible; remote deployments still migrate and probe before serving.
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_window ON resource_changes(resource_kind, changed_at, resource_id)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_owner_audience ON resource_changes(resource_kind, json_extract(snapshot_json, '$.ownerUserId'), resource_id, id)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_shared_audience ON resource_changes(resource_kind, resource_id, id) WHERE (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]')"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_site_tombstones ON resource_changes(changed_at, resource_id) WHERE resource_kind = 'site' AND note = 'Deleted Site'"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_distance ON simulation_path_leaderboard_entries(distance_km DESC)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_simulation ON simulation_path_leaderboard_entries(simulation_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC)"),
@@ -682,6 +691,10 @@ type UserRow = {
   approved_by_user_id: string | null;
   created_at: string;
   updated_at: string | null;
+};
+
+type UserDirectoryRow = UserRow & {
+  auth_migrated?: number;
 };
 
 type VerifiedIdentityEnsureInput = {
@@ -853,7 +866,7 @@ const readVerifiedIdentityCommandState = async (
     }>()) ?? { claim_status: null, current_user_id: null, subject_status: null, deleted_at: null };
 
 export const executeVerifiedIdentityEnsure = async (
-  env: Pick<Env, "DB">,
+  env: Pick<Env, "DB" | "AUTH_SESSION_SOURCE">,
   input: VerifiedIdentityEnsureInput,
 ): Promise<void> => {
   const { userId, email: normalizedEmail, defaultEmail, bootstrapAdmin, now } = input;
@@ -864,8 +877,26 @@ export const executeVerifiedIdentityEnsure = async (
       SELECT 1 FROM identity_subject_states
       WHERE user_id = ? AND status IN ('superseded', 'blocked')
     ) AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?)`;
+  const mappedClaimGuard = env.AUTH_SESSION_SOURCE === "transition"
+    ? [env.DB
+      .prepare(
+        `INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
+         SELECT meta.singleton, meta.version, meta.applied_at
+         FROM identity_lifecycle_meta AS meta
+         WHERE meta.singleton = 1
+           AND EXISTS (
+             SELECT 1
+             FROM verified_identity_claims AS claim
+             JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = claim.current_user_id
+             WHERE claim.normalized_email = ? AND claim.status = 'active'
+               AND claim.current_user_id <> ?
+           )`,
+      )
+      .bind(normalizedEmail, userId)]
+    : [];
 
   await env.DB.batch([
+    ...mappedClaimGuard,
     env.DB
       .prepare(
         `INSERT INTO verified_identity_claims
@@ -1294,6 +1325,10 @@ export const ensureUser = async (
   userId: string,
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
+  // Better Auth identities have already been resolved through the durable
+  // auth-user -> LinkSim-user mapping for this request. The legacy Access path
+  // creates and reconciles identities, so it must never run for a mapped user.
+  if (tokenPayload?.[BETTER_AUTH_MAPPED_IDENTITY_CLAIM] === true) return;
   await ensureSchema(env);
   const now = new Date().toISOString();
   const email = deriveDefaultEmail(userId, tokenPayload);
@@ -1518,13 +1553,62 @@ export const getUserAvatarKeys = async (
   };
 };
 
-export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
+export const authMigrationSchemaAvailable = async (db: D1Database): Promise<boolean> => {
+  const [mapping, authUser] = await Promise.all([
+    db.prepare("PRAGMA table_info(auth_identity_map)").all<{ name: string }>(),
+    db.prepare("PRAGMA table_info(auth_user)").all<{ name: string }>(),
+  ]);
+  const mappingColumns = new Set(mapping.results.map((column) => column.name));
+  const authUserColumns = new Set(authUser.results.map((column) => column.name));
+  return ["auth_user_id", "linksim_user_id"].every((column) => mappingColumns.has(column))
+    && authUserColumns.has("id");
+};
+
+export const getAuthMigrationProgress = async (
+  db: D1Database,
+): Promise<{ migrated: number; total: number }> => {
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total, COUNT(auth.id) AS migrated
+     FROM users
+     LEFT JOIN auth_identity_map AS mapping ON mapping.linksim_user_id = users.id
+     LEFT JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+     WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE deleted_users.id = users.id)`,
+  ).first<{ migrated: number; total: number }>();
+  return {
+    migrated: Number(row?.migrated ?? 0),
+    total: Number(row?.total ?? 0),
+  };
+};
+
+export const listUsers = async (
+  env: Env,
+  includePrivateIdentity: boolean,
+  includeAuthMigration = includePrivateIdentity,
+) => {
   await ensureSchema(env);
+  const authMigrationProjection = includeAuthMigration
+    ? `, CASE WHEN EXISTS (
+         SELECT 1
+         FROM auth_identity_map AS mapping
+         JOIN auth_user AS auth ON auth.id = mapping.auth_user_id
+         WHERE mapping.linksim_user_id = users.id
+       ) THEN 1 ELSE 0 END AS auth_migrated`
+    : "";
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, basemap_preferences_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      `SELECT id, username, email, username_set_at, bio, access_request_note,
+              idp_email, idp_email_verified, avatar_url, email_public,
+              default_frequency_preset_id, simulation_defaults_preference_json,
+              basemap_preferences_json, avatar_object_key, avatar_thumb_key,
+              avatar_hash, avatar_bytes, avatar_content_type, is_admin,
+              is_moderator, is_approved, approved_at, approved_by_user_id,
+              created_at, updated_at${authMigrationProjection}
+       FROM users
+       WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE deleted_users.id = users.id)
+       ORDER BY created_at DESC
+       LIMIT 2000`,
     )
-    .all<UserRow>();
+    .all<UserDirectoryRow>();
   return rows.results.map((row) => {
     const profile = toUserProfile(row);
     const { idpEmail, idpEmailVerified, ...ordinaryProfile } = profile;
@@ -1532,7 +1616,13 @@ export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
       ...ordinaryProfile,
       avatarUrl: thumbnailAvatarUrl(profile.avatarUrl, profile.avatarThumbKey),
       email: includePrivateIdentity || row.email_public === 1 ? profile.email : "",
-      ...(includePrivateIdentity ? { idpEmail, idpEmailVerified } : {}),
+      ...(includePrivateIdentity ? {
+        idpEmail,
+        idpEmailVerified,
+      } : {}),
+      ...(includeAuthMigration ? {
+        authMigrationState: row.auth_migrated === 1 ? "migrated" as const : "not_migrated" as const,
+      } : {}),
     };
   });
 };
@@ -1857,7 +1947,11 @@ const createResourceChange = async (
       actorUserId,
       new Date().toISOString(),
       note,
-      options?.details ? JSON.stringify(options.details) : null,
+      options?.details
+        ? env.HISTORY_DETAILS_COMPRESSION === "gzip-v1"
+          ? await encodeHistoryDetails(JSON.stringify(options.details))
+          : JSON.stringify(options.details)
+        : null,
       options?.snapshot ? JSON.stringify(options.snapshot) : null,
     )
     .run();
@@ -1998,7 +2092,7 @@ export const deleteSiteResource = async (
   return { ok: true, siteId: id };
 };
 
-const resolveResourceChangeAccess = async (
+export const resolveResourceChangeAccess = async (
   env: Env,
   kind: "site" | "simulation",
   resourceId: string,
@@ -2563,9 +2657,30 @@ export const fetchLibraryForUser = async (
     ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
   ];
   const pageSql = (timestampColumn: string, idColumn: string) => `${opts?.since ? `\n          AND ${timestampColumn} >= ?` : ""}${opts?.cutoff ? `\n          AND ${timestampColumn} <= ?` : ""}${paged ? `\n          AND ${idColumn} > ?\n       ORDER BY ${idColumn}\n       LIMIT ?` : ""}`;
+  // Build a deduplicated candidate set through owner/visibility/grant indexes.
+  // Keep administrators separate: a parameterized OR otherwise walks all IDs.
+  const visibleIds = (kind: "site" | "simulation") => {
+    if (canReadAllResources) return "";
+    const table = kind === "site" ? "sites" : "simulations";
+    const roles = kind === "site" ? "site_roles" : "simulation_roles";
+    return `WITH visible_resources AS MATERIALIZED (
+      SELECT id FROM ${table} WHERE owner_user_id = ?
+      UNION SELECT id FROM ${table} WHERE visibility IN ('public_read', 'public_write')
+      UNION SELECT granted.id FROM ${roles} grant_role
+        JOIN ${table} granted ON granted.id = grant_role.${kind}_id
+        WHERE grant_role.user_id = ? AND granted.visibility != 'private'
+    )`;
+  };
+  const visibleBinds = () => canReadAllResources ? [] : [userId, userId];
+  // Fix the small candidate set as the outer loop; otherwise the active-status
+  // index can make SQLite walk every active Simulation before testing the IDs.
+  const visibleFrom = (table: "sites" | "simulations") => canReadAllResources
+    ? `FROM ${table} s`
+    : `FROM visible_resources visible CROSS JOIN ${table} s ON s.id = visible.id`;
   const siteRows = paged && opts?.phase !== "sites" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
+      `${visibleIds("site")}
+       SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
@@ -2588,15 +2703,12 @@ export const fetchLibraryForUser = async (
               s.created_at,
               s.updated_at,
               s.last_edited_at
-       FROM sites s
+       ${visibleFrom("sites")}
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE (? = 1
-          OR s.owner_user_id = ?
-          OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${pageSql("s.updated_at", "s.id")}`,
+       WHERE 1 = 1${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, ...pageBind())
+    .bind(...visibleBinds(), userId, ...pageBind())
     .all<LibraryRow>();
 
   const deletedSiteAudienceClause = canReadAllResources
@@ -2626,7 +2738,7 @@ export const fetchLibraryForUser = async (
   const deletedSiteRows = paged && opts?.phase !== "deleted_sites" ? { results: [] as Array<{ id: string }> } : await env.DB
         .prepare(
           `SELECT tombstone.resource_id AS id
-           FROM resource_changes tombstone
+           FROM resource_changes tombstone INDEXED BY idx_resource_changes_site_tombstones
            WHERE tombstone.resource_kind = 'site'
              AND tombstone.note = 'Deleted Site'
              AND tombstone.id = (
@@ -2678,59 +2790,81 @@ export const fetchLibraryForUser = async (
     const roleId = kind === "site" ? "site_id" : "simulation_id";
     const statusClause = kind === "simulation" ? " AND live.status = 'active'" : "";
     const changeWindow = `${opts?.since ? " AND changed.changed_at >= ?" : ""}${opts?.cutoff ? " AND changed.changed_at <= ?" : ""}`;
-    const pagination = paged ? " AND live.id > ? ORDER BY live.id LIMIT ?" : "";
+    const pagination = paged ? " AND live.id > ? ORDER BY candidate.resource_id LIMIT ?" : "";
+    const windowBind = () => [
+      ...(opts?.since ? [opts.since] : []),
+      ...(opts?.cutoff ? [opts.cutoff] : []),
+    ];
+    // Full recovery has no lower time bound. First find a superset of resources
+    // this user might have seen; keep the exact historical predicates below.
+    // Incremental sync retains its selective change-window query.
+    const fullRecovery = !opts?.since;
+    const audienceCandidates = fullRecovery ? `audience_resources AS (
+      SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_owner_audience
+      WHERE resource_kind = '${kind}' AND json_extract(snapshot_json, '$.ownerUserId') = ?
+      UNION
+      SELECT resource_id FROM resource_changes INDEXED BY idx_resource_changes_shared_audience
+      WHERE resource_kind = '${kind}' AND (json_extract(snapshot_json, '$.visibility') IN ('public', 'shared') OR COALESCE(json_extract(snapshot_json, '$.sharedWith'), '[]') != '[]' OR json_extract(details_json, '$.diff.visibility.before') IN ('public', 'shared') OR COALESCE(json_extract(details_json, '$.diff.sharedWith.before'), '[]') != '[]')
+    ),` : "";
+    // GROUP BY resource_id can favor the old per-resource index and scan all
+    // historical changes. Bounded sync windows require the deployed time index.
     return env.DB
       .prepare(
-        `SELECT live.id
-         FROM ${table} live
+        `WITH ${audienceCandidates} candidate_changes AS ${fullRecovery ? "NOT MATERIALIZED" : "MATERIALIZED"} (
+           ${fullRecovery ? `SELECT audience.resource_id,
+             (SELECT MAX(changed.id) FROM resource_changes changed INDEXED BY idx_resource_changes_sequence
+              WHERE changed.resource_kind = ? AND changed.resource_id = audience.resource_id${changeWindow}) AS latest_id
+             FROM audience_resources audience${paged ? " WHERE audience.resource_id > ?" : ""}` : `
+           SELECT changed.resource_id, MAX(changed.id) AS latest_id
+           FROM resource_changes changed INDEXED BY idx_resource_changes_window
+           WHERE changed.resource_kind = ?${changeWindow}${paged ? " AND changed.resource_id > ?" : ""}
+           GROUP BY changed.resource_id`}
+         )
+         SELECT live.id
+         FROM candidate_changes candidate
+         CROSS JOIN ${table} live ON live.id = candidate.resource_id
          LEFT JOIN ${rolesTable} current_role ON current_role.${roleId} = live.id AND current_role.user_id = ?
          WHERE live.owner_user_id != ?
            AND live.visibility = 'private'
            AND current_role.user_id IS NULL${statusClause}
-           AND EXISTS (
-             WITH eligible_changes AS MATERIALIZED (
-               SELECT changed.id, changed.details_json
-               FROM resource_changes changed
-               WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
-             ), latest_change AS (
-               SELECT MAX(id) AS id FROM eligible_changes
+           AND (
+             EXISTS (
+               SELECT 1 FROM resource_changes history
+               WHERE history.resource_kind = '${kind}'
+                 AND history.resource_id = live.id
+                 AND history.id < candidate.latest_id
+                 AND (
+                   json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                   OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                   OR EXISTS (
+                     SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+                     WHERE json_extract(grant_entry.value, '$.userId') = ?
+                   )
+                 )
              )
-             SELECT 1 FROM latest_change
-             WHERE latest_change.id IS NOT NULL
-               AND (
-                 EXISTS (
-                   SELECT 1 FROM resource_changes history
-                   WHERE history.resource_kind = '${kind}'
-                     AND history.resource_id = live.id
-                     AND history.id < latest_change.id
-                     AND (
-                       json_extract(history.snapshot_json, '$.ownerUserId') = ?
-                       OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
-                       OR EXISTS (
-                         SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
-                         WHERE json_extract(grant_entry.value, '$.userId') = ?
-                       )
-                     )
+             OR EXISTS (
+               SELECT 1 FROM resource_changes changed
+               WHERE changed.resource_kind = '${kind}' AND changed.resource_id = live.id${changeWindow}
+                 AND (
+                   json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
+                   OR EXISTS (
+                     SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
+                     WHERE json_extract(previous_grant.value, '$.userId') = ?
+                   )
                  )
-                 OR EXISTS (
-                   SELECT 1 FROM eligible_changes changed
-                   WHERE json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
-                     OR EXISTS (
-                       SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
-                       WHERE json_extract(previous_grant.value, '$.userId') = ?
-                     )
-                 )
-               )
+             )
            )${pagination}`,
       )
       .bind(
-        userId,
-        userId,
+        ...(fullRecovery ? [userId] : []),
         kind,
-        ...(opts?.since ? [opts.since] : []),
-        ...(opts?.cutoff ? [opts.cutoff] : []),
+        ...windowBind(),
+        ...(paged ? [opts?.afterId ?? ""] : []),
         userId,
         userId,
+        userId,
+        userId,
+        ...windowBind(),
         userId,
         ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
       )
@@ -2741,7 +2875,8 @@ export const fetchLibraryForUser = async (
 
   const simulationRows = paged && opts?.phase !== "simulations" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
+      `${visibleIds("simulation")}
+       SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
@@ -2764,16 +2899,12 @@ export const fetchLibraryForUser = async (
               s.created_at,
               s.updated_at,
               s.last_edited_at
-       FROM simulations s
+       ${visibleFrom("simulations")}
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ((? = 1
-          OR s.owner_user_id = ?
-          OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))
-         AND (? = 1 OR s.status = 'active'))${pageSql("s.updated_at", "s.id")}`,
+       WHERE 1 = 1${canReadAllResources ? "" : " AND s.status = 'active'"}${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, canReadAllResources ? 1 : 0, ...pageBind())
+    .bind(...visibleBinds(), userId, ...pageBind())
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>
@@ -3137,6 +3268,38 @@ export const fetchResourceChanges = async (
   };
 };
 
+export const readAuthorizedArchivedHistory = async (
+  archive: ArchiveEnv,
+  kind: "site" | "simulation",
+  resourceId: string,
+  changeId: number,
+  actor: ActorPolicy,
+) => {
+  if (!Number.isSafeInteger(changeId) || changeId < 1 || !resourceId.trim()) {
+    return { ok: false as const, reason: "missing" as const };
+  }
+  const env = { DB: archive.DB } as Env;
+  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+  if (!access.ok) return access;
+
+  const sql = `SELECT snapshot_json, details_json, archive_key, archive_digest
+               FROM resource_changes WHERE id = ? AND resource_kind = ? AND resource_id = ?`;
+  const readRevision = () => archive.DB.prepare(sql).bind(changeId, kind, resourceId)
+    .first<{ snapshot_json: string | null; details_json: string | null; archive_key: string | null; archive_digest: string | null }>();
+  const before = await readRevision();
+  if (!before) return { ok: false as const, reason: "missing" as const };
+  // A mismatched change ID must never cause an R2 read.
+  const row = await hydrateHistoryRow(archive, changeId, { kind, id: resourceId });
+  if (!row) return { ok: false as const, reason: "missing" as const };
+  const after = await readRevision();
+  if (!after || Object.keys(before).some((key) => before[key as keyof typeof before] !== after[key as keyof typeof after])) {
+    throw Error("History changed during hydration");
+  }
+  // The R2 read may overlap a grant or ownership change.
+  const current = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+  return current.ok ? { ok: true as const, row } : current;
+};
+
 export const revertResourceFromChangeCopy = async (
   env: Env,
   kind: "site" | "simulation",
@@ -3145,29 +3308,70 @@ export const revertResourceFromChangeCopy = async (
   actor: ActorPolicy,
 ): Promise<{ ok: boolean; reason?: string }> => {
   await ensureSchema(env);
-  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
-  if (!access.ok) return access;
+  let snapshotJson: string | null;
+  if (env.HISTORY_SCOPE || env.HISTORY_BUCKET) {
+    if (!env.HISTORY_SCOPE || !env.HISTORY_BUCKET) throw Error("Incomplete history archive binding");
+    const archived = await readAuthorizedArchivedHistory(
+      { DB: env.DB, BUCKET: env.HISTORY_BUCKET, scope: env.HISTORY_SCOPE },
+      kind, resourceId, changeId, actor,
+    );
+    if (!archived.ok) return archived;
+    snapshotJson = archived.row.snapshot_json;
+  } else {
+    const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+    if (!access.ok) return access;
+    // Older databases have no archive columns. Once they exist, a missing R2
+    // binding must fail closed rather than revert a compact projection.
+    const columns = await env.DB.prepare("PRAGMA table_info(resource_changes)").all<{ name: string }>();
+    const archiveColumnNames = new Set(columns.results.map(({ name }) => name));
+    const hasArchiveKey = archiveColumnNames.has("archive_key");
+    const hasArchiveDigest = archiveColumnNames.has("archive_digest");
+    if (hasArchiveKey !== hasArchiveDigest) throw Error("Incomplete history archive schema");
+    const snapshotRow = await env.DB
+      .prepare(
+        `SELECT snapshot_json${hasArchiveKey ? ", archive_key, archive_digest" : ""}
+         FROM resource_changes
+         WHERE id = ? AND resource_kind = ? AND resource_id = ?
+         LIMIT 1`,
+      )
+      .bind(changeId, kind, resourceId)
+      .first<{ snapshot_json: string | null; archive_key?: string | null; archive_digest?: string | null }>();
+    if (snapshotRow && (snapshotRow.archive_key != null || snapshotRow.archive_digest != null)) {
+      throw Error("History archive binding required for revert");
+    }
+    snapshotJson = snapshotRow?.snapshot_json ?? null;
+  }
+  if (!snapshotJson) return { ok: false, reason: "snapshot_missing" };
 
-  const snapshotRow = await env.DB
-    .prepare(
-      `SELECT snapshot_json
-       FROM resource_changes
-       WHERE id = ? AND resource_kind = ? AND resource_id = ?
-       LIMIT 1`,
-    )
-    .bind(changeId, kind, resourceId)
-    .first<{ snapshot_json: string | null }>();
-  if (!snapshotRow?.snapshot_json) return { ok: false, reason: "snapshot_missing" };
-
-  let snapshot: CloudResourceRecord;
+  let parsedSnapshot: unknown;
   try {
-    snapshot = JSON.parse(snapshotRow.snapshot_json) as CloudResourceRecord;
+    parsedSnapshot = JSON.parse(snapshotJson) as unknown;
   } catch {
     return { ok: false, reason: "snapshot_invalid" };
   }
+  if (!parsedSnapshot || typeof parsedSnapshot !== "object" || Array.isArray(parsedSnapshot)) {
+    return { ok: false, reason: "snapshot_invalid" };
+  }
+  const snapshot = parsedSnapshot as CloudResourceRecord;
   snapshot.id = resourceId;
 
-  const result = await upsertOwnedResource(env, kind, actor, snapshot);
+  let completeSnapshot: CloudResourceRecord;
+  try {
+    const validated = validateLibraryPayload({
+      siteLibrary: kind === "site" ? [snapshot] : [],
+      simulationPresets: kind === "simulation" ? [snapshot] : [],
+    });
+    completeSnapshot = (kind === "site"
+      ? validated.siteLibrary[0]
+      : validated.simulationPresets[0]) as CloudResourceRecord;
+  } catch (error) {
+    if (error instanceof LibraryValidationError) {
+      return { ok: false, reason: "snapshot_incomplete" };
+    }
+    throw error;
+  }
+
+  const result = await upsertOwnedResource(env, kind, actor, completeSnapshot);
   if (!result.ok) return result;
 
   await createResourceChange(
@@ -3182,7 +3386,7 @@ export const revertResourceFromChangeCopy = async (
         revertedFromChangeId: changeId,
         mode: "copy",
       },
-      snapshot: snapshot as Record<string, unknown>,
+      snapshot: completeSnapshot as Record<string, unknown>,
     },
   );
   return { ok: true };

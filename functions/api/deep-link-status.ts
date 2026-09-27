@@ -7,9 +7,9 @@ export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handl
 
 const NO_STORE_HEADERS = { "cache-control": "no-store" };
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) => {
   try {
-    const auth = await verifyAuth(request, env);
+    const auth = await verifyAuth(request, env, data).catch(() => null);
     let actor = { id: "", isAdmin: false, isModerator: false };
     let authenticated = false;
     let authState: "guest" | "authenticated" | "revoked" = "guest";
