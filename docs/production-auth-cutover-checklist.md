@@ -1,9 +1,10 @@
 # Production authentication cutover checklist
 
 This runbook tracks the production migration from broad Cloudflare Access to
-Better Auth. The maintainer approved the 2026-09-27 rollout, with the public
-boundary change planned for 15:40 UTC. Every production write remains gated by
-that reviewed window and the checks below.
+Better Auth. The maintainer approved the 2026-09-27 rollout and explicitly
+accepted a legacy-claim period slightly shorter than 90 days if the public
+boundary changes after 15:40 UTC. Every production write remains gated by
+the checks below.
 
 The checked-in production auth files describe the cutover candidate:
 
@@ -126,7 +127,7 @@ the application boundary is verified.
   The `production-canary` environment is restricted to the exact `main` branch.
   A fresh, migrated ordinary-user session is in its protected secret and its
   expected user ID matches that account. Set its cutover time to
-  `2026-09-27T15:40:00.000Z` only after the final release gates pass; the
+  the actual UTC public cutover time only after the final release gates pass; the
   timing variable was removed after the missed 15:00 UTC window, so scheduled
   probes are currently dormant.
   The session initially expires before the end of the first week, so verify
@@ -233,12 +234,12 @@ protected values removed after the first-week review.
 
 ## Start the 90-day claim window
 
-The reviewed public cutover timestamp is `2026-09-27T15:40:00.000Z` and the
-exact 90-day legacy-claim deadline is `2026-12-26T15:40:00.000Z`. The latter is
-in both candidate production configs and Terraform; apply the narrow Terraform
-plan before public cutover. If the public cutover
-misses the reviewed timestamp, advance both values in a new candidate before
-narrowing Access; never backdate the claim window.
+The planned public cutover timestamp was `2026-09-27T15:40:00.000Z`; the fixed
+legacy-claim deadline is `2026-12-26T15:40:00.000Z`. The latter is in both
+candidate production configs and Terraform; apply the narrow Terraform plan
+before public cutover. The maintainer explicitly accepted that a later actual
+cutover gives users slightly less than 90 days. Record the actual cutover time
+and do not describe the resulting period as a full 90 days or backdate it.
 
 Dual login, legacy claims and registration are enabled in the active auth
 configuration. Privileged passkey recovery was enabled only for the protected

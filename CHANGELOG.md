@@ -2,8 +2,11 @@
 
 ## [0.29.8] - 2026-09-27
 
+### Fixed
+- Prevented concurrent avatar replacements from leaving unreferenced R2 objects by making the profile update conditional on the previously observed avatar. (#1107)
+
 ### Internal
-- Rescheduled the reviewed production authentication cutover to 15:40 UTC after the 15:00 UTC target passed, preserving the exact 90-day legacy-claim period without changing authentication behavior. (#1107)
+- Prepared the production authentication cutover after the missed 15:00 UTC target. The maintainer accepted a claim period slightly shorter than 90 days rather than another timing-only version bump. (#1107)
 
 ## [0.29.7] - 2026-09-27
 

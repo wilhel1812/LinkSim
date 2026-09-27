@@ -113,11 +113,12 @@ auth releases and applies migrations idempotently if needed.
   passed before Access changed, after staging, canary, and the exact-tree
   production PR checks passed. Production remains behind broad Access and
   `v0.29.1`; the production canary was disarmed again. The proposed next
-  activation window is `2026-09-27T15:40:00Z` (`2026-09-27 17:40 CEST`). If final candidate validation
-  is not complete by then, advance the timestamp and prepare a new candidate;
-  never backdate the cutover.
-- The corresponding 90-day legacy-claim deadline is
-  `2026-12-26T15:40:00.000Z`.
+  activation window was `2026-09-27T15:40:00Z` (`2026-09-27 17:40 CEST`).
+  The maintainer later explicitly accepted a slightly shorter claim period to
+  avoid another timing-only candidate. Record the actual cutover time; never
+  backdate it.
+- The fixed legacy-claim deadline is `2026-12-26T15:40:00.000Z`. If public
+  cutover occurs later than 15:40 UTC, the period is less than 90 days.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
