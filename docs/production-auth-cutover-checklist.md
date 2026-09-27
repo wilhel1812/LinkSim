@@ -1,9 +1,10 @@
 # Production authentication cutover checklist
 
 This runbook tracks the production migration from broad Cloudflare Access to
-Better Auth. The maintainer approved the 2026-09-27 rollout, with the public
-boundary change planned for 15:00 UTC. Every production write remains gated by
-that reviewed window and the checks below.
+Better Auth. The maintainer approved the 2026-09-27 rollout and explicitly
+accepted a legacy-claim period slightly shorter than 90 days if the public
+boundary changes after 15:40 UTC. Every production write remains gated by
+the checks below.
 
 The checked-in production auth files describe the cutover candidate:
 
@@ -126,8 +127,8 @@ the application boundary is verified.
   The `production-canary` environment is restricted to the exact `main` branch.
   A fresh, migrated ordinary-user session is in its protected secret and its
   expected user ID matches that account. Set its cutover time to
-  `2026-09-27T15:00:00.000Z` only after the final release gates pass; the
-  timing variable was removed after the missed 13:30 UTC window, so scheduled
+  the actual UTC public cutover time only after the final release gates pass; the
+  timing variable was removed after the missed 15:00 UTC window, so scheduled
   probes are currently dormant.
   The session initially expires before the end of the first week, so verify
   rolling renewal after the first day and rotate it before expiry if needed.
@@ -179,7 +180,7 @@ the application boundary is verified.
 - [ ] Verify the final tagged cutover candidate and exact-tree main promotion
   against shared staging. The earlier `v0.29.0` activation and `v0.29.1`
   privileged-recovery retirement are deployed under broad Access. The
-  `v0.29.7` candidate keeps auth active and recovery disabled, and requires
+  `v0.29.8` candidate keeps auth active and recovery disabled, and requires
   `accessBoundary: legacy`; deploy it only after the one-app Access narrowing.
 
 ### Protected canary configuration
@@ -233,12 +234,12 @@ protected values removed after the first-week review.
 
 ## Start the 90-day claim window
 
-The reviewed public cutover timestamp is `2026-09-27T15:00:00.000Z` and the
-exact 90-day legacy-claim deadline is `2026-12-26T15:00:00.000Z`. The latter is
-in both candidate production configs and Terraform; apply the narrow Terraform
-plan before public cutover. If the public cutover
-misses the reviewed timestamp, advance both values in a new candidate before
-narrowing Access; never backdate the claim window.
+The planned public cutover timestamp was `2026-09-27T15:40:00.000Z`; the fixed
+legacy-claim deadline is `2026-12-26T15:40:00.000Z`. The latter is in both
+candidate production configs and Terraform; apply the narrow Terraform plan
+before public cutover. The maintainer explicitly accepted that a later actual
+cutover gives users slightly less than 90 days. Record the actual cutover time
+and do not describe the resulting period as a full 90 days or backdate it.
 
 Dual login, legacy claims and registration are enabled in the active auth
 configuration. Privileged passkey recovery was enabled only for the protected
@@ -250,7 +251,7 @@ Steps 1–6 below were completed in the protected `v0.29.0` and `v0.29.1`
 deployments and follow-up Terraform apply. Production currently runs Better
 Auth behind broad Access, with privileged recovery disabled and Terraform at
 zero drift. The remaining public cutover begins at step 7. The checked-in
-`v0.29.7` candidate expects the narrowed legacy boundary and must not be
+`v0.29.8` candidate expects the narrowed legacy boundary and must not be
 promoted while broad Access is active. The manual `prod-auth-cutover` target
 remains available only for a separately approved rerun and requires
 confirmation `APPROVE_PRODUCTION_AUTH_CUTOVER`.

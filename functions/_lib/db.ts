@@ -1507,10 +1507,11 @@ export const setUserAvatarAssets = async (
     avatarBytes: number;
     avatarContentType: string;
   },
+  previous: { avatarObjectKey: string | null; avatarThumbKey: string | null },
 ) => {
   await ensureSchema(env);
   const now = new Date().toISOString();
-  await env.DB
+  const result = await env.DB
     .prepare(
       `UPDATE users
        SET avatar_url = ?,
@@ -1520,7 +1521,7 @@ export const setUserAvatarAssets = async (
            avatar_bytes = ?,
            avatar_content_type = ?,
            updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND avatar_object_key IS ? AND avatar_thumb_key IS ?`,
     )
     .bind(
       avatar.avatarUrl,
@@ -1531,11 +1532,11 @@ export const setUserAvatarAssets = async (
       avatar.avatarContentType,
       now,
       userId,
+      previous.avatarObjectKey,
+      previous.avatarThumbKey,
     )
     .run();
-  const profile = await fetchMyUserProfile(env, userId);
-  if (!profile) throw new Error("User not found after avatar update.");
-  return profile;
+  return result.meta.changes === 1;
 };
 
 export const getUserAvatarKeys = async (

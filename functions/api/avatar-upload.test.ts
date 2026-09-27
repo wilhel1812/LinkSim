@@ -39,7 +39,7 @@ describe("avatar upload bounds", () => {
     verifyAuthMock.mockResolvedValue({ userId: "hidden@example.com", tokenPayload: {}, source: "headers" });
     fetchUserProfileMock.mockResolvedValue({ id: "hidden@example.com" });
     getUserAvatarKeysMock.mockResolvedValue({ avatarObjectKey: null, avatarThumbKey: null });
-    setUserAvatarAssetsMock.mockImplementation(async (_env, _id, avatar) => ({ id: "hidden@example.com", ...avatar }));
+    setUserAvatarAssetsMock.mockResolvedValue(true);
   });
 
   it("accepts exactly 8,000,090 UTF-8 bytes at depth 1 and rejects +1 or depth 2", async () => {
@@ -87,5 +87,37 @@ describe("avatar upload bounds", () => {
     expect((await call(env, JSON.stringify({ originalDataUrl: pngDataUrl(), thumbDataUrl: pngDataUrl() }))).status).toBe(500);
     expect(deletes).toHaveBeenCalledTimes(2);
     expect(deletes).not.toHaveBeenCalledWith(expect.stringContaining("prior"));
+  });
+
+  it("deletes the losing upload when concurrent replacements observed the same prior avatar", async () => {
+    const storedKeys = new Set<string>();
+    const deletedKeys = new Set<string>();
+    let currentKey: string | null = null;
+    let reads = 0;
+    let releaseReads!: () => void;
+    const bothRead = new Promise<void>((resolve) => { releaseReads = resolve; });
+    getUserAvatarKeysMock.mockImplementation(async () => {
+      const observedKey = currentKey;
+      reads += 1;
+      if (reads === 2) releaseReads();
+      await bothRead;
+      return { avatarObjectKey: observedKey, avatarThumbKey: null };
+    });
+    setUserAvatarAssetsMock.mockImplementation(async (_env, _id, avatar, previous) => {
+      if (currentKey !== previous.avatarObjectKey) return false;
+      currentKey = avatar.avatarObjectKey;
+      return true;
+    });
+    const env = makeEnv({ AVATAR_BUCKET: {
+      put: vi.fn(async (key: string) => { storedKeys.add(key); }),
+      delete: vi.fn(async (key: string) => { deletedKeys.add(key); storedKeys.delete(key); }),
+    } });
+    const body = JSON.stringify({ originalDataUrl: pngDataUrl(), thumbDataUrl: pngDataUrl() });
+    const responses = await Promise.all([call(env, body), call(env, body)]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(deletedKeys.size).toBe(2);
+    expect(storedKeys.size).toBe(2);
+    expect(storedKeys.has(currentKey!)).toBe(true);
   });
 });
