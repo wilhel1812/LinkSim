@@ -25,12 +25,14 @@ included.
   `https://staging.linksim.link/api/me` for the configured ordinary staging
   account.
 - The `production-canary` environment is restricted to the exact `main` branch
-  with no tag rule. Its expected user ID is configured for the administrator
-  account selected for this release. This is weaker than the preferred
-  ordinary-user canary and is an explicitly accepted limitation.
-- The production canary cookie and `AUTH_CANARY_CUTOVER_AT` remain unset. They
-  require a fresh production session and the approved production window, so the
-  canary gate is not complete and no scheduled production probe can activate.
+  with no tag rule. On 2026-09-27, the maintainer migrated and signed in an
+  ordinary, non-admin account. Its fresh production Better Auth session cookie
+  was loaded into the protected environment secret, and the expected user ID
+  was updated to match it. The temporary local handoff copy was removed; no
+  credential value is recorded here.
+- `AUTH_CANARY_CUTOVER_AT` remains unset until the reviewed release window is
+  ready. The canary gate is not complete and no scheduled production probe can
+  activate before that value and the production boundary are verified.
 
 ## Access boundary plans
 
