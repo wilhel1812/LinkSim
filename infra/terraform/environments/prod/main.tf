@@ -16,6 +16,7 @@ module "stack" {
   project_name                               = var.project_name
   project_production_branch                  = var.project_production_branch
   pages_compatibility_date                   = var.pages_compatibility_date
+  pages_preview_bindings_enabled             = false
   pages_domains                              = var.pages_domains
   pages_env_vars_plain                       = var.pages_env_vars_plain
   pages_env_vars_secret                      = var.pages_env_vars_secret

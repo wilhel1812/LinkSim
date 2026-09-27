@@ -1,10 +1,11 @@
 # Production authentication cutover checklist
 
-This runbook prepares the 0.29.0 migration from broad Cloudflare Access to
-Better Auth. Nothing here authorizes production work. Every production write
-requires a separately approved cutover window.
+This runbook tracks the production migration from broad Cloudflare Access to
+Better Auth. The maintainer approved the 2026-09-27 rollout, with the public
+boundary change planned for 15:00 UTC. Every production write remains gated by
+that reviewed window and the checks below.
 
-The checked-in production auth files describe the reviewed release candidate:
+The checked-in production auth files describe the cutover candidate:
 
 - `wrangler.production-auth.toml` is the prepared Pages configuration.
 - `workers/auth-runtime/wrangler.production.toml` is the prepared private auth
@@ -13,9 +14,11 @@ The checked-in production auth files describe the reviewed release candidate:
   flags; protected production CI supplies their reviewed values while auth mode
   is active.
 - `config/production-auth-mode.json` is the reviewed persistent deployment
-  switch. The activation candidate's `active: true`, `accessBoundary: broad`
-  state selects the auth runtime and additive Better Auth schema migrations
-  while broad Access remains available for rollback.
+  switch. The checked-in cutover candidate is `active: true`,
+  `accessBoundary: legacy`. It requires the existing Access API application to
+  be narrowed to `/api/auth/legacy-access/*` immediately before its production
+  deployment; the protected deployment rejects a broad boundary. The deployed
+  `v0.29.1` production build still has `accessBoundary: broad` until cutover.
 
 The initial production mode is `transition`: Better Auth is checked first while
 verified Access remains available for legacy migration. The existing Access API
@@ -120,11 +123,13 @@ the application boundary is verified.
   rollback regardless of natural request volume. Record where its
   unexpired, unrevoked credential is held, how it is rotated or revoked, and how
   the operator receives failures without exposing the credential.
-  The `production-canary` environment is restricted to the exact `main` branch
-  and has the selected administrator user ID, but the cookie and cutover time
-  remain unset. The administrator account is an accepted weaker substitute for
-  the preferred ordinary account. This gate remains open until a fresh session
-  and the approved window are configured.
+  The `production-canary` environment is restricted to the exact `main` branch.
+  A fresh, migrated ordinary-user session is in its protected secret and its
+  expected user ID matches that account. Its cutover time is set to
+  `2026-09-27T15:00:00.000Z`; scheduled probes remain dormant before that time.
+  The session initially expires before the end of the first week, so verify
+  rolling renewal after the first day and rotate it before expiry if needed.
+  The canary gate remains open until a protected production probe succeeds.
 - [x] Complete and record the stable-staging VoiceOver spot-check required by
   `docs/auth-transition.md`: sign-in choices, native passkey handoff
   announcements, Profile credential actions, actionable error/fallback guidance,
@@ -160,18 +165,20 @@ the application boundary is verified.
   it after the Access change and require exactly the inverse one-change plan.
   The pre-cutover zero-change plan passed on 2026-09-27. This item remains open
   for the required post-Access inverse plan.
-- [x] Review the production Better Auth schema probe and migrations. Confirm
-  normal production automation skips them while auth mode remains inactive.
+- [x] Review the production Better Auth schema probe and migrations. Normal
+  production automation skipped them before auth mode became active; the
+  protected `v0.29.0` activation applied them, and the 2026-09-27 read-only
+  production probe passed all 18 statements with zero rows written.
   The ordered migrations, probe and idempotence rerun passed on a disposable
   EEUR D1 database built from `db/schema.sql`; the database and temporary token
   were deleted. A production-data export was not taken because Wrangler warned
   it could make production D1 unavailable. See
   `experiments/better-auth/evidence/2026-09-27-production-auth-release-prep.md`.
-- [ ] Prepare and review the activation candidate that changes
-  `config/production-auth-mode.json` to `active: true` while keeping
-  `accessBoundary: broad`. Prepare a separate post-Access candidate that keeps
-  auth active and changes only `accessBoundary` to `legacy`. Stage and validate
-  both before the production freeze.
+- [ ] Verify the final tagged cutover candidate and exact-tree main promotion
+  against shared staging. The earlier `v0.29.0` activation and `v0.29.1`
+  privileged-recovery retirement are deployed under broad Access. The
+  `v0.29.5` candidate keeps auth active and recovery disabled, and requires
+  `accessBoundary: legacy`; deploy it only after the one-app Access narrowing.
 
 ### Protected canary configuration
 
@@ -224,27 +231,26 @@ protected values removed after the first-week review.
 
 ## Start the 90-day claim window
 
-At the approved cutover, record one UTC timestamp. Set
-`AUTH_LEGACY_CLAIM_DEADLINE` to exactly 90 days after it in both dormant configs.
-Record both values in the release evidence. Do not estimate the deadline before
-the cutover time is known.
+The reviewed public cutover timestamp is `2026-09-27T15:00:00.000Z` and the
+exact 90-day legacy-claim deadline is `2026-12-26T15:00:00.000Z`. The latter is
+already in both active production configs and Terraform. If the public cutover
+misses the reviewed timestamp, advance both values in a new candidate before
+narrowing Access; never backdate the claim window.
 
-Enable `AUTH_DUAL_LOGIN_MIGRATION_ENABLED`, `AUTH_LEGACY_CLAIM_ENABLED`, and
-`AUTH_REGISTRATION_ENABLED` only in the reviewed cutover candidate. Temporarily
-enable `AUTH_PRIVILEGED_PASSKEY_RECOVERY_ENABLED` in both Pages and runtime for
-the administrator bootstrap below. The dormant files keep all four disabled so
-an accidental deployment fails closed.
+Dual login, legacy claims and registration are enabled in the active auth
+configuration. Privileged passkey recovery was enabled only for the protected
+administrator bootstrap and was disabled permanently in `v0.29.1`.
 
 ## Ordered cutover
 
-The checked-in preparation defaults intentionally keep authentication disabled.
-The reviewed activation release sets the recorded deadline and approved flags,
-changes `active` to `true` while retaining the broad boundary, and reaches
-production through the normal tagged release and protected environment. The
-same protected job then performs the first three steps and permanently selects
-the auth configuration for later normal production releases. The manual
-`prod-auth-cutover` target remains available for a separately approved rerun and
-requires confirmation `APPROVE_PRODUCTION_AUTH_CUTOVER`.
+Steps 1–6 below were completed in the protected `v0.29.0` and `v0.29.1`
+deployments and follow-up Terraform apply. Production currently runs Better
+Auth behind broad Access, with privileged recovery disabled and Terraform at
+zero drift. The remaining public cutover begins at step 7. The checked-in
+`v0.29.5` candidate expects the narrowed legacy boundary and must not be
+promoted while broad Access is active. The manual `prod-auth-cutover` target
+remains available only for a separately approved rerun and requires
+confirmation `APPROVE_PRODUCTION_AUTH_CUTOVER`.
 
 1. Probe production D1. Apply, in order, the reviewed additive migrations
    `2026-09-19_better_auth_schema.sql`,
