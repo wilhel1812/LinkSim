@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.29.5] - 2026-09-27
+
+### Internal
+- Aligned the production authentication runbook with the current legacy-boundary cutover candidate and already-completed protected activation steps. No authentication behavior changed. (#1107)
+
 ## [0.29.4] - 2026-09-27
 
 ### Internal

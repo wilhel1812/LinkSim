@@ -95,7 +95,8 @@ auth releases and applies migrations idempotently if needed.
 ## Remaining before public activation
 
 - Verify the final immutable candidate on staging and approve its protected
-  main promotion without moving the superseded `v0.29.2` or `v0.29.3` tags.
+  main promotion without moving the superseded `v0.29.2`, `v0.29.3` or
+  `v0.29.4` tags.
 - At the reviewed window, narrow exactly one Access application, immediately
   promote the exact tagged candidate, and run the protected production canary.
 - Restore broad Access first if a rollback trigger occurs. Continue the
@@ -117,7 +118,8 @@ auth releases and applies migrations idempotently if needed.
 - The `v0.29.1` candidate keeps Better Auth active and broad Access available,
   but permanently disables new privileged passkey-recovery attempts after the
   administrator bootstrap.
-- The immutable `v0.29.2` and `v0.29.3` candidates were not promoted after
-  their release gates changed. The `v0.29.4` candidate keeps Better Auth active
-  and privileged passkey recovery disabled, and changes the expected Access
-  boundary to `legacy` for the public cutover.
+- The immutable `v0.29.2`, `v0.29.3` and `v0.29.4` candidates were not promoted
+  after release-review findings. The `v0.29.5` candidate keeps Better Auth
+  active and privileged passkey recovery disabled, and changes the expected
+  Access boundary to `legacy` for the public cutover. Its runbook now states
+  that the legacy-only Access boundary must precede production deployment.
