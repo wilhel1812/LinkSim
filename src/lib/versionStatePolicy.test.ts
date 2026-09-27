@@ -1,20 +1,20 @@
 /// <reference types="node" />
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const scriptPath = resolve(process.cwd(), "scripts/version-state.mjs");
 
-const evaluatePolicy = (expression: string, cwd?: string) => {
+const evaluatePolicy = (expression: string, cwd?: string, policyScriptPath = scriptPath) => {
   const output = execFileSync(
     process.execPath,
     [
       "--input-type=module",
       "--eval",
-      `import { validatePackageVersionParity, validateStagingVersionState, validateCurrentStagingVersionState, isTaggedSkippedPatchCandidate, isTagInStagingHistory } from ${JSON.stringify(scriptPath)};
+      `import { validatePackageVersionParity, validateStagingVersionState, validateCurrentStagingVersionState, isTaggedSkippedPatchCandidate, isTagInStagingHistory } from ${JSON.stringify(policyScriptPath)};
        try {
          const result = ${expression};
          console.log(JSON.stringify({ ok: true, value: result }));
@@ -174,6 +174,9 @@ describe("staging version-state policy", () => {
     };
 
     try {
+      const fixtureScriptPath = join(directory, "scripts", "version-state.mjs");
+      mkdirSync(join(directory, "scripts"));
+      copyFileSync(scriptPath, fixtureScriptPath);
       git("init", "-q", "-b", "staging");
       git("config", "user.name", "Version State Test");
       git("config", "user.email", "version-state@example.invalid");
@@ -194,6 +197,7 @@ describe("staging version-state policy", () => {
       expect(evaluatePolicy(
         'validateCurrentStagingVersionState({ productionRef: "production" })',
         directory,
+        fixtureScriptPath,
       )).toEqual({
         ok: true,
         value: {
@@ -207,6 +211,7 @@ describe("staging version-state policy", () => {
       const malformed = evaluatePolicy(
         'validateCurrentStagingVersionState({ productionRef: "production" })',
         directory,
+        fixtureScriptPath,
       );
       expect(malformed.ok).toBe(false);
       expect(malformed.ok ? "" : malformed.message).toContain("skipped patch candidate");

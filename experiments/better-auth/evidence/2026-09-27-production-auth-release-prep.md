@@ -96,8 +96,8 @@ auth releases and applies migrations idempotently if needed.
 ## Remaining before public activation
 
 - Verify the final immutable candidate on staging and approve its protected
-  main promotion without moving the superseded `v0.29.2`, `v0.29.3`,
-  `v0.29.4` or `v0.29.5` tags.
+  main promotion without moving the superseded `v0.29.2` through `v0.29.6`
+  tags.
 - At the reviewed window, narrow exactly one Access application, immediately
   promote the exact tagged candidate, and run the protected production canary.
 - Restore broad Access first if a rollback trigger occurs. Continue the
