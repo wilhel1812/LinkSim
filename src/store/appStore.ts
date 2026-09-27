@@ -114,6 +114,7 @@ const readStorage = <T,>(key: string, fallback: T): T => {
 let hydrated = false;
 let syncTimer: number | null = null;
 let syncInFlight = false;
+let syncAccountGeneration = 0;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
 let lastSyncedPayloadDigest: string | null = (() => {
@@ -174,15 +175,22 @@ const resetSyncRevisions = (): void => {
 };
 
 const canEditLibraryItem = (
-  item: { ownerUserId?: string; effectiveRole?: string },
+  item: {
+    ownerUserId?: string;
+    effectiveRole?: string;
+    sharedWith?: Array<{ userId: string; role: string }>;
+  },
   currentUser: CloudUser | null,
 ): boolean => {
   if (!currentUser) return false;
   if (item.effectiveRole === "viewer") return false;
   if (item.ownerUserId === currentUser.id) return true;
-  return (
-    item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor"
-  );
+  if (currentUser.isAdmin) return true;
+  if (!item.ownerUserId) return item.effectiveRole === "owner";
+  if (item.effectiveRole !== "admin" && item.effectiveRole !== "editor") return false;
+  return Boolean(item.sharedWith?.some((grant) =>
+    grant.userId === currentUser.id && (grant.role === "admin" || grant.role === "editor"),
+  ));
 };
 
 const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser | null => {
@@ -222,19 +230,7 @@ const isAuthRelatedErrorMessage = (message: string): boolean => {
   );
 };
 
-const canEditItem = (
-  item: { ownerUserId?: string; effectiveRole?: string },
-  currentUser: CloudUser | null,
-): boolean => {
-  if (!currentUser) return false;
-  if (item.effectiveRole === "viewer") return false;
-  if (item.ownerUserId === currentUser.id) return true;
-  return (
-    item.effectiveRole === "owner" ||
-    item.effectiveRole === "admin" ||
-    item.effectiveRole === "editor"
-  );
-};
+const canEditItem = canEditLibraryItem;
 
 const canEditActiveSavedSimulation = (
   currentUser: CloudUser | null,
@@ -709,6 +705,9 @@ type AppState = {
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const ACTIVE_LIBRARY_ACCOUNT_KEY = "linksim-library-active-account-v1";
+const LEGACY_LIBRARY_BACKUP_KEY = "linksim-library-legacy-backup-v1";
+const accountLibraryCacheKey = (userId: string): string => `linksim-library-account-v1:${userId}`;
 const LAST_SESSION_KEY = "linksim-last-session-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
@@ -1348,6 +1347,79 @@ const initialBasemapStyleId = normalizeBasemapStyleId(
 
 const initialScenarioDefaults = simulationDefaultsFromPreset(defaultScenario.defaultFrequencyPresetId);
 
+type AccountLibraryCache = {
+  siteLibrary: SiteLibraryEntry[];
+  simulationPresets: SimulationPreset[];
+  workspace?: {
+    snapshot: SimulationPreset["snapshot"];
+    selectedScenarioId: string;
+    selectedSiteIds: string[];
+    mapViewport?: MapViewport;
+  };
+  lastSessionRaw?: string | null;
+  lastSimulationRef?: string | null;
+  syncDigest: string | null;
+  lastFetchedAt: string | null;
+  syncPending: boolean;
+  pendingChangesCount: number;
+};
+
+const captureAccountLibraryCache = (state: AppState): AccountLibraryCache => ({
+  siteLibrary: state.siteLibrary,
+  simulationPresets: state.simulationPresets,
+  workspace: {
+    snapshot: buildSimulationSnapshotFromState(state),
+    selectedScenarioId: state.selectedScenarioId,
+    selectedSiteIds: state.selectedSiteIds,
+    mapViewport: state.mapViewport,
+  },
+  lastSessionRaw: localStorage.getItem(LAST_SESSION_KEY),
+  lastSimulationRef: localStorage.getItem(LAST_SIMULATION_REF_KEY),
+  syncDigest: localStorage.getItem(SYNC_DIGEST_KEY),
+  lastFetchedAt: localStorage.getItem(LAST_FETCHED_AT_KEY),
+  syncPending: state.syncPending,
+  pendingChangesCount: state.pendingChangesCount,
+});
+
+const readAccountLibraryCache = (userId: string): AccountLibraryCache | null => {
+  const stored = readStorage<AccountLibraryCache | null>(accountLibraryCacheKey(userId), null);
+  if (!stored || !Array.isArray(stored.siteLibrary) || !Array.isArray(stored.simulationPresets)) return null;
+  const partitioned = partitionLibraryPayload(stored);
+  quarantineLibraryRecords(partitioned.rejected, "account-cache");
+  return {
+    siteLibrary: normalizeSiteLibrary(partitioned.siteLibrary as SiteLibraryEntry[]),
+    simulationPresets: normalizeSimulationPresets(partitioned.simulationPresets as SimulationPreset[]),
+    workspace: stored.workspace?.snapshot && Array.isArray(stored.workspace.snapshot.sites)
+      ? stored.workspace
+      : undefined,
+    lastSessionRaw: typeof stored.lastSessionRaw === "string" ? stored.lastSessionRaw : null,
+    lastSimulationRef: typeof stored.lastSimulationRef === "string" ? stored.lastSimulationRef : null,
+    syncDigest: typeof stored.syncDigest === "string" ? stored.syncDigest : null,
+    lastFetchedAt: typeof stored.lastFetchedAt === "string" ? stored.lastFetchedAt : null,
+    syncPending: stored.syncPending === true,
+    pendingChangesCount: Number.isFinite(stored.pendingChangesCount) ? Math.max(0, stored.pendingChangesCount) : 0,
+  };
+};
+
+const restoreAccountLibraryCache = (cache: AccountLibraryCache): boolean => {
+  if (!writeStorage(SITE_LIBRARY_KEY, cache.siteLibrary)) return false;
+  if (!writeStorage(SIM_PRESETS_KEY, cache.simulationPresets)) return false;
+  try {
+    if (cache.syncDigest) localStorage.setItem(SYNC_DIGEST_KEY, cache.syncDigest);
+    else localStorage.removeItem(SYNC_DIGEST_KEY);
+    if (cache.lastFetchedAt) localStorage.setItem(LAST_FETCHED_AT_KEY, cache.lastFetchedAt);
+    else localStorage.removeItem(LAST_FETCHED_AT_KEY);
+    if (cache.lastSessionRaw) localStorage.setItem(LAST_SESSION_KEY, cache.lastSessionRaw);
+    else localStorage.removeItem(LAST_SESSION_KEY);
+    if (cache.lastSimulationRef) localStorage.setItem(LAST_SIMULATION_REF_KEY, cache.lastSimulationRef);
+    else localStorage.removeItem(LAST_SIMULATION_REF_KEY);
+    return true;
+  } catch (error) {
+    console.error("[appStore] Failed to restore account Library sync state:", error);
+    return false;
+  }
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: [],
   links: [],
@@ -1431,11 +1503,83 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
-  setCurrentUser: (user) =>
-    set({
-      currentUser: user,
-      authState: user ? "signed_in" : "signed_out",
-    }),
+  setCurrentUser: (user) => {
+    if (get().currentUser?.id !== user?.id) {
+      syncAccountGeneration += 1;
+      if (syncTimer !== null) window.clearTimeout(syncTimer);
+      syncTimer = null;
+      syncInFlight = false;
+      hydrated = false;
+      set({ syncBusy: false, isInitializing: false });
+    }
+    if (!user) {
+      set({ currentUser: null, authState: "signed_out" });
+      return;
+    }
+    const activeAccountId = localStorage.getItem(ACTIVE_LIBRARY_ACCOUNT_KEY);
+    if (!activeAccountId) {
+      if (!localStorage.getItem(LEGACY_LIBRARY_BACKUP_KEY)
+        && !writeStorage(LEGACY_LIBRARY_BACKUP_KEY, captureAccountLibraryCache(get()))) {
+        set({ currentUser: user, authState: "signed_in" });
+        return;
+      }
+      localStorage.setItem(ACTIVE_LIBRARY_ACCOUNT_KEY, user.id);
+    } else if (activeAccountId !== user.id) {
+      const outgoing = captureAccountLibraryCache(get());
+      const incoming = readAccountLibraryCache(user.id) ?? {
+        siteLibrary: [], simulationPresets: [], syncDigest: null, lastFetchedAt: null,
+        syncPending: false, pendingChangesCount: 0,
+      };
+      const outgoingSaved = writeStorage(accountLibraryCacheKey(activeAccountId), outgoing);
+      const incomingRestored = outgoingSaved && restoreAccountLibraryCache(incoming);
+      if (!incomingRestored && outgoingSaved) restoreAccountLibraryCache(outgoing);
+      if (incomingRestored) {
+        get().cancelTerrainLoad();
+        localStorage.setItem(ACTIVE_LIBRARY_ACCOUNT_KEY, user.id);
+        localMutationRevision = 0;
+        syncedMutationRevision = 0;
+        dirtySiteIds = new Set();
+        dirtySimIds = new Set();
+        requiresFullPush = true;
+        lastSyncedPayloadDigest = incoming.syncDigest;
+        const workspace = incoming.workspace;
+        const snapshot = workspace?.snapshot;
+        set({
+          siteLibrary: incoming.siteLibrary,
+          simulationPresets: incoming.simulationPresets,
+          sites: snapshot?.sites ?? [],
+          links: snapshot?.links ?? [],
+          systems: snapshot?.systems ?? defaultScenario.systems,
+          networks: snapshot?.networks ?? [],
+          selectedScenarioId: workspace?.selectedScenarioId ?? "",
+          selectedSiteId: snapshot?.selectedSiteId ?? "",
+          selectedSiteIds: workspace?.selectedSiteIds ?? [],
+          selectedLinkId: snapshot?.selectedLinkId ?? "",
+          selectedNetworkId: snapshot?.selectedNetworkId ?? "",
+          selectedCoverageResolution: snapshot?.selectedCoverageResolution ?? "24",
+          selectedOverlayRadiusOption: snapshot?.selectedOverlayRadiusOption ?? defaultOptionForSelectionCount(0),
+          propagationModel: snapshot?.propagationModel ?? "ITM",
+          selectedFrequencyPresetId: snapshot?.selectedFrequencyPresetId ?? defaultScenario.defaultFrequencyPresetId,
+          rxSensitivityTargetDbm: snapshot?.rxSensitivityTargetDbm ?? initialScenarioDefaults.rxSensitivityTargetDbm,
+          environmentLossDb: snapshot?.environmentLossDb ?? initialScenarioDefaults.environmentLossDb,
+          propagationEnvironment: snapshot?.propagationEnvironment ?? initialScenarioDefaults.propagationEnvironment,
+          autoPropagationEnvironment: snapshot?.autoPropagationEnvironment ?? initialScenarioDefaults.autoPropagationEnvironment,
+          terrainDataset: snapshot?.terrainDataset ?? "copernicus30",
+          simulationDefaultsOverrideEnabled: snapshot?.simulationDefaultsOverrideEnabled ?? false,
+          simulationDefaultsOverride: snapshot?.simulationDefaultsOverride ?? null,
+          linkColorMode: snapshot?.linkColorMode ?? DEFAULT_LINK_COLOR_MODE,
+          siteIconColors: snapshot?.siteIconColors ?? {},
+          mapViewport: workspace?.mapViewport,
+          syncPending: incoming.syncPending,
+          pendingChangesCount: incoming.pendingChangesCount,
+          syncStatus: incoming.syncPending ? "error" : "synced",
+          syncErrorMessage: null,
+          syncStatusMessage: incoming.syncPending ? "Changes saved locally; sync will resume after sign-in." : "",
+        });
+      }
+    }
+    set({ currentUser: user, authState: "signed_in" });
+  },
   getDefaultFrequencyPresetIdForNewSimulation: () => {
     const state = get();
     return resolveDefaultFrequencyPresetIdForNewSimulation(state.currentUser);
@@ -1452,6 +1596,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
   initializeCloudSync: async () => {
+    const generationAtStart = syncAccountGeneration;
+    const userIdAtStart = get().currentUser?.id;
+    const isCurrentAccount = () =>
+      syncAccountGeneration === generationAtStart && get().currentUser?.id === userIdAtStart;
     const applyStartupSelection = !hydrated;
     console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing...", isInitializing: true });
@@ -1461,6 +1609,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       })();
       console.log("[appStore] Fetching cloud library...", lastFetchedAt ? `(delta since ${lastFetchedAt})` : "(full)");
       const cloud = await fetchCloudLibrary(lastFetchedAt ? { since: lastFetchedAt } : undefined);
+      if (!isCurrentAccount()) return;
       const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
         sites: trustedCloud.siteLibrary.length,
@@ -1486,6 +1635,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const digest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(current.siteLibrary, current.simulationPresets, current.currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
         if (digest !== lastSyncedPayloadDigest) {
           requiresFullPush = true;
           set({ syncBusy: false, isInitializing: false });
@@ -1553,6 +1703,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         remotePayloadDigest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(fixedCloudSites, fixedCloudSims, currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
       } else {
         const cloudPresets = trustedCloud.simulationPresets;
 
@@ -1571,6 +1722,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         remotePayloadDigest = await computeSyncPayloadDigest(
           buildEditableSyncPayloadInfo(cloudSites, cloudPresets as SimulationPreset[], currentUser).payload,
         );
+        if (!isCurrentAccount()) return;
         set({
           syncPending: false,
           pendingChangesCount: 0,
@@ -1592,6 +1744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentState.currentUser,
       );
       const currentPayloadDigest = await computeSyncPayloadDigest(currentPayload.payload);
+      if (!isCurrentAccount()) return;
       if (currentPayloadDigest === lastSyncedPayloadDigest) {
         console.log("[appStore] initializeCloudSync SUCCESS - no startup sync needed");
         set({
@@ -1611,6 +1764,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       set({ syncPending: true, syncBusy: true });
       syncTimer = window.setTimeout(async () => {
+        if (!isCurrentAccount()) return;
         if (!get().isOnline) {
           set({
             syncBusy: false,
@@ -1646,7 +1800,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             skipped: skippedCount,
           });
           await pushCloudLibrary(payload);
+          if (!isCurrentAccount()) return;
           const digest = await digestPromise;
+          if (!isCurrentAccount()) return;
           lastSyncedPayloadDigest = digest;
           writeStorage(SYNC_DIGEST_KEY, digest);
           console.log("[appStore] Post-init Push SUCCESS");
@@ -1662,6 +1818,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             isInitializing: false,
           });
         } catch (error) {
+          if (!isCurrentAccount()) return;
           console.error("[appStore] Post-init sync FAILED:", error);
           const message = getUiErrorMessage(error);
           set({
@@ -1672,14 +1829,17 @@ export const useAppStore = create<AppState>((set, get) => ({
             isInitializing: false,
           });
         } finally {
-          syncInFlight = false;
-          set({ syncBusy: false, isInitializing: false });
-          if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
-            get().performCloudSyncPush(false);
+          if (isCurrentAccount()) {
+            syncInFlight = false;
+            set({ syncBusy: false, isInitializing: false });
+            if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
+              get().performCloudSyncPush(false);
+            }
           }
         }
       }, SYNC_DEBOUNCE_MS);
     } catch (error) {
+      if (!isCurrentAccount()) return;
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       if (isAuthRelatedErrorMessage(message)) {
@@ -1698,6 +1858,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   performCloudSyncPush: (recordMutation = true) => {
     const schedulePush = (recordMutation: boolean): void => {
       if (!hydrated) return;
+      const generationAtSchedule = syncAccountGeneration;
+      const userIdAtSchedule = get().currentUser?.id;
+      const isCurrentAccount = () =>
+        syncAccountGeneration === generationAtSchedule && get().currentUser?.id === userIdAtSchedule;
       const pendingChangesCount = recordMutation ? recordLocalMutation() : Math.max(0, localMutationRevision - syncedMutationRevision);
       if (get().authState === "signed_out" || !get().currentUser?.id || !get().isOnline) {
         set({ syncPending: true, syncStatus: "error", pendingChangesCount,
@@ -1711,6 +1875,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ syncPending: true, syncStatus: "synced", pendingChangesCount, syncErrorMessage: null,
         syncStatusMessage: `${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}` });
       syncTimer = window.setTimeout(async () => {
+        if (!isCurrentAccount()) return;
         if (syncInFlight) {
           set({ syncPending: true, syncStatusMessage: "Waiting for active sync to finish..." });
           return;
@@ -1728,6 +1893,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           let info = isFullPush ? fullInfo : buildDeltaSyncPayloadInfo(siteLibrary, simulationPresets, currentUser);
           if (!isFullPush && info.payload.siteLibrary.length === 0 && info.payload.simulationPresets.length === 0) {
             const digest = await fullDigestPromise;
+            if (!isCurrentAccount()) return;
             if (digest === lastSyncedPayloadDigest) {
               remaining = markSyncedThrough(revisionAtStart);
               dirtySiteIds = new Set();
@@ -1744,7 +1910,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           const sentSites = new Map(info.payload.siteLibrary.map((entry) => [entry.id, JSON.stringify(entry)]));
           const sentSimulations = new Map(info.payload.simulationPresets.map((entry) => [entry.id, JSON.stringify(entry)]));
           await pushCloudLibrary(info.payload);
+          if (!isCurrentAccount()) return;
           const fullDigestAtStart = await fullDigestPromise;
+          if (!isCurrentAccount()) return;
           const latest = get();
           for (const [id, encoded] of sentSites) {
             const current = latest.siteLibrary.find((entry) => entry.id === id);
@@ -1762,6 +1930,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           set({ syncPending: remaining > 0, pendingChangesCount: remaining, syncStatus: "synced",
             lastSyncedAt: new Date().toISOString(), syncErrorMessage: null, syncStatusMessage: "Changes saved" });
         } catch (error) {
+          if (!isCurrentAccount()) return;
           const message = getUiErrorMessage(error);
           if (isAuthRelatedErrorMessage(message)) set({ currentUser: null, authState: "signed_out" });
           set({ syncPending: true, syncStatus: "error", syncErrorMessage: message,
@@ -1769,9 +1938,11 @@ export const useAppStore = create<AppState>((set, get) => ({
               ? "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes."
               : `Save failed: ${message}` });
         } finally {
-          syncInFlight = false;
-          set({ syncBusy: false });
-          if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
+          if (isCurrentAccount()) {
+            syncInFlight = false;
+            set({ syncBusy: false });
+            if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
+          }
         }
       }, SYNC_DEBOUNCE_MS);
     };
@@ -1813,12 +1984,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     syncInFlight = true;
+    const generationAtStart = syncAccountGeneration;
+    const userIdAtStart = get().currentUser?.id;
+    const isCurrentAccount = () =>
+      syncAccountGeneration === generationAtStart && get().currentUser?.id === userIdAtStart;
     const revisionAtStart = localMutationRevision;
     let completed = false;
     let remaining = Math.max(0, localMutationRevision - syncedMutationRevision);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
     try {
       const deletionState = await fetchCloudLibrary();
+      if (!isCurrentAccount()) return;
       get().applyDeletedSiteTombstones([...deletionState.deletedSiteIds, ...deletionState.removedSiteIds]);
       get().applyDeletedSimulationTombstones([...deletionState.deletedSimulationIds, ...deletionState.removedSimulationIds]);
       const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
@@ -1829,16 +2005,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       const sentSites = new Map(payload.siteLibrary.map((entry) => [entry.id, JSON.stringify(entry)]));
       const sentSimulations = new Map(payload.simulationPresets.map((entry) => [entry.id, JSON.stringify(entry)]));
       const payloadDigest = await computeSyncPayloadDigest(payload);
+      if (!isCurrentAccount()) return;
       console.log("[appStore] Pushing local data to cloud:", {
         sites: editableSites.length,
         simulations: editableSims.length,
         skipped: skippedCount,
       });
       await pushCloudLibrary(payload);
+      if (!isCurrentAccount()) return;
       lastSyncedPayloadDigest = payloadDigest;
       writeStorage(SYNC_DIGEST_KEY, payloadDigest);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
+      if (!isCurrentAccount()) return;
       const trustedCloud = partitionTrustedCloudLibrary(cloud);
       console.log("[appStore] Cloud data received:", {
         sites: trustedCloud.siteLibrary.length,
@@ -1888,6 +2067,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       console.log("[appStore] performManualCloudSync SUCCESS");
     } catch (error) {
+      if (!isCurrentAccount()) return;
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       if (isAuthRelatedErrorMessage(message)) {
@@ -1900,10 +2080,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncStatusMessage: `Sync failed: ${message}`,
       });
     } finally {
-      syncInFlight = false;
-      set({ syncBusy: false });
-      if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
-        get().performCloudSyncPush(false);
+      if (isCurrentAccount()) {
+        syncInFlight = false;
+        set({ syncBusy: false });
+        if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) {
+          get().performCloudSyncPush(false);
+        }
       }
     }
   },
@@ -3520,13 +3702,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const siteCountBefore = current.siteLibrary.length;
     const simCountBefore = current.simulationPresets.length;
+    const preserveForeignCache = (
+      existing: { ownerUserId?: string; effectiveRole?: string; sharedWith?: Array<{ userId: string; role: string }> } | undefined,
+      incoming: { effectiveRole?: string },
+    ): boolean => Boolean(
+      source === "trusted-cloud" && existing && current.currentUser && !current.currentUser.isAdmin
+      && existing.ownerUserId && existing.ownerUserId !== current.currentUser.id
+      && existing.effectiveRole !== "viewer" && incoming.effectiveRole === "viewer"
+      && !canEditLibraryItem(existing, current.currentUser)
+    );
 
     const nextSiteLibrary =
       mode === "replace"
         ? incomingSites
         : (() => {
             const byId = new Map(current.siteLibrary.map((entry) => [entry.id, entry]));
-            for (const entry of incomingSites) byId.set(entry.id, entry);
+            for (const entry of incomingSites) {
+              if (!preserveForeignCache(byId.get(entry.id), entry)) byId.set(entry.id, entry);
+            }
             return normalizeSiteLibrary([...byId.values()]);
           })();
 
@@ -3536,7 +3729,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         : (() => {
             const byId = new Map<string, SimulationPreset>();
             for (const preset of current.simulationPresets) byId.set(preset.id, preset);
-            for (const preset of incomingPresets) byId.set(preset.id, preset);
+            for (const preset of incomingPresets) {
+              if (!preserveForeignCache(byId.get(preset.id), preset)) byId.set(preset.id, preset);
+            }
             return normalizeSimulationPresets(Array.from(byId.values())).sort((a, b) =>
               a.updatedAt < b.updatedAt ? 1 : -1,
             );
