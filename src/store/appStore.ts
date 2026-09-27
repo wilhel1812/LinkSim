@@ -174,15 +174,22 @@ const resetSyncRevisions = (): void => {
 };
 
 const canEditLibraryItem = (
-  item: { ownerUserId?: string; effectiveRole?: string },
+  item: {
+    ownerUserId?: string;
+    effectiveRole?: string;
+    sharedWith?: Array<{ userId: string; role: string }>;
+  },
   currentUser: CloudUser | null,
 ): boolean => {
   if (!currentUser) return false;
   if (item.effectiveRole === "viewer") return false;
   if (item.ownerUserId === currentUser.id) return true;
-  return (
-    item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor"
-  );
+  if (currentUser.isAdmin) return true;
+  if (!item.ownerUserId) return item.effectiveRole === "owner";
+  if (item.effectiveRole !== "admin" && item.effectiveRole !== "editor") return false;
+  return Boolean(item.sharedWith?.some((grant) =>
+    grant.userId === currentUser.id && (grant.role === "admin" || grant.role === "editor"),
+  ));
 };
 
 const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser | null => {
@@ -222,19 +229,7 @@ const isAuthRelatedErrorMessage = (message: string): boolean => {
   );
 };
 
-const canEditItem = (
-  item: { ownerUserId?: string; effectiveRole?: string },
-  currentUser: CloudUser | null,
-): boolean => {
-  if (!currentUser) return false;
-  if (item.effectiveRole === "viewer") return false;
-  if (item.ownerUserId === currentUser.id) return true;
-  return (
-    item.effectiveRole === "owner" ||
-    item.effectiveRole === "admin" ||
-    item.effectiveRole === "editor"
-  );
-};
+const canEditItem = canEditLibraryItem;
 
 const canEditActiveSavedSimulation = (
   currentUser: CloudUser | null,
@@ -709,6 +704,9 @@ type AppState = {
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const ACTIVE_LIBRARY_ACCOUNT_KEY = "linksim-library-active-account-v1";
+const LEGACY_LIBRARY_BACKUP_KEY = "linksim-library-legacy-backup-v1";
+const accountLibraryCacheKey = (userId: string): string => `linksim-library-account-v1:${userId}`;
 const LAST_SESSION_KEY = "linksim-last-session-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
@@ -1348,6 +1346,79 @@ const initialBasemapStyleId = normalizeBasemapStyleId(
 
 const initialScenarioDefaults = simulationDefaultsFromPreset(defaultScenario.defaultFrequencyPresetId);
 
+type AccountLibraryCache = {
+  siteLibrary: SiteLibraryEntry[];
+  simulationPresets: SimulationPreset[];
+  workspace?: {
+    snapshot: SimulationPreset["snapshot"];
+    selectedScenarioId: string;
+    selectedSiteIds: string[];
+    mapViewport?: MapViewport;
+  };
+  lastSessionRaw?: string | null;
+  lastSimulationRef?: string | null;
+  syncDigest: string | null;
+  lastFetchedAt: string | null;
+  syncPending: boolean;
+  pendingChangesCount: number;
+};
+
+const captureAccountLibraryCache = (state: AppState): AccountLibraryCache => ({
+  siteLibrary: state.siteLibrary,
+  simulationPresets: state.simulationPresets,
+  workspace: {
+    snapshot: buildSimulationSnapshotFromState(state),
+    selectedScenarioId: state.selectedScenarioId,
+    selectedSiteIds: state.selectedSiteIds,
+    mapViewport: state.mapViewport,
+  },
+  lastSessionRaw: localStorage.getItem(LAST_SESSION_KEY),
+  lastSimulationRef: localStorage.getItem(LAST_SIMULATION_REF_KEY),
+  syncDigest: localStorage.getItem(SYNC_DIGEST_KEY),
+  lastFetchedAt: localStorage.getItem(LAST_FETCHED_AT_KEY),
+  syncPending: state.syncPending,
+  pendingChangesCount: state.pendingChangesCount,
+});
+
+const readAccountLibraryCache = (userId: string): AccountLibraryCache | null => {
+  const stored = readStorage<AccountLibraryCache | null>(accountLibraryCacheKey(userId), null);
+  if (!stored || !Array.isArray(stored.siteLibrary) || !Array.isArray(stored.simulationPresets)) return null;
+  const partitioned = partitionLibraryPayload(stored);
+  quarantineLibraryRecords(partitioned.rejected, "account-cache");
+  return {
+    siteLibrary: normalizeSiteLibrary(partitioned.siteLibrary as SiteLibraryEntry[]),
+    simulationPresets: normalizeSimulationPresets(partitioned.simulationPresets as SimulationPreset[]),
+    workspace: stored.workspace?.snapshot && Array.isArray(stored.workspace.snapshot.sites)
+      ? stored.workspace
+      : undefined,
+    lastSessionRaw: typeof stored.lastSessionRaw === "string" ? stored.lastSessionRaw : null,
+    lastSimulationRef: typeof stored.lastSimulationRef === "string" ? stored.lastSimulationRef : null,
+    syncDigest: typeof stored.syncDigest === "string" ? stored.syncDigest : null,
+    lastFetchedAt: typeof stored.lastFetchedAt === "string" ? stored.lastFetchedAt : null,
+    syncPending: stored.syncPending === true,
+    pendingChangesCount: Number.isFinite(stored.pendingChangesCount) ? Math.max(0, stored.pendingChangesCount) : 0,
+  };
+};
+
+const restoreAccountLibraryCache = (cache: AccountLibraryCache): boolean => {
+  if (!writeStorage(SITE_LIBRARY_KEY, cache.siteLibrary)) return false;
+  if (!writeStorage(SIM_PRESETS_KEY, cache.simulationPresets)) return false;
+  try {
+    if (cache.syncDigest) localStorage.setItem(SYNC_DIGEST_KEY, cache.syncDigest);
+    else localStorage.removeItem(SYNC_DIGEST_KEY);
+    if (cache.lastFetchedAt) localStorage.setItem(LAST_FETCHED_AT_KEY, cache.lastFetchedAt);
+    else localStorage.removeItem(LAST_FETCHED_AT_KEY);
+    if (cache.lastSessionRaw) localStorage.setItem(LAST_SESSION_KEY, cache.lastSessionRaw);
+    else localStorage.removeItem(LAST_SESSION_KEY);
+    if (cache.lastSimulationRef) localStorage.setItem(LAST_SIMULATION_REF_KEY, cache.lastSimulationRef);
+    else localStorage.removeItem(LAST_SIMULATION_REF_KEY);
+    return true;
+  } catch (error) {
+    console.error("[appStore] Failed to restore account Library sync state:", error);
+    return false;
+  }
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: [],
   links: [],
@@ -1431,11 +1502,78 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
-  setCurrentUser: (user) =>
-    set({
-      currentUser: user,
-      authState: user ? "signed_in" : "signed_out",
-    }),
+  setCurrentUser: (user) => {
+    if (!user) {
+      set({ currentUser: null, authState: "signed_out" });
+      return;
+    }
+    const activeAccountId = localStorage.getItem(ACTIVE_LIBRARY_ACCOUNT_KEY);
+    if (!activeAccountId) {
+      if (!localStorage.getItem(LEGACY_LIBRARY_BACKUP_KEY)
+        && !writeStorage(LEGACY_LIBRARY_BACKUP_KEY, captureAccountLibraryCache(get()))) {
+        set({ currentUser: user, authState: "signed_in" });
+        return;
+      }
+      localStorage.setItem(ACTIVE_LIBRARY_ACCOUNT_KEY, user.id);
+    } else if (activeAccountId !== user.id) {
+      const outgoing = captureAccountLibraryCache(get());
+      const incoming = readAccountLibraryCache(user.id) ?? {
+        siteLibrary: [], simulationPresets: [], syncDigest: null, lastFetchedAt: null,
+        syncPending: false, pendingChangesCount: 0,
+      };
+      const outgoingSaved = writeStorage(accountLibraryCacheKey(activeAccountId), outgoing);
+      const incomingRestored = outgoingSaved && restoreAccountLibraryCache(incoming);
+      if (!incomingRestored && outgoingSaved) restoreAccountLibraryCache(outgoing);
+      if (incomingRestored) {
+        get().cancelTerrainLoad();
+        localStorage.setItem(ACTIVE_LIBRARY_ACCOUNT_KEY, user.id);
+        if (syncTimer !== null) window.clearTimeout(syncTimer);
+        syncTimer = null;
+        hydrated = false;
+        localMutationRevision = 0;
+        syncedMutationRevision = 0;
+        dirtySiteIds = new Set();
+        dirtySimIds = new Set();
+        requiresFullPush = true;
+        lastSyncedPayloadDigest = incoming.syncDigest;
+        const workspace = incoming.workspace;
+        const snapshot = workspace?.snapshot;
+        set({
+          siteLibrary: incoming.siteLibrary,
+          simulationPresets: incoming.simulationPresets,
+          sites: snapshot?.sites ?? [],
+          links: snapshot?.links ?? [],
+          systems: snapshot?.systems ?? defaultScenario.systems,
+          networks: snapshot?.networks ?? [],
+          selectedScenarioId: workspace?.selectedScenarioId ?? "",
+          selectedSiteId: snapshot?.selectedSiteId ?? "",
+          selectedSiteIds: workspace?.selectedSiteIds ?? [],
+          selectedLinkId: snapshot?.selectedLinkId ?? "",
+          selectedNetworkId: snapshot?.selectedNetworkId ?? "",
+          selectedCoverageResolution: snapshot?.selectedCoverageResolution ?? "24",
+          selectedOverlayRadiusOption: snapshot?.selectedOverlayRadiusOption ?? defaultOptionForSelectionCount(0),
+          propagationModel: snapshot?.propagationModel ?? "ITM",
+          selectedFrequencyPresetId: snapshot?.selectedFrequencyPresetId ?? defaultScenario.defaultFrequencyPresetId,
+          rxSensitivityTargetDbm: snapshot?.rxSensitivityTargetDbm ?? initialScenarioDefaults.rxSensitivityTargetDbm,
+          environmentLossDb: snapshot?.environmentLossDb ?? initialScenarioDefaults.environmentLossDb,
+          propagationEnvironment: snapshot?.propagationEnvironment ?? initialScenarioDefaults.propagationEnvironment,
+          autoPropagationEnvironment: snapshot?.autoPropagationEnvironment ?? initialScenarioDefaults.autoPropagationEnvironment,
+          terrainDataset: snapshot?.terrainDataset ?? "copernicus30",
+          simulationDefaultsOverrideEnabled: snapshot?.simulationDefaultsOverrideEnabled ?? false,
+          simulationDefaultsOverride: snapshot?.simulationDefaultsOverride ?? null,
+          linkColorMode: snapshot?.linkColorMode ?? DEFAULT_LINK_COLOR_MODE,
+          siteIconColors: snapshot?.siteIconColors ?? {},
+          mapViewport: workspace?.mapViewport,
+          syncPending: incoming.syncPending,
+          pendingChangesCount: incoming.pendingChangesCount,
+          syncStatus: incoming.syncPending ? "error" : "synced",
+          syncErrorMessage: null,
+          syncStatusMessage: incoming.syncPending ? "Changes saved locally; sync will resume after sign-in." : "",
+        });
+      }
+    }
+    set({ currentUser: user, authState: "signed_in" });
+  },
   getDefaultFrequencyPresetIdForNewSimulation: () => {
     const state = get();
     return resolveDefaultFrequencyPresetIdForNewSimulation(state.currentUser);
@@ -3520,13 +3658,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const siteCountBefore = current.siteLibrary.length;
     const simCountBefore = current.simulationPresets.length;
+    const preserveForeignCache = (
+      existing: { ownerUserId?: string; effectiveRole?: string; sharedWith?: Array<{ userId: string; role: string }> } | undefined,
+      incoming: { effectiveRole?: string },
+    ): boolean => Boolean(
+      source === "trusted-cloud" && existing && current.currentUser && !current.currentUser.isAdmin
+      && existing.ownerUserId && existing.ownerUserId !== current.currentUser.id
+      && existing.effectiveRole !== "viewer" && incoming.effectiveRole === "viewer"
+      && !canEditLibraryItem(existing, current.currentUser)
+    );
 
     const nextSiteLibrary =
       mode === "replace"
         ? incomingSites
         : (() => {
             const byId = new Map(current.siteLibrary.map((entry) => [entry.id, entry]));
-            for (const entry of incomingSites) byId.set(entry.id, entry);
+            for (const entry of incomingSites) {
+              if (!preserveForeignCache(byId.get(entry.id), entry)) byId.set(entry.id, entry);
+            }
             return normalizeSiteLibrary([...byId.values()]);
           })();
 
@@ -3536,7 +3685,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         : (() => {
             const byId = new Map<string, SimulationPreset>();
             for (const preset of current.simulationPresets) byId.set(preset.id, preset);
-            for (const preset of incomingPresets) byId.set(preset.id, preset);
+            for (const preset of incomingPresets) {
+              if (!preserveForeignCache(byId.get(preset.id), preset)) byId.set(preset.id, preset);
+            }
             return normalizeSimulationPresets(Array.from(byId.values())).sort((a, b) =>
               a.updatedAt < b.updatedAt ? 1 : -1,
             );

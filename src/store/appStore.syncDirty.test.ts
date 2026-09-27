@@ -401,6 +401,126 @@ describe("appStore delta sync", () => {
     expect(bodies[0]?.simulationPresets.map((record) => record.id)).toEqual(["sim-1"]);
   });
 
+  it("does not upload or overwrite another account's cached admin Site during moderator sync", async () => {
+    const ownSite = {
+      id: "site-own", name: "Own Site", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const foreignCachedSite = {
+      ...ownSite, id: "site-foreign", name: "Unsynced admin edit", ownerUserId: "admin-2",
+      effectiveRole: "admin" as const,
+    };
+    const foreignCloudSite = { ...foreignCachedSite, name: "Cloud copy", effectiveRole: "viewer" as const };
+    const collaboratorSite = {
+      ...ownSite, id: "site-collaborator", name: "Collaborator edit", ownerUserId: "owner-3",
+      effectiveRole: "editor" as const,
+      sharedWith: [{ userId: "owner-1", role: "editor" as const }],
+    };
+    const foreignCachedSimulation = {
+      ...cloneJson(baselinePayload.simulationPresets[0]), id: "sim-foreign",
+      name: "Unsynced admin Simulation edit", ownerUserId: "admin-2", effectiveRole: "admin",
+    };
+    const foreignCloudSimulation = {
+      ...foreignCachedSimulation, name: "Cloud Simulation copy", effectiveRole: "viewer",
+    };
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string }>; simulationPresets: Array<{ id: string }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body)));
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      return makeResponse({
+        siteLibrary: [ownSite, foreignCloudSite, collaboratorSite],
+        simulationPresets: [...cloneJson(baselinePayload.simulationPresets), foreignCloudSimulation],
+      });
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: { ...mkUser(), isModerator: true }, authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.setState({
+      siteLibrary: [ownSite, foreignCachedSite, collaboratorSite],
+      simulationPresets: [...cloneJson(baselinePayload.simulationPresets), foreignCachedSimulation],
+    });
+
+    await useAppStore.getState().performManualCloudSync();
+
+    expect(useAppStore.getState().syncErrorMessage).toBeNull();
+    expect(pushedBodies.flatMap((body) => body.siteLibrary.map((site) => site.id)).sort()).toEqual([
+      "site-collaborator", "site-own",
+    ]);
+    expect(pushedBodies.flatMap((body) => body.simulationPresets.map((simulation) => simulation.id))).toEqual(["sim-1"]);
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-foreign")?.name).toBe("Unsynced admin edit");
+    expect(useAppStore.getState().simulationPresets.find((simulation) => simulation.id === "sim-foreign")?.name)
+      .toBe("Unsynced admin Simulation edit");
+  });
+
+  it("excludes a stale foreign admin Site from an automatic full push after account switching", async () => {
+    const foreignSite = {
+      id: "site-foreign", name: "Admin cache", ownerUserId: "admin-2", effectiveRole: "admin" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body)));
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      return makeResponse({
+        ...cloneJson(baselinePayload),
+        siteLibrary: [{ ...foreignSite, effectiveRole: "viewer" }],
+      });
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: { ...mkUser(), isModerator: true }, authState: "signed_in", isOnline: true,
+      siteLibrary: [foreignSite], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+
+    await useAppStore.getState().initializeCloudSync();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(pushedBodies.flatMap((body) => body.siteLibrary)).toEqual([]);
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === foreignSite.id)?.name).toBe("Admin cache");
+  });
+
+  it("keeps separate Library caches when changing accounts in one browser", async () => {
+    const adminSite = {
+      id: "site-admin", name: "Admin draft", ownerUserId: "admin-2", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const moderatorSite = { ...adminSite, id: "site-moderator", name: "Moderator draft", ownerUserId: "owner-1" };
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      siteLibrary: [adminSite], simulationPresets: [], sites: [adminSite],
+      selectedScenarioId: "sim-admin",
+    });
+    storage.mock.setItem("rmw-last-simulation-ref-v1", "saved:sim-admin");
+    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(useAppStore.getState().sites).toEqual([]);
+    expect(useAppStore.getState().selectedScenarioId).toBe("");
+    expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBeNull();
+
+    useAppStore.setState({ siteLibrary: [moderatorSite], sites: [moderatorSite], selectedScenarioId: "sim-moderator" });
+    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    expect(useAppStore.getState().siteLibrary.map((site) => site.id)).toEqual(["site-admin"]);
+    expect(useAppStore.getState().sites.map((site) => site.id)).toEqual(["site-admin"]);
+    expect(useAppStore.getState().selectedScenarioId).toBe("sim-admin");
+    expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBe("saved:sim-admin");
+    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    expect(useAppStore.getState().siteLibrary.map((site) => site.id)).toEqual(["site-moderator"]);
+    expect(storage.mock.getItem("linksim-library-legacy-backup-v1")).not.toBeNull();
+    useAppStore.setState({ sites: [], links: [], systems: [], networks: [], selectedScenarioId: "" });
+  });
+
   it("applies a Site tombstone before a manual retry builds its push payload", async () => {
     const pushedBodies: Array<{ siteLibrary: Array<{ id: string }> }> = [];
     let getCount = 0;
