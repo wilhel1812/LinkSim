@@ -110,3 +110,6 @@ inactive.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
+- The `v0.29.1` candidate keeps Better Auth active and broad Access available,
+  but permanently disables new privileged passkey-recovery attempts after the
+  administrator bootstrap.

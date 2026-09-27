@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.29.1] - 2026-09-27
+
+### Security
+- Disabled the temporary privileged passkey-recovery bootstrap after the production administrator migration while retaining Better Auth and broad Access rollback coverage. (#1107)
+
 ## [0.29.0] - 2026-09-27
 
 ### Added
