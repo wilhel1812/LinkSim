@@ -25,12 +25,14 @@ included.
   `https://staging.linksim.link/api/me` for the configured ordinary staging
   account.
 - The `production-canary` environment is restricted to the exact `main` branch
-  with no tag rule. Its expected user ID is configured for the administrator
-  account selected for this release. This is weaker than the preferred
-  ordinary-user canary and is an explicitly accepted limitation.
-- The production canary cookie and `AUTH_CANARY_CUTOVER_AT` remain unset. They
-  require a fresh production session and the approved production window, so the
-  canary gate is not complete and no scheduled production probe can activate.
+  with no tag rule. On 2026-09-27, the maintainer migrated and signed in an
+  ordinary, non-admin account. Its fresh production Better Auth session cookie
+  was loaded into the protected environment secret, and the expected user ID
+  was updated to match it. The temporary local handoff copy was removed; no
+  credential value is recorded here.
+- `AUTH_CANARY_CUTOVER_AT` remains unset until the reviewed release window is
+  ready. The canary gate is not complete and no scheduled production probe can
+  activate before that value and the production boundary are verified.
 
 ## Access boundary plans
 
@@ -101,15 +103,19 @@ inactive.
 ## Approved release window
 
 - The maintainer approved completing the production rollout on 2026-09-27.
-- The planned activation timestamp is `2026-09-27T10:00:00Z`
-  (`2026-09-27 12:00 CEST`). If candidate validation is not complete by that
+- The planned activation timestamp moved forward to `2026-09-27T11:00:00Z`
+  (`2026-09-27 13:00 CEST`) after the original 10:00 UTC target passed during
+  the protected `v0.29.1` production deployment. If candidate validation is not complete by that
   time, the timestamp must move forward before the activation candidate is
   frozen; it must never be backdated.
 - The corresponding 90-day legacy-claim deadline is
-  `2026-12-26T10:00:00.000Z`.
+  `2026-12-26T11:00:00.000Z`.
 - The `v0.29.0` candidate activates Better Auth while retaining broad Access
   and temporarily enables privileged passkey recovery for the administrator
   bootstrap.
 - The `v0.29.1` candidate keeps Better Auth active and broad Access available,
   but permanently disables new privileged passkey-recovery attempts after the
   administrator bootstrap.
+- The `v0.29.2` candidate keeps Better Auth active and privileged passkey
+  recovery disabled, and changes the expected Access boundary to `legacy` for
+  the public cutover.

@@ -24,6 +24,12 @@ variable "pages_compatibility_date" {
   type        = string
 }
 
+variable "pages_preview_bindings_enabled" {
+  description = "Whether this Pages project uses application bindings and variables on preview deployments."
+  type        = bool
+  default     = true
+}
+
 variable "pages_domains" {
   description = "Custom domains attached to this Pages project."
   type        = set(string)
