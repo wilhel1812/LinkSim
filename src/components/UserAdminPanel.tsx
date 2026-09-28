@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BarChart3, CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
+import { BarChart3, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -35,6 +35,7 @@ import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { SiteNoticeAdminForm } from "./SiteNoticeAdminForm";
+import { AppNotificationItem } from "./AppNotificationItem";
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
@@ -618,30 +619,16 @@ export function UserAdminPanel({
               </div>
             </div>
             {authWarnings.length ? (
-              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                <span className="app-notification-glyph" aria-hidden="true">
-                  <CircleAlert size={14} strokeWidth={2} />
-                </span>
-                <div className="app-notification-copy">
-                  <span>
-                    <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
-                  </span>
-                </div>
-              </div>
+              <AppNotificationItem static tone="warning">
+                <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+              </AppNotificationItem>
             ) : (
               <p className="field-help">Auth configuration checks passed.</p>
             )}
             {schemaWarnings.length ? (
-              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                <span className="app-notification-glyph" aria-hidden="true">
-                  <CircleAlert size={14} strokeWidth={2} />
-                </span>
-                <div className="app-notification-copy">
-                  <span>
-                    <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
-                  </span>
-                </div>
-              </div>
+              <AppNotificationItem static tone="warning">
+                <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+              </AppNotificationItem>
             ) : (
               <p className="field-help">Schema diagnostics passed.</p>
             )}
@@ -750,16 +737,9 @@ export function UserAdminPanel({
         {canModerate ? (
           <div className="user-manager-list notifications-center">
             {unreadNotifications.length > 0 ? (
-              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                <span className="app-notification-glyph" aria-hidden="true">
-                  <CircleAlert size={14} strokeWidth={2} />
-                </span>
-                <div className="app-notification-copy">
-                  <span>
-                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
-                  </span>
-                </div>
-              </div>
+              <AppNotificationItem static tone="warning">
+                <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+              </AppNotificationItem>
             ) : null}
             <div className="section-heading">
               <p className="field-help">Notification Center</p>

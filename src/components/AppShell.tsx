@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { Copy, Globe, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
@@ -71,6 +71,7 @@ import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfile
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 import { AuthSignInPopover, type AuthSignInMethod } from "./AuthSignInPopover";
 import { LegacyMigrationModal, type LegacyMigrationStage } from "./LegacyMigrationModal";
+import { AppNotificationItem } from "./AppNotificationItem";
 
 initializeMigrations();
 
@@ -118,6 +119,7 @@ type NotificationDebugWindow = Window & {
 const DISMISS_ALL_THRESHOLD = 4;
 const MANUAL_DISMISS_EXIT_MS = 220;
 const AUTO_DISMISS_EXIT_MS = 1000;
+
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -2727,46 +2729,20 @@ export function AppShell() {
         <section aria-label="App notifications" className="app-notification-stack">
           <div className="app-notification-stack-list">
             {uiNotifications.map((notification) => (
-              <div
-                data-dismiss-kind={dismissingNotificationIds[notification.id] ?? undefined}
+              <AppNotificationItem
+                dismissKind={dismissingNotificationIds[notification.id]}
                 key={notification.id}
-                onBlurCapture={() => setNotificationPaused(notification.id, false)}
-                onFocusCapture={() => setNotificationPaused(notification.id, true)}
-                onMouseEnter={() => setNotificationPaused(notification.id, true)}
-                onMouseLeave={() => setNotificationPaused(notification.id, false)}
-                role={notification.tone === "error" ? "alert" : "status"}
-                aria-live={notification.tone === "error" ? "assertive" : "polite"}
-                aria-atomic="true"
-                className={`app-notification-item app-notification-item-${notification.tone} ${
-                  dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
-                }`}
+                onDismiss={notification.pinned ? undefined : () => {
+                  if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                    setOfflineBannerDismissed(true);
+                  }
+                  requestDismissNotification(notification.id, "manual");
+                }}
+                onPauseChange={(isPaused) => setNotificationPaused(notification.id, isPaused)}
+                tone={notification.tone}
               >
-                <span className="app-notification-glyph" aria-hidden="true">
-                  {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
-                </span>
-                <div className="app-notification-copy">
-                  <span>{notification.message}</span>
-                </div>
-                {notification.pinned ? null : (
-                  <button
-                    aria-label="Dismiss notification"
-                    className="app-notification-dismiss"
-                    onClick={() => {
-                      if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
-                        setOfflineBannerDismissed(true);
-                      }
-                      requestDismissNotification(notification.id, "manual");
-                    }}
-                    title="Dismiss"
-                    type="button"
-                  >
-                    <X aria-hidden="true" size={14} strokeWidth={2} />
-                  </button>
-                )}
-              </div>
+                {notification.message}
+              </AppNotificationItem>
             ))}
           </div>
           {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (

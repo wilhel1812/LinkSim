@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell as BellIcon, CircleAlert } from "lucide-react";
+import { Bell as BellIcon } from "lucide-react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { ActionButton } from "./ActionButton";
+import { AppNotificationItem } from "./AppNotificationItem";
 
 const POLL_MS = 30_000;
 
@@ -45,16 +46,9 @@ export function NotificationsPanel() {
   return (
     <div className="notifications-panel">
       {feed.unreadCount > 0 ? (
-        <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-          <span className="app-notification-glyph" aria-hidden="true">
-            <CircleAlert size={14} strokeWidth={2} />
-          </span>
-          <div className="app-notification-copy">
-            <span>
-              <strong>{feed.unreadCount} pending user(s)</strong> need moderator/admin review.
-            </span>
-          </div>
-        </div>
+        <AppNotificationItem static tone="warning">
+          <strong>{feed.unreadCount} pending user(s)</strong> need moderator/admin review.
+        </AppNotificationItem>
       ) : null}
 
       <button aria-label="Notifications" className="notification-bell" onClick={() => setOpen((prev) => !prev)} title="Notifications" type="button">
