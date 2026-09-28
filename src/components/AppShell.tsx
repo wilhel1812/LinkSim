@@ -348,6 +348,7 @@ export function AppShell() {
   const hadAuthenticatedSessionRef = useRef(hasAuthenticatedSessionMarker());
   const authCheckInFlightRef = useRef(false);
   const preserveWorkspaceOnAnonymousEntryRef = useRef(false);
+  const anonymousNoticeEntryActiveRef = useRef(false);
   const authRecoveryActiveRef = useRef(false);
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
@@ -1380,20 +1381,26 @@ export function AppShell() {
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
   useEffect(() => {
     const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
-    if (!isAnonNoDeepLink) return;
+    if (!isAnonNoDeepLink) {
+      anonymousNoticeEntryActiveRef.current = false;
+      removeNotificationImmediately("demo-mode");
+      return;
+    }
+    if (anonymousNoticeEntryActiveRef.current) return;
+    anonymousNoticeEntryActiveRef.current = true;
     const preserveWorkspace = preserveWorkspaceOnAnonymousEntryRef.current;
     preserveWorkspaceOnAnonymousEntryRef.current = false;
-    if (!preserveWorkspace && sites.length === 0) {
+    const shouldLoadDemo = !preserveWorkspace && sites.length === 0;
+    if (shouldLoadDemo) {
       loadDemoScenario();
     }
-    publishAppNotice({
-      id: "demo-mode",
-      message: deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations.",
-      tone: "info",
-      persistent: true,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
+    publishTransientNotice(
+      "demo-mode",
+      shouldLoadDemo
+        ? "You’re viewing a read-only demo. Sign in to create and save your own Simulations."
+        : "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
+    );
+  }, [deepLinkParse.ok, isAnonymousGuestReadonly, loadDemoScenario, publishTransientNotice, removeNotificationImmediately, sites.length]);
 
   useEffect(() => {
     const timers: number[] = [];
