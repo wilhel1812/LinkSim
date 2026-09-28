@@ -33,6 +33,7 @@
   --radius-pill: 999px;
   --radius-card: 12px;
   --radius-btn:  8px;
+  --radius-notice-wrapped: 14px;
   --surface-muted-opacity: 0.68;
 }
 
@@ -1931,7 +1932,12 @@ button {
   padding-right: 10px;
 }
 
-.app-notification-item-static .app-notification-copy span {
+.app-notification-item-wrapped {
+  border-radius: var(--radius-notice-wrapped);
+}
+
+.app-notification-item-static .app-notification-copy span,
+.app-notification-item-wrapped .app-notification-copy span {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;

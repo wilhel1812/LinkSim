@@ -2738,6 +2738,8 @@ export function AppShell() {
                 aria-live={notification.tone === "error" ? "assertive" : "polite"}
                 aria-atomic="true"
                 className={`app-notification-item app-notification-item-${notification.tone} ${
+                  notification.id === "demo-mode" ? "app-notification-item-wrapped" : ""
+                } ${
                   dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
                 }`}
               >

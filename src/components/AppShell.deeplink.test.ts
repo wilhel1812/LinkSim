@@ -1470,11 +1470,54 @@ describe("AppShell deeplink cold-load flow", () => {
         "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
       );
       expect(document.body.textContent).not.toContain("Demo workspace — sign in to save your own simulations.");
+      expect(document.querySelector(".app-notification-item-wrapped")).toHaveTextContent(
+        "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
+      );
 
       await advanceTimers(4_999);
       expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
       await advanceTimers(1);
       expect(document.querySelector('[data-dismiss-kind="auto"]')).toBeTruthy();
+      await advanceTimers(1_000);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses the anonymous notice while hovered or focused and dismisses it after interaction ends", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+
+    try {
+      const notice = document.querySelector<HTMLElement>(".app-notification-item-wrapped");
+      expect(notice).not.toBeNull();
+      fireEvent.mouseEnter(notice as HTMLElement);
+
+      await advanceTimers(10_000);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      expect(notice).not.toHaveAttribute("data-dismiss-kind");
+
+      fireEvent.mouseLeave(notice as HTMLElement);
+      const dismissButton = notice?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notification"]');
+      expect(dismissButton).not.toBeNull();
+      fireEvent.focus(dismissButton as HTMLButtonElement);
+      await advanceTimers(10_000);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      expect(notice).not.toHaveAttribute("data-dismiss-kind");
+
+      fireEvent.blur(dismissButton as HTMLButtonElement);
+      await advanceTimers(4_999);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      await advanceTimers(1);
+      expect(notice).toHaveAttribute("data-dismiss-kind", "auto");
       await advanceTimers(1_000);
       expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
     } finally {
@@ -1499,6 +1542,35 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(document.body.textContent).toContain(
         "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
       );
+      expect(document.querySelector(".app-notification-item-wrapped")).toHaveTextContent(
+        "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
+      );
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("keeps ordinary notifications on the default single-line pill presentation", async () => {
+    hoisted.runtimeEnvironment = "local";
+    const view = await renderAppShell();
+
+    try {
+      const notifications = (
+        window as Window & {
+          linksimNotifications?: {
+            push: (notice: { id: string; message: string; tone: "info" }) => void;
+          };
+        }
+      ).linksimNotifications;
+      expect(notifications).toBeDefined();
+      act(() => {
+        notifications?.push({ id: "ordinary-info", message: "Ordinary notification", tone: "info" });
+      });
+
+      const ordinaryNotice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes("Ordinary notification"));
+      expect(ordinaryNotice).toBeDefined();
+      expect(ordinaryNotice).not.toHaveClass("app-notification-item-wrapped");
     } finally {
       unmountAppShell(view);
     }
