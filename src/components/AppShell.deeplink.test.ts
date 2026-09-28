@@ -1451,6 +1451,84 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("loads the demo once and auto-dismisses the anonymous demo notice", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = render(
+      React.createElement(React.StrictMode, null, React.createElement(AppShell)),
+    );
+    await flushMicrotasks();
+
+    try {
+      expect(hoisted.loadDemoScenario).toHaveBeenCalledTimes(1);
+      expect(document.body.textContent).toContain(
+        "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
+      );
+      expect(document.body.textContent).not.toContain("Demo workspace — sign in to save your own simulations.");
+
+      await advanceTimers(4_999);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      await advanceTimers(1);
+      expect(document.querySelector('[data-dismiss-kind="auto"]')).toBeTruthy();
+      await advanceTimers(1_000);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves an existing guest workspace and uses the guest notice copy", async () => {
+    window.history.replaceState(null, "", "/");
+    Object.assign(hoisted.state, {
+      sites: [{ id: "site-local", name: "Local Site" }],
+    });
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(hoisted.loadDemoScenario).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
+      );
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("removes the anonymous notice after sign-in completes", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus
+      .mockResolvedValueOnce({ authenticated: false, authState: "guest", authSource: "access" })
+      .mockResolvedValueOnce({ authenticated: true, authState: "authenticated", authSource: "better-auth" });
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      const trigger = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      fireEvent.click(document.querySelector('button[aria-label="Passkey"]') as HTMLButtonElement);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(2);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
   it("shows an expired-session warning without retrying for a prior authenticated guest", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
