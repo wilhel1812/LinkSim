@@ -1597,6 +1597,140 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("publishes a dismissible persistent private-Site warning without republishing unchanged state", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const privateSite = { id: "private-site", visibility: "private" };
+    const sharedSimulation = {
+      id: "sim-private-sites",
+      name: "Private Site Simulation",
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: { sites: [{ id: "site-a", libraryEntryId: "private-site" }] },
+    };
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: sharedSimulation.id,
+      sites: sharedSimulation.snapshot.sites,
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain(warning);
+      const notice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes(warning));
+      expect(notice).toHaveClass("app-notification-item-warning");
+      const dismiss = notice?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notification"]');
+      expect(dismiss).not.toBeNull();
+
+      await advanceTimers(120_000);
+      expect(document.body.textContent).toContain(warning);
+
+      fireEvent.click(dismiss as HTMLButtonElement);
+      await advanceTimers(220);
+      expect(document.body.textContent).not.toContain(warning);
+
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(document.body.textContent).not.toContain(warning);
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes, republishes, and isolates stale dismissal across private-Site warning states", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const makeSimulation = (id: string, libraryEntryIds: string[]) => ({
+      id,
+      name: id,
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: {
+        sites: libraryEntryIds.map((libraryEntryId, index) => ({ id: `${id}-${index}`, libraryEntryId })),
+      },
+    });
+    const first = makeSimulation("sim-first", ["private-a"]);
+    const second = makeSimulation("sim-second", ["private-b"]);
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [
+        { id: "private-a", visibility: "private" },
+        { id: "private-b", visibility: "private" },
+        { id: "private-c", visibility: "private" },
+      ],
+      simulationPresets: [first, second],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: first.id,
+      sites: first.snapshot.sites,
+      siteLibrary: [
+        { id: "private-a", visibility: "private" },
+        { id: "private-b", visibility: "private" },
+        { id: "private-c", visibility: "private" },
+      ],
+      simulationPresets: [first, second],
+    });
+
+    const view = await renderAppShell();
+    try {
+      const findNotice = () => Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes(warning));
+      expect(findNotice()).toBeDefined();
+
+      fireEvent.click(findNotice()?.querySelector('button[aria-label="Dismiss notification"]') as HTMLButtonElement);
+      Object.assign(hoisted.state, { selectedScenarioId: second.id, sites: second.snapshot.sites });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+      await advanceTimers(220);
+      expect(findNotice()).toBeDefined();
+
+      const privateFirst = { ...first, visibility: "private" };
+      Object.assign(hoisted.state, {
+        selectedScenarioId: privateFirst.id,
+        sites: privateFirst.snapshot.sites,
+        simulationPresets: [privateFirst, second],
+      });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeUndefined();
+
+      const sharedFirst = { ...first, visibility: "shared" };
+      Object.assign(hoisted.state, { simulationPresets: [sharedFirst, second] });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+
+      fireEvent.click(findNotice()?.querySelector('button[aria-label="Dismiss notification"]') as HTMLButtonElement);
+      const changedFirst = {
+        ...sharedFirst,
+        snapshot: { sites: [{ id: "sim-first-new", libraryEntryId: "private-c" }] },
+      };
+      Object.assign(hoisted.state, {
+        sites: changedFirst.snapshot.sites,
+        simulationPresets: [changedFirst, second],
+      });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+      await advanceTimers(220);
+      expect(findNotice()).toBeDefined();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
   it("removes the anonymous notice after sign-in completes", async () => {
     hoisted.betterAuthPilotEnabled = true;
     window.history.replaceState(null, "", "/");
