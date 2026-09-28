@@ -8,6 +8,7 @@ import {
   fetchResourceChanges,
   listCollaboratorDirectory,
   listUsers,
+  resolveSimulationAccessForUser,
   revertResourceFromChangeCopy,
   setSimulationLifecycleStatus,
   upsertLibrarySnapshot,
@@ -269,13 +270,21 @@ class FakeDb {
       const id = String(bound[1] ?? "");
       const row = this.simulations.get(id);
       if (!row) return null;
-      return { ...row, actor_role: this.simulationRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null };
+      return {
+        ...row,
+        lifecycle_status: row.status,
+        actor_role: this.simulationRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null,
+      };
     }
     if (sql.includes("FROM sites t") && sql.includes("LEFT JOIN site_roles")) {
       const id = String(bound[1] ?? "");
       const row = this.sites.get(id);
       if (!row) return null;
-      return { ...row, actor_role: this.siteRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null };
+      return {
+        ...row,
+        lifecycle_status: null,
+        actor_role: this.siteRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null,
+      };
     }
     if (sql.includes("SELECT id FROM simulations WHERE lower(name) = lower(?)")) {
       const name = String(bound[0] ?? "").trim().toLowerCase();
@@ -1659,6 +1668,33 @@ describe("resource change authorization", () => {
     return db;
   };
 
+  it("resolves current Simulation access across roles, visibility changes, and grant revocation", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof resolveSimulationAccessForUser>[0];
+
+    await expect(resolveSimulationAccessForUser(env, actor("owner-1"), "sim-1")).resolves.toBe("ok");
+    await expect(resolveSimulationAccessForUser(env, actor("viewer-1"), "sim-1")).resolves.toBe("ok");
+    await expect(resolveSimulationAccessForUser(env, actor("admin-1", { isAdmin: true }), "sim-1")).resolves.toBe("ok");
+    await expect(resolveSimulationAccessForUser(env, actor("other-1"), "sim-1")).resolves.toBe("forbidden");
+    await expect(resolveSimulationAccessForUser(env, actor("moderator-1", { isModerator: true }), "sim-1"))
+      .resolves.toBe("forbidden");
+    await expect(resolveSimulationAccessForUser(env, actor("other-1"), "missing-sim")).resolves.toBe("missing");
+
+    db.simulations.set("sim-1", { ...db.simulations.get("sim-1"), visibility: "public_read" });
+    await expect(resolveSimulationAccessForUser(env, actor("other-1"), "sim-1")).resolves.toBe("ok");
+    await expect(resolveSimulationAccessForUser(env, actor("moderator-1", { isModerator: true }), "sim-1"))
+      .resolves.toBe("ok");
+
+    db.simulations.set("sim-1", { ...db.simulations.get("sim-1"), visibility: "public_write" });
+    await expect(resolveSimulationAccessForUser(env, actor("other-1"), "sim-1")).resolves.toBe("ok");
+    await expect(resolveSimulationAccessForUser(env, actor("moderator-1", { isModerator: true }), "sim-1"))
+      .resolves.toBe("ok");
+
+    db.simulations.set("sim-1", { ...db.simulations.get("sim-1"), visibility: "private" });
+    db.simulationRoles.delete("sim-1:viewer-1");
+    await expect(resolveSimulationAccessForUser(env, actor("viewer-1"), "sim-1")).resolves.toBe("forbidden");
+  });
+
   it("returns minimized Site history to current owners, collaborators, and administrators", async () => {
     const db = createResourceHistoryDb();
     const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
@@ -1741,6 +1777,15 @@ describe("resource change authorization", () => {
       .resolves.toEqual({ ok: false, reason: "forbidden" });
 
     db.simulations.set("sim-1", { ...db.simulations.get("sim-1"), status: "deleted" });
+    for (const currentActor of [
+      actor("owner-1"),
+      actor("viewer-1"),
+      actor("other-1"),
+      actor("moderator-1", { isModerator: true }),
+      actor("admin-1", { isAdmin: true }),
+    ]) {
+      await expect(resolveSimulationAccessForUser(env, currentActor, "sim-1")).resolves.toBe("missing");
+    }
     await expect(fetchResourceChanges(env, "simulation", "sim-1", actor("owner-1")))
       .resolves.toEqual({ ok: false, reason: "forbidden" });
     await expect(fetchResourceChanges(env, "simulation", "sim-1", actor("admin-1", { isAdmin: true })))
