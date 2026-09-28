@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.30.0] - 2026-09-28
+
+### Changed
+- Consolidated current Simulation access lookup for history and deep-link authorization while preserving owner, collaborator, administrator, moderator, revocation, visibility, and deleted-Simulation behavior. (#1057)
+- Replaced the long Passkeys guidance in Settings with a concise accessible InfoTip and retained the visible learn-more link without changing passkey behavior. (#1238)
+- Made notification shape follow rendered content: single-line notices retain the pill treatment while wrapped notices use a stable compact radius across notification surfaces. (#1233)
+
+### Fixed
+- Made anonymous demo and preserved guest-workspace notices truthful, temporary, and lifecycle-aware so they dismiss normally and do not linger or repeatedly reappear. (#1233)
+- Moved the Shared Simulation private-Site disclosure into the persistent notification list, where it remains visible until explicitly dismissed without the inline Sidebar shadow. (#1237)
+- Preserved mouse, touch, keyboard, and hover interaction when opening or dismissing shared InfoTip content. (#1238)
+- Selected the checked-in production Access mode during authenticated preview preflight so previews validate the active boundary without weakening deployment checks. (#1241)
+
+### Internal
+- Adopted the existing staging public-API Access application into protected Terraform state and verified that the state-backed plan would not create, delete, or replace it. (#1155)
+- Added the protected GitHub App publisher foundation for an exact-head documentation policy check. The direct documentation lane remains disabled until its post-release observation, source pinning, policy activation, and proof are complete. (#1092)
+
 ## [0.29.9] - 2026-09-27
 
 ### Fixed
