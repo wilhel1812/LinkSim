@@ -6,6 +6,7 @@ export function InfoTip({ text }: { text: string }) {
   const tipId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const boxRef = useRef<HTMLSpanElement | null>(null);
+  const clickOpenRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
@@ -40,11 +41,19 @@ export function InfoTip({ text }: { text: string }) {
         aria-describedby={open ? tipId : undefined}
         aria-label={text}
         className="info-tip"
-        onBlur={() => setOpen(false)}
-        onClick={() => setOpen((value) => !value)}
+        onBlur={() => {
+          clickOpenRef.current = false;
+          setOpen(false);
+        }}
+        onClick={() => {
+          clickOpenRef.current = !clickOpenRef.current;
+          setOpen(clickOpenRef.current);
+        }}
         onFocus={() => setOpen(true)}
         onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
+        onMouseLeave={() => {
+          if (!clickOpenRef.current) setOpen(false);
+        }}
         ref={triggerRef}
         type="button"
       >
