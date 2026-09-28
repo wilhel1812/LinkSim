@@ -153,9 +153,25 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
   });
 
-  it("checks the production Access boundary without requiring an Access API token", () => {
+  it("selects the production Access verifier from the fail-closed checked-in mode", () => {
     expect(previewJob).toContain("Verify production Access boundary");
-    expect(previewJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(previewJob).toContain(
+      `PRODUCTION_ACCESS_BOUNDARY="$(node -p "String(require('./config/production-auth-mode.json').accessBoundary)")"`,
+    );
+    expect(previewJob).toContain([
+      '          case "$PRODUCTION_ACCESS_BOUNDARY" in',
+      "            legacy)",
+      "              node scripts/access-boundary.mjs check-cutover production",
+      "              ;;",
+      "            broad)",
+      "              node scripts/access-boundary.mjs check production",
+      "              ;;",
+      "            *)",
+      '              echo "Production Access boundary must be exactly broad or legacy." >&2',
+      "              exit 1",
+      "              ;;",
+      "          esac",
+    ].join("\n"));
     expect(previewJob).not.toContain("node scripts/access-boundary.mjs plan staging");
   });
 
