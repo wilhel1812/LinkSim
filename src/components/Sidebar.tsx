@@ -7,6 +7,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
 import { getBasemapAttributionCredits, resolveBasemapSelection, type RenderedBasemapAttribution } from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
+import { getReferencedPrivateSiteIds } from "../lib/privateSiteDisclosure";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
 import type { Site } from "../types/radio";
@@ -18,14 +19,11 @@ import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { UserAdminPanel } from "./UserAdminPanel";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
-import { AppNotificationItem } from "./AppNotificationItem";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
 const READ_ONLY_VIEW_DETAILS_HELP =
   "Read-only: you can view this item, but need edit permission to change it.";
-const PRIVATE_SITE_DISCLOSURE_NOTICE =
-  "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
 const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
   "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
 
@@ -205,16 +203,7 @@ export function Sidebar({
     if (readOnly || !selectedScenarioId) return new Set<string>();
     const activeSimulation = simulationPresets.find((simulation) => simulation.id === selectedScenarioId);
     if (!activeSimulation || toAccessVisibility(activeSimulation.visibility) !== "shared") return new Set<string>();
-    const privateLibraryIds = new Set(
-      siteLibrary
-        .filter((entry) => toAccessVisibility(entry.visibility) === "private")
-        .map((entry) => entry.id),
-    );
-    return new Set(
-      activeSimulation.snapshot.sites
-        .map((site) => site.libraryEntryId)
-        .filter((id): id is string => Boolean(id && privateLibraryIds.has(id))),
-    );
+    return new Set(getReferencedPrivateSiteIds(activeSimulation, siteLibrary));
   }, [readOnly, selectedScenarioId, simulationPresets, siteLibrary]);
   const openActiveSimulationDetails = (triggerEl?: Element | null) => {
     if (!selectedSimulationRef.startsWith("saved:")) return;
@@ -470,11 +459,6 @@ export function Sidebar({
             <span className="field-help">Sign in to browse the simulation library.</span>
           )}
         </div>
-        {privateReferencedLibrarySiteIds.size ? (
-          <AppNotificationItem static tone="warning">
-            {PRIVATE_SITE_DISCLOSURE_NOTICE}
-          </AppNotificationItem>
-        ) : null}
       </section>
 
       <section className="panel-section section-sites">

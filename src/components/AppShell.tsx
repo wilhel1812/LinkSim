@@ -39,6 +39,8 @@ import {
 } from "../lib/betterAuthPilot";
 import { parseRadioPresetShareHash, type RadioPresetShareParseResult } from "../lib/radioPresetShare";
 import { normalizeUserSimulationDefaultsPreference } from "../lib/simulationDefaults";
+import { getReferencedPrivateSiteIds } from "../lib/privateSiteDisclosure";
+import { toAccessVisibility } from "../lib/uiFormatting";
 import { buildImportedRadioPresetPreference } from "../lib/radioPresetImport";
 import {
   clearUiNotifications,
@@ -86,6 +88,8 @@ const ACCESS_CHECKING_NOTICE_ID = "access-checking";
 const AUTH_DEGRADED_NOTICE_ID = "auth-degraded";
 const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
 const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
+const PRIVATE_SITE_DISCLOSURE_NOTICE =
+  "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
 
 export const buildAuthStartPath = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
@@ -351,6 +355,7 @@ export function AppShell() {
   const authCheckInFlightRef = useRef(false);
   const preserveWorkspaceOnAnonymousEntryRef = useRef(false);
   const anonymousNoticeEntryActiveRef = useRef(false);
+  const privateSiteDisclosureNoticeIdRef = useRef<string | null>(null);
   const authRecoveryActiveRef = useRef(false);
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
@@ -478,8 +483,8 @@ export function AppShell() {
     },
     [dismissNotification, dismissingNotificationIds],
   );
-  const clearNotifications = useCallback(() => {
-    const next = clearUiNotifications(uiNotificationsRef.current);
+  const clearNotifications = useCallback((options?: { includePreserved?: boolean }) => {
+    const next = clearUiNotifications(uiNotificationsRef.current, options);
     setUiNotifications(next);
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
@@ -535,21 +540,46 @@ export function AppShell() {
     () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
   );
+  const referencedPrivateSiteIds = useMemo(
+    () => getReferencedPrivateSiteIds(activeSimulation, siteLibrary),
+    [activeSimulation, siteLibrary],
+  );
   const referencedPrivateSites = useMemo(() => {
-    if (!activeSimulation || typeof activeSimulation !== "object") return [];
-    const snapshotSites =
-      (
-        activeSimulation as {
-          snapshot?: { sites?: Array<{ libraryEntryId?: string }> };
-        }
-      ).snapshot?.sites ?? [];
-    const ids = new Set<string>();
-    for (const site of snapshotSites) {
-      if (!site || typeof site.libraryEntryId !== "string" || !site.libraryEntryId.trim()) continue;
-      ids.add(site.libraryEntryId);
+    const ids = new Set(referencedPrivateSiteIds);
+    return siteLibrary.filter((site) => ids.has(site.id));
+  }, [referencedPrivateSiteIds, siteLibrary]);
+  const privateSiteDisclosureNoticeId = useMemo(() => {
+    if (
+      !canPersistWorkspace
+      || !activeSimulation
+      || toAccessVisibility(activeSimulation.visibility) !== "shared"
+      || referencedPrivateSiteIds.length === 0
+    ) {
+      return null;
     }
-    return siteLibrary.filter((site) => ids.has(site.id) && toVisibility(site.visibility) === "private");
-  }, [activeSimulation, siteLibrary]);
+    return [
+      "private-site-disclosure",
+      encodeURIComponent(activeSimulation.id),
+      ...referencedPrivateSiteIds.map((id) => encodeURIComponent(id)),
+    ].join(":");
+  }, [activeSimulation, canPersistWorkspace, referencedPrivateSiteIds]);
+
+  useEffect(() => {
+    const previousId = privateSiteDisclosureNoticeIdRef.current;
+    if (previousId && previousId !== privateSiteDisclosureNoticeId) {
+      removeNotificationImmediately(previousId);
+    }
+    privateSiteDisclosureNoticeIdRef.current = privateSiteDisclosureNoticeId;
+    if (!privateSiteDisclosureNoticeId) return;
+    pushNotification({
+      id: privateSiteDisclosureNoticeId,
+      message: PRIVATE_SITE_DISCLOSURE_NOTICE,
+      tone: "warning",
+      dismissMode: "manual",
+      pinned: false,
+      preserveOnClear: true,
+    });
+  }, [privateSiteDisclosureNoticeId, pushNotification, removeNotificationImmediately]);
 
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
@@ -2747,7 +2777,7 @@ export function AppShell() {
           </div>
           {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (
             <div className="app-notification-stack-controls">
-              <ActionButton onClick={clearNotifications} type="button">
+              <ActionButton onClick={() => clearNotifications({ includePreserved: true })} type="button">
                 Dismiss all
               </ActionButton>
             </div>

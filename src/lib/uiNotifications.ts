@@ -9,6 +9,7 @@ export type UiNotification = {
   durationMs: number;
   createdAt: number;
   pinned: boolean;
+  preserveOnClear: boolean;
 };
 
 export type UiNotificationInput = {
@@ -18,6 +19,7 @@ export type UiNotificationInput = {
   dismissMode?: UiNotificationDismissMode;
   durationMs?: number;
   pinned?: boolean;
+  preserveOnClear?: boolean;
 };
 
 const DEFAULT_DURATION_MS = 5_000;
@@ -30,6 +32,7 @@ export const createUiNotification = (input: UiNotificationInput, now = Date.now(
   durationMs: Math.max(0, input.durationMs ?? DEFAULT_DURATION_MS),
   createdAt: now,
   pinned: input.pinned === true,
+  preserveOnClear: input.preserveOnClear === true,
 });
 
 export const upsertUiNotification = (
@@ -51,5 +54,9 @@ export const dismissUiNotification = (
 
 export const clearUiNotifications = (
   notifications: UiNotification[] = [],
-  options?: { force?: boolean },
-): UiNotification[] => (options?.force === true ? [] : notifications.filter((item) => item.pinned));
+  options?: { force?: boolean; includePreserved?: boolean },
+): UiNotification[] => (
+  options?.force === true
+    ? []
+    : notifications.filter((item) => item.pinned || (item.preserveOnClear && !options?.includePreserved))
+);
