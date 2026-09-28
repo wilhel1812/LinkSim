@@ -121,7 +121,20 @@ jobs:
 
       - name: Verify production Access boundary
         if: steps.identity_schema.outputs.changed != 'true'
-        run: node scripts/access-boundary.mjs check production
+        run: |
+          PRODUCTION_ACCESS_BOUNDARY="$(node -p "String(require('./config/production-auth-mode.json').accessBoundary)")"
+          case "$PRODUCTION_ACCESS_BOUNDARY" in
+            legacy)
+              node scripts/access-boundary.mjs check-cutover production
+              ;;
+            broad)
+              node scripts/access-boundary.mjs check production
+              ;;
+            *)
+              echo "Production Access boundary must be exactly broad or legacy." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Build preview
         if: steps.identity_schema.outputs.changed != 'true'
