@@ -1564,7 +1564,7 @@ describe("AppShell deeplink cold-load flow", () => {
         notifications?.push({ id: "ordinary-info", message: "Ordinary notification", tone: "info" });
         notifications?.push({
           id: "arbitrary-long-info",
-          message: "An arbitrary long notification that wraps without relying on its notification id.",
+          message: `Imported preset: ${"unbroken".repeat(10)}`,
           tone: "info",
         });
       });
@@ -1573,7 +1573,7 @@ describe("AppShell deeplink cold-load flow", () => {
       const ordinaryNotice = notices
         .find((entry) => entry.textContent?.includes("Ordinary notification"));
       const longNotice = notices
-        .find((entry) => entry.textContent?.includes("An arbitrary long notification"));
+        .find((entry) => entry.textContent?.includes("Imported preset: unbroken"));
       expect(ordinaryNotice).toBeDefined();
       expect(longNotice).toBeDefined();
 

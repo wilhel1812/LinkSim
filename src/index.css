@@ -1976,6 +1976,7 @@ button {
   display: block;
   min-width: 0;
   white-space: normal;
+  overflow-wrap: anywhere;
   overflow: visible;
   text-overflow: clip;
   line-height: 1.2;
