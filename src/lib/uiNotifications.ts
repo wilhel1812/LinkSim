@@ -54,9 +54,9 @@ export const dismissUiNotification = (
 
 export const clearUiNotifications = (
   notifications: UiNotification[] = [],
-  options?: { force?: boolean },
+  options?: { force?: boolean; includePreserved?: boolean },
 ): UiNotification[] => (
   options?.force === true
     ? []
-    : notifications.filter((item) => item.pinned || item.preserveOnClear)
+    : notifications.filter((item) => item.pinned || (item.preserveOnClear && !options?.includePreserved))
 );

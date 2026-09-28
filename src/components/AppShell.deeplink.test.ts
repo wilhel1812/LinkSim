@@ -1646,6 +1646,57 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("removes the preserved private-Site warning when the user explicitly dismisses all", async () => {
+    hoisted.runtimeEnvironment = "local";
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const privateSite = { id: "private-site", visibility: "private" };
+    const sharedSimulation = {
+      id: "sim-private-sites",
+      name: "Private Site Simulation",
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: { sites: [{ id: "site-a", libraryEntryId: "private-site" }] },
+    };
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: sharedSimulation.id,
+      sites: sharedSimulation.snapshot.sites,
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+
+    const view = await renderAppShell();
+    try {
+      const notifications = (
+        window as Window & {
+          linksimNotifications?: {
+            pushMany: (notices: Array<{ id: string; message: string }>) => void;
+          };
+        }
+      ).linksimNotifications;
+      expect(document.body.textContent).toContain(warning);
+      act(() => {
+        notifications?.pushMany([
+          { id: "ordinary-a", message: "Ordinary A" },
+          { id: "ordinary-b", message: "Ordinary B" },
+          { id: "ordinary-c", message: "Ordinary C" },
+        ]);
+      });
+
+      fireEvent.click(Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === "Dismiss all") as HTMLButtonElement);
+      expect(document.body.textContent).not.toContain(warning);
+      expect(document.body.textContent).not.toContain("Ordinary A");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
   it("removes, republishes, and isolates stale dismissal across private-Site warning states", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");

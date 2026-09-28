@@ -483,8 +483,8 @@ export function AppShell() {
     },
     [dismissNotification, dismissingNotificationIds],
   );
-  const clearNotifications = useCallback(() => {
-    const next = clearUiNotifications(uiNotificationsRef.current);
+  const clearNotifications = useCallback((options?: { includePreserved?: boolean }) => {
+    const next = clearUiNotifications(uiNotificationsRef.current, options);
     setUiNotifications(next);
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
@@ -2777,7 +2777,7 @@ export function AppShell() {
           </div>
           {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (
             <div className="app-notification-stack-controls">
-              <ActionButton onClick={clearNotifications} type="button">
+              <ActionButton onClick={() => clearNotifications({ includePreserved: true })} type="button">
                 Dismiss all
               </ActionButton>
             </div>

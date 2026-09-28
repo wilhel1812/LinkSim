@@ -77,6 +77,7 @@ describe("clearUiNotifications", () => {
 
   it("preserves manually dismissible state notices without preserving ordinary notices", () => {
     const seeded = [
+      createUiNotification({ id: "pinned", message: "Pinned warning", pinned: true }, 50),
       createUiNotification({
         id: "state-warning",
         message: "State warning",
@@ -87,7 +88,8 @@ describe("clearUiNotifications", () => {
     ];
 
     const remaining = clearUiNotifications(seeded);
-    expect(remaining.map((item) => item.id)).toEqual(["state-warning"]);
-    expect(dismissUiNotification(remaining, "state-warning")).toEqual([]);
+    expect(remaining.map((item) => item.id)).toEqual(["pinned", "state-warning"]);
+    expect(clearUiNotifications(seeded, { includePreserved: true }).map((item) => item.id)).toEqual(["pinned"]);
+    expect(dismissUiNotification(remaining, "state-warning").map((item) => item.id)).toEqual(["pinned"]);
   });
 });
