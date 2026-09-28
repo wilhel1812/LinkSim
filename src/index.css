@@ -6391,12 +6391,6 @@ html.panorama-gesture-lock body {
   gap: 8px;
 }
 
-.passkey-guidance {
-  display: grid;
-  gap: 6px;
-}
-
-.passkey-guidance p,
 .passkey-operation-status {
   margin: 0;
 }
