@@ -342,6 +342,51 @@ describe("AppShell copy flow", () => {
     }
   });
 
+  it("keeps the private-Site disclosure when copying an existing Shared Simulation link", async () => {
+    const state = useAppStore.getState();
+    const privateSite = {
+      id: "private-site",
+      name: "Private Site",
+      visibility: "private" as const,
+      ownerUserId: "user-1",
+      effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      position: { lat: 60.5, lon: 11.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const sites = state.sites.map((site, index) =>
+      index === 0 ? { ...site, libraryEntryId: privateSite.id } : site,
+    );
+    useAppStore.setState({
+      siteLibrary: [privateSite],
+      sites,
+      simulationPresets: state.simulationPresets.map((simulation) => ({
+        ...simulation,
+        ownerUserId: "user-1",
+        effectiveRole: "owner",
+        visibility: "shared",
+        snapshot: { ...simulation.snapshot, sites },
+      })),
+    });
+
+    const view = render(<AppShell />);
+    try {
+      expect(await screen.findByText(warning)).toBeInTheDocument();
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
+      expect(screen.getByText(warning)).toBeInTheDocument();
+    } finally {
+      view.unmount();
+    }
+  });
+
   it("keeps collaborator profile and Add actions independent", async () => {
     useAppStore.setState((state) => ({
       simulationPresets: state.simulationPresets.map((simulation) => ({

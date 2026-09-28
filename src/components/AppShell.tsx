@@ -577,6 +577,7 @@ export function AppShell() {
       tone: "warning",
       dismissMode: "manual",
       pinned: false,
+      preserveOnClear: true,
     });
   }, [privateSiteDisclosureNoticeId, pushNotification, removeNotificationImmediately]);
 
