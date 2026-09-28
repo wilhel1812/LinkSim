@@ -28,7 +28,7 @@ describe("documentation-only delivery workflow", () => {
     expect(deployWorkflow.match(/!cancelled\(\)/g)).toHaveLength(3);
   });
 
-  it("stages a non-authorizing trusted evaluator without removing the required main check", () => {
+  it("keeps the trusted evaluator non-authorizing while the App publishes the exact-head check", () => {
     expect(branchWorkflow).toContain("  pull_request:\n");
     expect(branchWorkflow).toContain("      - main");
     expect(branchWorkflow).not.toContain("pull_request_target:");
@@ -38,8 +38,15 @@ describe("documentation-only delivery workflow", () => {
     expect(docsBranchWorkflow).toContain(
       "name: Docs Branch Policy / evaluate-main-docs",
     );
-    expect(docsBranchWorkflow).not.toContain("checks: write");
-    expect(docsBranchWorkflow).not.toContain("github.rest.checks.create");
+    expect(docsBranchWorkflow).toContain(
+      "name: Docs Branch Policy / publish-main-docs",
+    );
+    expect(docsBranchWorkflow).toContain("permissions: {}");
+    expect(docsBranchWorkflow).toContain("permission-checks: write");
+    expect(docsBranchWorkflow).toContain("github.rest.checks.create");
+    expect(docsBranchWorkflow).toContain(
+      "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    );
     expect(docsBranchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
     expect(docsBranchWorkflow).toContain(
       'test "$HEAD_REPO" = "$GITHUB_REPOSITORY"',
@@ -61,7 +68,8 @@ describe("documentation-only delivery workflow", () => {
   it("documents the required activation ordering", () => {
     const delivery = readRepositoryFile("docs/documentation-delivery.md");
     expect(delivery).toContain("Docs Branch Policy / enforce-main-docs");
-    expect(delivery).toContain("branch protection is updated");
+    expect(delivery).toContain("source is pinned");
+    expect(delivery).toContain("Before changing branch protection");
     expect(delivery).toContain("Do not open or merge a `docs/*`");
     expect(delivery).toContain("`docs/onboarding.md`");
     expect(delivery).toContain("dedicated GitHub App");

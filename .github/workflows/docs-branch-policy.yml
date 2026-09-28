@@ -45,3 +45,49 @@ jobs:
           git cat-file -e "${HEAD_SHA}^{commit}"
           node scripts/docs-only-policy.mjs require \
             --base "$BASE_SHA" --head "$HEAD_SHA" --mode three-dot
+
+  publish-main-docs:
+    name: Docs Branch Policy / publish-main-docs
+    needs: evaluate-main-docs
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    environment: docs-policy-publisher
+    steps:
+      - name: Mint documentation policy App token
+        id: docs-policy-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DOCS_POLICY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DOCS_POLICY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Publish documentation branch policy check
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          EVALUATOR_RESULT: ${{ needs.evaluate-main-docs.result }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          github-token: ${{ steps.docs-policy-app-token.outputs.token }}
+          script: |
+            const headSha = process.env.HEAD_SHA;
+            if (!/^[0-9a-f]{40}$/.test(headSha ?? "")) {
+              throw new Error("Pull-request head SHA must be exactly 40 lowercase hexadecimal characters.");
+            }
+
+            const evaluatorResult = process.env.EVALUATOR_RESULT;
+            const conclusion = evaluatorResult === "success" ? "success" : "failure";
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "Docs Branch Policy / enforce-main-docs",
+              head_sha: headSha,
+              status: "completed",
+              conclusion,
+              output: {
+                title: "Protected-base documentation policy evaluation",
+                summary: `evaluate-main-docs completed with result: ${evaluatorResult}`,
+              },
+            });
