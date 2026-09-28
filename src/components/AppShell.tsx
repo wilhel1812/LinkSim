@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
@@ -118,6 +118,87 @@ type NotificationDebugWindow = Window & {
 const DISMISS_ALL_THRESHOLD = 4;
 const MANUAL_DISMISS_EXIT_MS = 220;
 const AUTO_DISMISS_EXIT_MS = 1000;
+
+type AppNotificationItemProps = {
+  dismissKind?: "manual" | "auto";
+  notification: UiNotification;
+  onDismiss: () => void;
+  onPauseChange: (isPaused: boolean) => void;
+};
+
+function AppNotificationItem({
+  dismissKind,
+  notification,
+  onDismiss,
+  onPauseChange,
+}: AppNotificationItemProps) {
+  const copyRef = useRef<HTMLSpanElement>(null);
+  const [isWrapped, setIsWrapped] = useState(false);
+
+  useLayoutEffect(() => {
+    const copy = copyRef.current;
+    if (!copy) return;
+
+    const measure = () => {
+      const lineHeight = Number.parseFloat(window.getComputedStyle(copy).lineHeight);
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+        setIsWrapped(false);
+        return;
+      }
+      const nextIsWrapped = copy.scrollHeight > lineHeight + 1;
+      setIsWrapped((current) => (current === nextIsWrapped ? current : nextIsWrapped));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(copy);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [notification.message]);
+
+  return (
+    <div
+      data-dismiss-kind={dismissKind}
+      onBlurCapture={() => onPauseChange(false)}
+      onFocusCapture={() => onPauseChange(true)}
+      onMouseEnter={() => onPauseChange(true)}
+      onMouseLeave={() => onPauseChange(false)}
+      role={notification.tone === "error" ? "alert" : "status"}
+      aria-live={notification.tone === "error" ? "assertive" : "polite"}
+      aria-atomic="true"
+      className={[
+        "app-notification-item",
+        `app-notification-item-${notification.tone}`,
+        isWrapped ? "app-notification-item-wrapped" : "",
+        dismissKind ? "is-dismissing" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      <span className="app-notification-glyph" aria-hidden="true">
+        {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
+        {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
+        {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
+        {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
+      </span>
+      <div className="app-notification-copy">
+        <span ref={copyRef}>{notification.message}</span>
+      </div>
+      {notification.pinned ? null : (
+        <button
+          aria-label="Dismiss notification"
+          className="app-notification-dismiss"
+          onClick={onDismiss}
+          title="Dismiss"
+          type="button"
+        >
+          <X aria-hidden="true" size={14} strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -2727,48 +2808,18 @@ export function AppShell() {
         <section aria-label="App notifications" className="app-notification-stack">
           <div className="app-notification-stack-list">
             {uiNotifications.map((notification) => (
-              <div
-                data-dismiss-kind={dismissingNotificationIds[notification.id] ?? undefined}
+              <AppNotificationItem
+                dismissKind={dismissingNotificationIds[notification.id]}
                 key={notification.id}
-                onBlurCapture={() => setNotificationPaused(notification.id, false)}
-                onFocusCapture={() => setNotificationPaused(notification.id, true)}
-                onMouseEnter={() => setNotificationPaused(notification.id, true)}
-                onMouseLeave={() => setNotificationPaused(notification.id, false)}
-                role={notification.tone === "error" ? "alert" : "status"}
-                aria-live={notification.tone === "error" ? "assertive" : "polite"}
-                aria-atomic="true"
-                className={`app-notification-item app-notification-item-${notification.tone} ${
-                  notification.id === "demo-mode" ? "app-notification-item-wrapped" : ""
-                } ${
-                  dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
-                }`}
-              >
-                <span className="app-notification-glyph" aria-hidden="true">
-                  {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
-                </span>
-                <div className="app-notification-copy">
-                  <span>{notification.message}</span>
-                </div>
-                {notification.pinned ? null : (
-                  <button
-                    aria-label="Dismiss notification"
-                    className="app-notification-dismiss"
-                    onClick={() => {
-                      if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
-                        setOfflineBannerDismissed(true);
-                      }
-                      requestDismissNotification(notification.id, "manual");
-                    }}
-                    title="Dismiss"
-                    type="button"
-                  >
-                    <X aria-hidden="true" size={14} strokeWidth={2} />
-                  </button>
-                )}
-              </div>
+                notification={notification}
+                onDismiss={() => {
+                  if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                    setOfflineBannerDismissed(true);
+                  }
+                  requestDismissNotification(notification.id, "manual");
+                }}
+                onPauseChange={(isPaused) => setNotificationPaused(notification.id, isPaused)}
+              />
             ))}
           </div>
           {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (

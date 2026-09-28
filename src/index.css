@@ -1936,13 +1936,6 @@ button {
   border-radius: var(--radius-notice-wrapped);
 }
 
-.app-notification-item-static .app-notification-copy span,
-.app-notification-item-wrapped .app-notification-copy span {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
-
 .app-notification-item-warning {
   border-color: color-mix(in srgb, var(--warning) 56%, var(--border));
 }
@@ -1982,9 +1975,9 @@ button {
 .app-notification-copy span {
   display: block;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
   line-height: 1.2;
 }
 

@@ -1470,10 +1470,6 @@ describe("AppShell deeplink cold-load flow", () => {
         "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
       );
       expect(document.body.textContent).not.toContain("Demo workspace — sign in to save your own simulations.");
-      expect(document.querySelector(".app-notification-item-wrapped")).toHaveTextContent(
-        "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
-      );
-
       await advanceTimers(4_999);
       expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
       await advanceTimers(1);
@@ -1497,8 +1493,9 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = await renderAppShell();
 
     try {
-      const notice = document.querySelector<HTMLElement>(".app-notification-item-wrapped");
-      expect(notice).not.toBeNull();
+      const notice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes("You’re viewing a read-only demo."));
+      expect(notice).toBeDefined();
       fireEvent.mouseEnter(notice as HTMLElement);
 
       await advanceTimers(10_000);
@@ -1542,17 +1539,17 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(document.body.textContent).toContain(
         "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
       );
-      expect(document.querySelector(".app-notification-item-wrapped")).toHaveTextContent(
-        "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
-      );
     } finally {
       unmountAppShell(view);
     }
   });
 
-  it("keeps ordinary notifications on the default single-line pill presentation", async () => {
+  it("derives pill and wrapped presentation from rendered line count for any notification", async () => {
     hoisted.runtimeEnvironment = "local";
     const view = await renderAppShell();
+    const getComputedStyleSpy = vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () => ({ lineHeight: "16px" }) as CSSStyleDeclaration,
+    );
 
     try {
       const notifications = (
@@ -1565,13 +1562,37 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(notifications).toBeDefined();
       act(() => {
         notifications?.push({ id: "ordinary-info", message: "Ordinary notification", tone: "info" });
+        notifications?.push({
+          id: "arbitrary-long-info",
+          message: "An arbitrary long notification that wraps without relying on its notification id.",
+          tone: "info",
+        });
       });
 
-      const ordinaryNotice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+      const notices = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"));
+      const ordinaryNotice = notices
         .find((entry) => entry.textContent?.includes("Ordinary notification"));
+      const longNotice = notices
+        .find((entry) => entry.textContent?.includes("An arbitrary long notification"));
       expect(ordinaryNotice).toBeDefined();
+      expect(longNotice).toBeDefined();
+
+      const ordinaryCopy = ordinaryNotice?.querySelector<HTMLElement>(".app-notification-copy span");
+      const longCopy = longNotice?.querySelector<HTMLElement>(".app-notification-copy span");
+      Object.defineProperty(ordinaryCopy, "scrollHeight", { configurable: true, value: 16 });
+      Object.defineProperty(longCopy, "scrollHeight", { configurable: true, value: 32 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      await flushMicrotasks();
+
       expect(ordinaryNotice).not.toHaveClass("app-notification-item-wrapped");
+      expect(longNotice).toHaveClass("app-notification-item-wrapped");
+
+      Object.defineProperty(longCopy, "scrollHeight", { configurable: true, value: 16 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      await flushMicrotasks();
+      expect(longNotice).not.toHaveClass("app-notification-item-wrapped");
     } finally {
+      getComputedStyleSpy.mockRestore();
       unmountAppShell(view);
     }
   });
