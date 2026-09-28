@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleAlert, CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
+import { CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
@@ -18,6 +18,7 @@ import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { UserAdminPanel } from "./UserAdminPanel";
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
+import { AppNotificationItem } from "./AppNotificationItem";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
@@ -470,14 +471,9 @@ export function Sidebar({
           )}
         </div>
         {privateReferencedLibrarySiteIds.size ? (
-          <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-            <span className="app-notification-glyph" aria-hidden="true">
-              <CircleAlert size={14} strokeWidth={2} />
-            </span>
-            <div className="app-notification-copy">
-              <span>{PRIVATE_SITE_DISCLOSURE_NOTICE}</span>
-            </div>
-          </div>
+          <AppNotificationItem static tone="warning">
+            {PRIVATE_SITE_DISCLOSURE_NOTICE}
+          </AppNotificationItem>
         ) : null}
       </section>
 
