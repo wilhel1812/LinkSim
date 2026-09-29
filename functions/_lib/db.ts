@@ -2044,6 +2044,47 @@ const canEditResource = (
 
 type ResourceChangeAccessReason = "missing" | "forbidden";
 
+type CurrentResourceAccess = {
+  ownerUserId: string;
+  visibility: Visibility;
+  lifecycleStatus: "active" | "deleted" | null;
+  actorRole: string | null;
+};
+
+const lookupCurrentResourceAccess = async (
+  env: Env,
+  kind: "site" | "simulation",
+  resourceId: string,
+  actorUserId: string,
+): Promise<CurrentResourceAccess | null> => {
+  const table = kind === "site" ? "sites" : "simulations";
+  const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
+  const lifecycleSelection = kind === "simulation" ? "t.status" : "NULL";
+  const row = await env.DB
+    .prepare(
+      `SELECT t.owner_user_id, t.visibility, ${lifecycleSelection} AS lifecycle_status, r.role AS actor_role
+       FROM ${table} t
+       LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
+       WHERE t.id = ?
+       LIMIT 1`,
+    )
+    .bind(actorUserId, resourceId)
+    .first<{
+      owner_user_id: string;
+      visibility: DbVisibility;
+      lifecycle_status: "active" | "deleted" | null;
+      actor_role?: string | null;
+    }>();
+
+  if (!row) return null;
+  return {
+    ownerUserId: row.owner_user_id,
+    visibility: visibilityFromDbVisibility(row.visibility),
+    lifecycleStatus: row.lifecycle_status,
+    actorRole: typeof row.actor_role === "string" ? row.actor_role : null,
+  };
+};
+
 export const deleteSiteResource = async (
   env: Env,
   actor: ActorPolicy,
@@ -2100,36 +2141,18 @@ export const resolveResourceChangeAccess = async (
   actor: ActorPolicy,
   operation: "read" | "revert",
 ): Promise<{ ok: true } | { ok: false; reason: ResourceChangeAccessReason }> => {
-  const table = kind === "site" ? "sites" : "simulations";
-  const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
-  const row = await env.DB
-    .prepare(
-      `SELECT t.owner_user_id, t.visibility${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
-       FROM ${table} t
-       LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
-       WHERE t.id = ?
-       LIMIT 1`,
-    )
-    .bind(actor.id, resourceId)
-    .first<{
-      owner_user_id: string;
-      visibility: DbVisibility;
-      status?: "active" | "deleted";
-      actor_role?: string | null;
-    }>();
+  const row = await lookupCurrentResourceAccess(env, kind, resourceId, actor.id);
 
   if (!row) return { ok: false, reason: "missing" };
-  if (kind === "simulation" && row.status === "deleted") {
+  if (kind === "simulation" && row.lifecycleStatus === "deleted") {
     return operation === "read" && actor.isAdmin
       ? { ok: true }
       : { ok: false, reason: "forbidden" };
   }
 
-  const explicitRole = typeof row.actor_role === "string" ? row.actor_role : null;
-  const visibility = visibilityFromDbVisibility(row.visibility);
   const allowed = operation === "read"
-    ? canReadResource(actor, row.owner_user_id, visibility, explicitRole)
-    : canEditResource(actor, row.owner_user_id, visibility, explicitRole);
+    ? canReadResource(actor, row.ownerUserId, row.visibility, row.actorRole)
+    : canEditResource(actor, row.ownerUserId, row.visibility, row.actorRole);
   return allowed ? { ok: true } : { ok: false, reason: "forbidden" };
 };
 
@@ -3402,18 +3425,10 @@ export const resolveSimulationAccessForUser = async (
   const id = simulationId.trim();
   if (!id) return "missing";
 
-  const row = await env.DB
-    .prepare(
-      `SELECT s.owner_user_id, s.visibility, s.status, r.role AS actor_role
-       FROM simulations s
-       LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
-       WHERE s.id = ?`,
-    )
-    .bind(actor.id, id)
-    .first<{ owner_user_id: string; visibility: DbVisibility; status: "active" | "deleted"; actor_role?: string | null }>();
+  const row = await lookupCurrentResourceAccess(env, "simulation", id, actor.id);
 
   if (!row) return "missing";
-  if (row.status === "deleted") return "missing";
+  if (row.lifecycleStatus === "deleted") return "missing";
 
   const canRead = canReadResource(
     {
@@ -3421,9 +3436,9 @@ export const resolveSimulationAccessForUser = async (
       isAdmin: actor.isAdmin,
       isModerator: Boolean(actor.isModerator),
     },
-    row.owner_user_id,
-    visibilityFromDbVisibility(row.visibility),
-    typeof row.actor_role === "string" ? row.actor_role : null,
+    row.ownerUserId,
+    row.visibility,
+    row.actorRole,
   );
 
   return canRead ? "ok" : "forbidden";

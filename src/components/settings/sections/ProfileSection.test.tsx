@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CloudUser } from "../../../lib/cloudUser";
@@ -69,14 +69,31 @@ describe("Profile passkey management", () => {
     expect(await screen.findByText("MacBook")).toBeInTheDocument();
     expect(screen.getByText("Unnamed passkey")).toBeInTheDocument();
     expect(screen.queryByText("secret-credential-id")).not.toBeInTheDocument();
-    expect(screen.getByText(/fingerprint, face, PIN, or screen lock/i)).toBeInTheDocument();
-    expect(screen.getByText(/saved by your device or password manager/i)).toBeInTheDocument();
-    expect(screen.getByText(/another device may show a QR code/i)).toBeInTheDocument();
-    expect(screen.getByText(/Keep more than one passkey if GitHub is not linked/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Learn more about passkeys" })).toHaveAttribute(
+    const infoText = "Passkeys let you sign in with your fingerprint, face, PIN, or screen lock instead of a password. Adding, renaming, or removing one requires a recent sign-in.";
+    const heading = screen.getByRole("heading", { name: "Passkeys" });
+    const headingGroup = heading.closest(".passkey-heading");
+    expect(headingGroup).not.toBeNull();
+    const infoButton = within(headingGroup as HTMLElement).getByRole("button", { name: infoText });
+    expect(heading.nextElementSibling).toBe(infoButton);
+
+    fireEvent.click(infoButton);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent(infoText);
+    expect(infoButton).toHaveAttribute("aria-describedby", tooltip.id);
+
+    const learnMoreLink = screen.getByRole("link", { name: "Learn more about passkeys" });
+    expect(learnMoreLink).toBeVisible();
+    expect(learnMoreLink).toHaveAttribute(
       "href",
       "https://www.passkeycentral.org/introduction-to-passkeys/",
     );
+    expect(learnMoreLink).toHaveAttribute("target", "_blank");
+    expect(learnMoreLink).toHaveAttribute("rel", "noreferrer");
+    expect(screen.queryByText("Use a fingerprint, face, PIN, or screen lock to sign in without a password.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/saved by your device or password manager/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/another device may show a QR code/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Keep more than one passkey if GitHub is not linked/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Availability depends on your browser/i)).not.toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Passkey operation status" })).toHaveClass("sr-only");
   });
 

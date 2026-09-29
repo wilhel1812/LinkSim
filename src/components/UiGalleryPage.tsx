@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
-import { Bell as BellIcon, CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
+import { Bell as BellIcon, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
+import { AppNotificationItem } from "./AppNotificationItem";
 import { AvatarBadge } from "./AvatarBadge";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
@@ -614,50 +615,18 @@ export function UiGalleryPage() {
             <PatternCard name="NotificationStack" status="under migration">
               <div className="app-notification-stack app-notification-stack-gallery">
                 <div className="app-notification-stack-list">
-                  <div className="app-notification-item app-notification-item-info" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <Info size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>Share link copied.</span>
-                    </div>
-                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
-                      <X aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <div className="app-notification-item app-notification-item-warning" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleAlert size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>Retrying tile 12/41.</span>
-                    </div>
-                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
-                      <X aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <div className="app-notification-item app-notification-item-error" role="alert">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleX size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>Elevation API slow.</span>
-                    </div>
-                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
-                      <X aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <div className="app-notification-item app-notification-item-success" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleCheck size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>Profile updated.</span>
-                    </div>
-                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
-                      <X aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
-                  </div>
+                  <AppNotificationItem onDismiss={() => undefined} tone="info">
+                    Share link copied.
+                  </AppNotificationItem>
+                  <AppNotificationItem onDismiss={() => undefined} tone="warning">
+                    Retrying tile 12/41.
+                  </AppNotificationItem>
+                  <AppNotificationItem onDismiss={() => undefined} tone="error">
+                    Elevation API slow.
+                  </AppNotificationItem>
+                  <AppNotificationItem onDismiss={() => undefined} tone="success">
+                    Profile updated.
+                  </AppNotificationItem>
                 </div>
                 <div className="app-notification-stack-controls">
                   <ActionButton>Dismiss all</ActionButton>
