@@ -54,13 +54,20 @@ describe("required check workflows", () => {
     expect(branchWorkflow).toContain('test "$BASE_REF" = "main"');
   });
 
-  it("stages the trusted docs evaluator without claiming a required head check", () => {
+  it("keeps the evaluator trusted and publishes the App-authored exact-head check", () => {
     expect(docsBranchWorkflow).toContain("pull_request_target:");
     expect(docsBranchWorkflow).toMatch(
       /^ {4}name: Docs Branch Policy \/ evaluate-main-docs$/m,
     );
-    expect(docsBranchWorkflow).not.toContain("checks: write");
-    expect(docsBranchWorkflow).not.toContain("github.rest.checks.create");
+    expect(docsBranchWorkflow).toMatch(
+      /^ {4}name: Docs Branch Policy \/ publish-main-docs$/m,
+    );
+    expect(docsBranchWorkflow).toContain("permissions: {}");
+    expect(docsBranchWorkflow).toContain("permission-checks: write");
+    expect(docsBranchWorkflow).toContain("github.rest.checks.create");
+    expect(docsBranchWorkflow).toContain(
+      "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    );
     expect(branchWorkflow).toMatch(/^ {4}name: PR Branch Policy \/ enforce-main$/m);
   });
 });

@@ -7,6 +7,7 @@ import { formatDate } from "../../../lib/locale";
 import { AutoSaveField } from "../AutoSaveField";
 import { AvatarDropZone } from "../AvatarDropZone";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
+import { InfoTip } from "../../InfoTip";
 import {
   addBetterAuthPasskey,
   getPasskeyUiErrorMessage,
@@ -25,6 +26,7 @@ type ProfileSectionProps = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSKEY_INFO = "Passkeys let you sign in with your fingerprint, face, PIN, or screen lock instead of a password. Adding, renaming, or removing one requires a recent sign-in.";
 
 export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = false }: ProfileSectionProps) {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -183,18 +185,16 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
             <div className="passkey-heading">
               <KeyRound aria-hidden="true" size={22} strokeWidth={1.8} />
               <h2 id="settings-passkeys-heading">Passkeys</h2>
+              <InfoTip text={PASSKEY_INFO} />
             </div>
-            <div className="passkey-guidance field-help">
-              <p>Use a fingerprint, face, PIN, or screen lock to sign in without a password.</p>
-              <p>
-                Your passkey is saved by your device or password manager and may sync to your other devices.
-                Signing in from another device may show a QR code. Keep more than one passkey if GitHub is not linked to your account.
-              </p>
-              <p>
-                Adding, renaming, or removing a passkey requires a recent sign-in. Availability depends on your browser,
-                device, screen lock, and password manager. <a href="https://www.passkeycentral.org/introduction-to-passkeys/" rel="noreferrer" target="_blank">Learn more about passkeys</a>.
-              </p>
-            </div>
+            <a
+              className="field-help"
+              href="https://www.passkeycentral.org/introduction-to-passkeys/"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Learn more about passkeys
+            </a>
           </header>
 
           <div className="passkey-create-row">

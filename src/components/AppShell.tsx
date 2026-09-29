@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { Copy, Globe, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
@@ -39,6 +39,8 @@ import {
 } from "../lib/betterAuthPilot";
 import { parseRadioPresetShareHash, type RadioPresetShareParseResult } from "../lib/radioPresetShare";
 import { normalizeUserSimulationDefaultsPreference } from "../lib/simulationDefaults";
+import { getReferencedPrivateSiteIds } from "../lib/privateSiteDisclosure";
+import { toAccessVisibility } from "../lib/uiFormatting";
 import { buildImportedRadioPresetPreference } from "../lib/radioPresetImport";
 import {
   clearUiNotifications,
@@ -71,6 +73,7 @@ import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfile
 import { BasemapAttributionLinks } from "./BasemapAttributionLinks";
 import { AuthSignInPopover, type AuthSignInMethod } from "./AuthSignInPopover";
 import { LegacyMigrationModal, type LegacyMigrationStage } from "./LegacyMigrationModal";
+import { AppNotificationItem } from "./AppNotificationItem";
 
 initializeMigrations();
 
@@ -85,6 +88,8 @@ const ACCESS_CHECKING_NOTICE_ID = "access-checking";
 const AUTH_DEGRADED_NOTICE_ID = "auth-degraded";
 const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
 const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
+const PRIVATE_SITE_DISCLOSURE_NOTICE =
+  "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
 
 export const buildAuthStartPath = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
@@ -118,6 +123,7 @@ type NotificationDebugWindow = Window & {
 const DISMISS_ALL_THRESHOLD = 4;
 const MANUAL_DISMISS_EXIT_MS = 220;
 const AUTO_DISMISS_EXIT_MS = 1000;
+
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -348,6 +354,8 @@ export function AppShell() {
   const hadAuthenticatedSessionRef = useRef(hasAuthenticatedSessionMarker());
   const authCheckInFlightRef = useRef(false);
   const preserveWorkspaceOnAnonymousEntryRef = useRef(false);
+  const anonymousNoticeEntryActiveRef = useRef(false);
+  const privateSiteDisclosureNoticeIdRef = useRef<string | null>(null);
   const authRecoveryActiveRef = useRef(false);
   const authRecoveryDisabledRef = useRef(false);
   const authRetryQuickAttemptRef = useRef(0);
@@ -475,8 +483,8 @@ export function AppShell() {
     },
     [dismissNotification, dismissingNotificationIds],
   );
-  const clearNotifications = useCallback(() => {
-    const next = clearUiNotifications(uiNotificationsRef.current);
+  const clearNotifications = useCallback((options?: { includePreserved?: boolean }) => {
+    const next = clearUiNotifications(uiNotificationsRef.current, options);
     setUiNotifications(next);
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
@@ -532,21 +540,46 @@ export function AppShell() {
     () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
   );
+  const referencedPrivateSiteIds = useMemo(
+    () => getReferencedPrivateSiteIds(activeSimulation, siteLibrary),
+    [activeSimulation, siteLibrary],
+  );
   const referencedPrivateSites = useMemo(() => {
-    if (!activeSimulation || typeof activeSimulation !== "object") return [];
-    const snapshotSites =
-      (
-        activeSimulation as {
-          snapshot?: { sites?: Array<{ libraryEntryId?: string }> };
-        }
-      ).snapshot?.sites ?? [];
-    const ids = new Set<string>();
-    for (const site of snapshotSites) {
-      if (!site || typeof site.libraryEntryId !== "string" || !site.libraryEntryId.trim()) continue;
-      ids.add(site.libraryEntryId);
+    const ids = new Set(referencedPrivateSiteIds);
+    return siteLibrary.filter((site) => ids.has(site.id));
+  }, [referencedPrivateSiteIds, siteLibrary]);
+  const privateSiteDisclosureNoticeId = useMemo(() => {
+    if (
+      !canPersistWorkspace
+      || !activeSimulation
+      || toAccessVisibility(activeSimulation.visibility) !== "shared"
+      || referencedPrivateSiteIds.length === 0
+    ) {
+      return null;
     }
-    return siteLibrary.filter((site) => ids.has(site.id) && toVisibility(site.visibility) === "private");
-  }, [activeSimulation, siteLibrary]);
+    return [
+      "private-site-disclosure",
+      encodeURIComponent(activeSimulation.id),
+      ...referencedPrivateSiteIds.map((id) => encodeURIComponent(id)),
+    ].join(":");
+  }, [activeSimulation, canPersistWorkspace, referencedPrivateSiteIds]);
+
+  useEffect(() => {
+    const previousId = privateSiteDisclosureNoticeIdRef.current;
+    if (previousId && previousId !== privateSiteDisclosureNoticeId) {
+      removeNotificationImmediately(previousId);
+    }
+    privateSiteDisclosureNoticeIdRef.current = privateSiteDisclosureNoticeId;
+    if (!privateSiteDisclosureNoticeId) return;
+    pushNotification({
+      id: privateSiteDisclosureNoticeId,
+      message: PRIVATE_SITE_DISCLOSURE_NOTICE,
+      tone: "warning",
+      dismissMode: "manual",
+      pinned: false,
+      preserveOnClear: true,
+    });
+  }, [privateSiteDisclosureNoticeId, pushNotification, removeNotificationImmediately]);
 
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
@@ -1380,20 +1413,26 @@ export function AppShell() {
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
   useEffect(() => {
     const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
-    if (!isAnonNoDeepLink) return;
+    if (!isAnonNoDeepLink) {
+      anonymousNoticeEntryActiveRef.current = false;
+      removeNotificationImmediately("demo-mode");
+      return;
+    }
+    if (anonymousNoticeEntryActiveRef.current) return;
+    anonymousNoticeEntryActiveRef.current = true;
     const preserveWorkspace = preserveWorkspaceOnAnonymousEntryRef.current;
     preserveWorkspaceOnAnonymousEntryRef.current = false;
-    if (!preserveWorkspace && sites.length === 0) {
+    const shouldLoadDemo = !preserveWorkspace && sites.length === 0;
+    if (shouldLoadDemo) {
       loadDemoScenario();
     }
-    publishAppNotice({
-      id: "demo-mode",
-      message: deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations.",
-      tone: "info",
-      persistent: true,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
+    publishTransientNotice(
+      "demo-mode",
+      shouldLoadDemo
+        ? "You’re viewing a read-only demo. Sign in to create and save your own Simulations."
+        : "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
+    );
+  }, [deepLinkParse.ok, isAnonymousGuestReadonly, loadDemoScenario, publishTransientNotice, removeNotificationImmediately, sites.length]);
 
   useEffect(() => {
     const timers: number[] = [];
@@ -2720,51 +2759,25 @@ export function AppShell() {
         <section aria-label="App notifications" className="app-notification-stack">
           <div className="app-notification-stack-list">
             {uiNotifications.map((notification) => (
-              <div
-                data-dismiss-kind={dismissingNotificationIds[notification.id] ?? undefined}
+              <AppNotificationItem
+                dismissKind={dismissingNotificationIds[notification.id]}
                 key={notification.id}
-                onBlurCapture={() => setNotificationPaused(notification.id, false)}
-                onFocusCapture={() => setNotificationPaused(notification.id, true)}
-                onMouseEnter={() => setNotificationPaused(notification.id, true)}
-                onMouseLeave={() => setNotificationPaused(notification.id, false)}
-                role={notification.tone === "error" ? "alert" : "status"}
-                aria-live={notification.tone === "error" ? "assertive" : "polite"}
-                aria-atomic="true"
-                className={`app-notification-item app-notification-item-${notification.tone} ${
-                  dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
-                }`}
+                onDismiss={notification.pinned ? undefined : () => {
+                  if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                    setOfflineBannerDismissed(true);
+                  }
+                  requestDismissNotification(notification.id, "manual");
+                }}
+                onPauseChange={(isPaused) => setNotificationPaused(notification.id, isPaused)}
+                tone={notification.tone}
               >
-                <span className="app-notification-glyph" aria-hidden="true">
-                  {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
-                  {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
-                </span>
-                <div className="app-notification-copy">
-                  <span>{notification.message}</span>
-                </div>
-                {notification.pinned ? null : (
-                  <button
-                    aria-label="Dismiss notification"
-                    className="app-notification-dismiss"
-                    onClick={() => {
-                      if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
-                        setOfflineBannerDismissed(true);
-                      }
-                      requestDismissNotification(notification.id, "manual");
-                    }}
-                    title="Dismiss"
-                    type="button"
-                  >
-                    <X aria-hidden="true" size={14} strokeWidth={2} />
-                  </button>
-                )}
-              </div>
+                {notification.message}
+              </AppNotificationItem>
             ))}
           </div>
           {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (
             <div className="app-notification-stack-controls">
-              <ActionButton onClick={clearNotifications} type="button">
+              <ActionButton onClick={() => clearNotifications({ includePreserved: true })} type="button">
                 Dismiss all
               </ActionButton>
             </div>

@@ -261,7 +261,7 @@ describe("Sidebar read-only simulation site actions", () => {
     ).toBeInTheDocument();
   });
 
-  it("warns writable shared-simulation editors about every referenced private site", () => {
+  it("keeps private-site disclosure on each affected Site without an inline Simulation warning", () => {
     const state = useAppStore.getState();
     const privateTooltip =
       "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
@@ -318,7 +318,7 @@ describe("Sidebar read-only simulation site actions", () => {
     });
 
     const view = render(<Sidebar />);
-    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: privateTooltip })).toBeInTheDocument();
 
     view.unmount();

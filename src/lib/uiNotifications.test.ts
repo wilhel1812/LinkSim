@@ -74,4 +74,22 @@ describe("clearUiNotifications", () => {
     expect(clearUiNotifications(seeded).map((item) => item.id)).toEqual(["auth"]);
     expect(clearUiNotifications(seeded, { force: true })).toEqual([]);
   });
+
+  it("preserves manually dismissible state notices without preserving ordinary notices", () => {
+    const seeded = [
+      createUiNotification({ id: "pinned", message: "Pinned warning", pinned: true }, 50),
+      createUiNotification({
+        id: "state-warning",
+        message: "State warning",
+        dismissMode: "manual",
+        preserveOnClear: true,
+      }, 100),
+      createUiNotification({ id: "ordinary", message: "Ordinary notice" }, 200),
+    ];
+
+    const remaining = clearUiNotifications(seeded);
+    expect(remaining.map((item) => item.id)).toEqual(["pinned", "state-warning"]);
+    expect(clearUiNotifications(seeded, { includePreserved: true }).map((item) => item.id)).toEqual(["pinned"]);
+    expect(dismissUiNotification(remaining, "state-warning").map((item) => item.id)).toEqual(["pinned"]);
+  });
 });

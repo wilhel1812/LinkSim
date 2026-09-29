@@ -1451,6 +1451,362 @@ describe("AppShell deeplink cold-load flow", () => {
     }
   });
 
+  it("loads the demo once and auto-dismisses the anonymous demo notice", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = render(
+      React.createElement(React.StrictMode, null, React.createElement(AppShell)),
+    );
+    await flushMicrotasks();
+
+    try {
+      expect(hoisted.loadDemoScenario).toHaveBeenCalledTimes(1);
+      expect(document.body.textContent).toContain(
+        "You’re viewing a read-only demo. Sign in to create and save your own Simulations.",
+      );
+      expect(document.body.textContent).not.toContain("Demo workspace — sign in to save your own simulations.");
+      await advanceTimers(4_999);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      await advanceTimers(1);
+      expect(document.querySelector('[data-dismiss-kind="auto"]')).toBeTruthy();
+      await advanceTimers(1_000);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses the anonymous notice while hovered or focused and dismisses it after interaction ends", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+
+    try {
+      const notice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes("You’re viewing a read-only demo."));
+      expect(notice).toBeDefined();
+      fireEvent.mouseEnter(notice as HTMLElement);
+
+      await advanceTimers(10_000);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      expect(notice).not.toHaveAttribute("data-dismiss-kind");
+
+      fireEvent.mouseLeave(notice as HTMLElement);
+      const dismissButton = notice?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notification"]');
+      expect(dismissButton).not.toBeNull();
+      fireEvent.focus(dismissButton as HTMLButtonElement);
+      await advanceTimers(10_000);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      expect(notice).not.toHaveAttribute("data-dismiss-kind");
+
+      fireEvent.blur(dismissButton as HTMLButtonElement);
+      await advanceTimers(4_999);
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      await advanceTimers(1);
+      expect(notice).toHaveAttribute("data-dismiss-kind", "auto");
+      await advanceTimers(1_000);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves an existing guest workspace and uses the guest notice copy", async () => {
+    window.history.replaceState(null, "", "/");
+    Object.assign(hoisted.state, {
+      sites: [{ id: "site-local", name: "Local Site" }],
+    });
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(hoisted.loadDemoScenario).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
+      );
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("derives pill and wrapped presentation from rendered line count for any notification", async () => {
+    hoisted.runtimeEnvironment = "local";
+    const view = await renderAppShell();
+    const getComputedStyleSpy = vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () => ({ lineHeight: "16px" }) as CSSStyleDeclaration,
+    );
+
+    try {
+      const notifications = (
+        window as Window & {
+          linksimNotifications?: {
+            push: (notice: { id: string; message: string; tone: "info" }) => void;
+          };
+        }
+      ).linksimNotifications;
+      expect(notifications).toBeDefined();
+      act(() => {
+        notifications?.push({ id: "ordinary-info", message: "Ordinary notification", tone: "info" });
+        notifications?.push({
+          id: "arbitrary-long-info",
+          message: `Imported preset: ${"unbroken".repeat(10)}`,
+          tone: "info",
+        });
+      });
+
+      const notices = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"));
+      const ordinaryNotice = notices
+        .find((entry) => entry.textContent?.includes("Ordinary notification"));
+      const longNotice = notices
+        .find((entry) => entry.textContent?.includes("Imported preset: unbroken"));
+      expect(ordinaryNotice).toBeDefined();
+      expect(longNotice).toBeDefined();
+
+      const ordinaryCopy = ordinaryNotice?.querySelector<HTMLElement>(".app-notification-copy span");
+      const longCopy = longNotice?.querySelector<HTMLElement>(".app-notification-copy span");
+      Object.defineProperty(ordinaryCopy, "scrollHeight", { configurable: true, value: 16 });
+      Object.defineProperty(longCopy, "scrollHeight", { configurable: true, value: 32 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      await flushMicrotasks();
+
+      expect(ordinaryNotice).not.toHaveClass("app-notification-item-wrapped");
+      expect(longNotice).toHaveClass("app-notification-item-wrapped");
+
+      Object.defineProperty(longCopy, "scrollHeight", { configurable: true, value: 16 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      await flushMicrotasks();
+      expect(longNotice).not.toHaveClass("app-notification-item-wrapped");
+    } finally {
+      getComputedStyleSpy.mockRestore();
+      unmountAppShell(view);
+    }
+  });
+
+  it("publishes a dismissible persistent private-Site warning without republishing unchanged state", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const privateSite = { id: "private-site", visibility: "private" };
+    const sharedSimulation = {
+      id: "sim-private-sites",
+      name: "Private Site Simulation",
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: { sites: [{ id: "site-a", libraryEntryId: "private-site" }] },
+    };
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: sharedSimulation.id,
+      sites: sharedSimulation.snapshot.sites,
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain(warning);
+      const notice = Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes(warning));
+      expect(notice).toHaveClass("app-notification-item-warning");
+      const dismiss = notice?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notification"]');
+      expect(dismiss).not.toBeNull();
+
+      await advanceTimers(120_000);
+      expect(document.body.textContent).toContain(warning);
+
+      fireEvent.click(dismiss as HTMLButtonElement);
+      await advanceTimers(220);
+      expect(document.body.textContent).not.toContain(warning);
+
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(document.body.textContent).not.toContain(warning);
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes the preserved private-Site warning when the user explicitly dismisses all", async () => {
+    hoisted.runtimeEnvironment = "local";
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const privateSite = { id: "private-site", visibility: "private" };
+    const sharedSimulation = {
+      id: "sim-private-sites",
+      name: "Private Site Simulation",
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: { sites: [{ id: "site-a", libraryEntryId: "private-site" }] },
+    };
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: sharedSimulation.id,
+      sites: sharedSimulation.snapshot.sites,
+      siteLibrary: [privateSite],
+      simulationPresets: [sharedSimulation],
+    });
+
+    const view = await renderAppShell();
+    try {
+      const notifications = (
+        window as Window & {
+          linksimNotifications?: {
+            pushMany: (notices: Array<{ id: string; message: string }>) => void;
+          };
+        }
+      ).linksimNotifications;
+      expect(document.body.textContent).toContain(warning);
+      act(() => {
+        notifications?.pushMany([
+          { id: "ordinary-a", message: "Ordinary A" },
+          { id: "ordinary-b", message: "Ordinary B" },
+          { id: "ordinary-c", message: "Ordinary C" },
+        ]);
+      });
+
+      fireEvent.click(Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === "Dismiss all") as HTMLButtonElement);
+      expect(document.body.textContent).not.toContain(warning);
+      expect(document.body.textContent).not.toContain("Ordinary A");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("removes, republishes, and isolates stale dismissal across private-Site warning states", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    const makeSimulation = (id: string, libraryEntryIds: string[]) => ({
+      id,
+      name: id,
+      visibility: "shared",
+      effectiveRole: "editor",
+      snapshot: {
+        sites: libraryEntryIds.map((libraryEntryId, index) => ({ id: `${id}-${index}`, libraryEntryId })),
+      },
+    });
+    const first = makeSimulation("sim-first", ["private-a"]);
+    const second = makeSimulation("sim-second", ["private-b"]);
+    hoisted.fetchCloudLibrary.mockResolvedValue({
+      siteLibrary: [
+        { id: "private-a", visibility: "private" },
+        { id: "private-b", visibility: "private" },
+        { id: "private-c", visibility: "private" },
+      ],
+      simulationPresets: [first, second],
+    });
+    Object.assign(hoisted.state, {
+      selectedScenarioId: first.id,
+      sites: first.snapshot.sites,
+      siteLibrary: [
+        { id: "private-a", visibility: "private" },
+        { id: "private-b", visibility: "private" },
+        { id: "private-c", visibility: "private" },
+      ],
+      simulationPresets: [first, second],
+    });
+
+    const view = await renderAppShell();
+    try {
+      const findNotice = () => Array.from(document.querySelectorAll<HTMLElement>(".app-notification-item"))
+        .find((entry) => entry.textContent?.includes(warning));
+      expect(findNotice()).toBeDefined();
+
+      fireEvent.click(findNotice()?.querySelector('button[aria-label="Dismiss notification"]') as HTMLButtonElement);
+      Object.assign(hoisted.state, { selectedScenarioId: second.id, sites: second.snapshot.sites });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+      await advanceTimers(220);
+      expect(findNotice()).toBeDefined();
+
+      const privateFirst = { ...first, visibility: "private" };
+      Object.assign(hoisted.state, {
+        selectedScenarioId: privateFirst.id,
+        sites: privateFirst.snapshot.sites,
+        simulationPresets: [privateFirst, second],
+      });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeUndefined();
+
+      const sharedFirst = { ...first, visibility: "shared" };
+      Object.assign(hoisted.state, { simulationPresets: [sharedFirst, second] });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+
+      fireEvent.click(findNotice()?.querySelector('button[aria-label="Dismiss notification"]') as HTMLButtonElement);
+      const changedFirst = {
+        ...sharedFirst,
+        snapshot: { sites: [{ id: "sim-first-new", libraryEntryId: "private-c" }] },
+      };
+      Object.assign(hoisted.state, {
+        sites: changedFirst.snapshot.sites,
+        simulationPresets: [changedFirst, second],
+      });
+      view.rerender(React.createElement(AppShell));
+      await flushMicrotasks();
+      expect(findNotice()).toBeDefined();
+      await advanceTimers(220);
+      expect(findNotice()).toBeDefined();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes the anonymous notice after sign-in completes", async () => {
+    hoisted.betterAuthPilotEnabled = true;
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus
+      .mockResolvedValueOnce({ authenticated: false, authState: "guest", authSource: "access" })
+      .mockResolvedValueOnce({ authenticated: true, authState: "authenticated", authSource: "better-auth" });
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain("You’re viewing a read-only demo.");
+      const trigger = Array.from(document.querySelectorAll("button"))
+        .find((entry) => entry.textContent === "Pilot sign in");
+      fireEvent.click(trigger as HTMLButtonElement);
+      await flushMicrotasks();
+      fireEvent.click(document.querySelector('button[aria-label="Passkey"]') as HTMLButtonElement);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(2);
+      expect(document.body.textContent).not.toContain("You’re viewing a read-only demo.");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
   it("shows an expired-session warning without retrying for a prior authenticated guest", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");

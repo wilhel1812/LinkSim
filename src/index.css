@@ -33,6 +33,7 @@
   --radius-pill: 999px;
   --radius-card: 12px;
   --radius-btn:  8px;
+  --radius-notice-wrapped: 14px;
   --surface-muted-opacity: 0.68;
 }
 
@@ -1931,10 +1932,8 @@ button {
   padding-right: 10px;
 }
 
-.app-notification-item-static .app-notification-copy span {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
+.app-notification-item-wrapped {
+  border-radius: var(--radius-notice-wrapped);
 }
 
 .app-notification-item-warning {
@@ -1976,9 +1975,10 @@ button {
 .app-notification-copy span {
   display: block;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
   line-height: 1.2;
 }
 
@@ -6391,12 +6391,6 @@ html.panorama-gesture-lock body {
   gap: 8px;
 }
 
-.passkey-guidance {
-  display: grid;
-  gap: 6px;
-}
-
-.passkey-guidance p,
 .passkey-operation-status {
   margin: 0;
 }
