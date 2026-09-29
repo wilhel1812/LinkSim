@@ -94,6 +94,20 @@ describe("repository-policy-only change policy", () => {
     });
   });
 
+  it("rejects an otherwise valid subset of the activation bundle", () => {
+    expect(
+      classifyRepositoryPolicyEntries([
+        {
+          oldMode: "100644",
+          newMode: "100644",
+          status: "M",
+          path: ".github/workflows/deploy-pages.yml",
+          newObjectType: "blob",
+        },
+      ]).repositoryPolicyOnly,
+    ).toBe(false);
+  });
+
   it.each([
     ["empty", []],
     ["mixed", [{ oldMode: "100644", newMode: "100644", status: "M", path: "src/App.tsx", newObjectType: "blob" }]],

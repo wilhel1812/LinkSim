@@ -105,8 +105,8 @@ After the activation gates are complete:
 The documentation lane was activated after the immutable `v0.30.0` release.
 Its protected activation bundle and the exact synchronization of that bundle
 to `staging` use a separate, fail-closed `repository-policy-only` classifier.
-The complete diff may contain only added or modified regular blob files at
-these exact paths:
+The complete diff must contain all seven of these exact paths, and may contain
+only added or modified regular blob files:
 
 - `.github/workflows/deploy-pages.yml`
 - `.github/workflows/pr-branch-policy.yml`

@@ -77,9 +77,15 @@ const isAllowedEntry = (entry) => {
 export const classifyRepositoryPolicyEntries = (entries) => {
   const normalizedEntries = Array.isArray(entries) ? entries : [];
   const rejectedEntries = normalizedEntries.filter((entry) => !isAllowedEntry(entry));
+  const changedPathSet = new Set(
+    normalizedEntries.map((entry) => String(entry?.path ?? "")),
+  );
+  const hasCompleteBundle =
+    normalizedEntries.length === ACTIVATION_BUNDLE_PATHS.length &&
+    ACTIVATION_BUNDLE_PATHS.every((path) => changedPathSet.has(path));
   return {
     repositoryPolicyOnly:
-      normalizedEntries.length > 0 && rejectedEntries.length === 0,
+      hasCompleteBundle && rejectedEntries.length === 0,
     changedPaths: normalizedEntries.map((entry) => String(entry?.path ?? "")),
     rejectedEntries,
   };
