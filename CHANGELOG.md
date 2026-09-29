@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.30.0] - 2026-09-28
+## [0.30.0] - 2026-09-29
 
 ### Changed
 - Consolidated current Simulation access lookup for history and deep-link authorization while preserving owner, collaborator, administrator, moderator, revocation, visibility, and deleted-Simulation behavior. (#1057)
