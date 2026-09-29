@@ -1,8 +1,8 @@
 # Documentation-only delivery
 
-## Activation state
+## Activation gates
 
-This lane remains unavailable until all of these gates are complete:
+This lane is available only while all of these gates remain complete:
 
 1. The classifier, Pages job conditions, trusted
    `Docs Branch Policy / evaluate-main-docs` evaluator, and protected publisher
@@ -15,16 +15,15 @@ This lane remains unavailable until all of these gates are complete:
    success only when the protected-base evaluator succeeds.
 4. The observed App source is pinned with the required context in `main`
    branch protection.
-5. A later protected policy pull request adds `docs/<issue-id>-<slug>` to the
-   allowed `main` head branches in `docs/release-flow.md` and the existing PR
-   branch-policy workflow.
+5. The protected branch-policy workflow allows same-repository
+   `docs/<issue-id>-<slug>` heads to target `main`.
 
-Do not open or merge a `docs/*` -> `main` pull request before all five gates are
-recorded complete. The staged evaluator is deliberately non-authorizing: its
+Do not open or merge a `docs/*` -> `main` pull request unless all five gates are
+recorded complete. The evaluator is deliberately non-authorizing: its
 `pull_request_target` job runs from the protected base but its native check is
 not attached to the pull-request head and must never be made required. This
-preserves the currently required `PR Branch Policy / enforce-main` check while
-publisher activation is pending.
+preserves the required `PR Branch Policy / enforce-main` check while the
+App-authored check supplies the documentation-specific decision.
 
 ## Publisher provisioning and source pinning
 
@@ -54,9 +53,9 @@ to `main` from a head already allowed by the current branch policy (normally
 
 Use the observed check run's App identity when adding the required check to
 `main` branch protection: pin both the exact context and its App source. Do not
-activate the lane if GitHub cannot retain that source restriction. Merge the
-later branch-policy change only after this observation/source-pin gate is
-recorded complete.
+activate the lane if GitHub cannot retain that source restriction. The
+branch-policy activation must be merged only after this
+observation/source-pin gate is recorded complete.
 
 Use this lane only for repository documentation that can change independently
 of a LinkSim application version. Documentation that defines or changes the
@@ -101,10 +100,42 @@ After the activation gates are complete:
    use an explicitly approved `no-milestone-close-ok` exception; do not apply
    `released` solely for a documentation-only merge.
 
+## Repository-policy-only activation and synchronization
+
+The documentation lane was activated after the immutable `v0.30.0` release.
+Its protected activation bundle and the exact synchronization of that bundle
+to `staging` use a separate, fail-closed `repository-policy-only` classifier.
+The complete diff must contain all seven of these exact paths, and may contain
+only added or modified regular blob files:
+
+- `.github/workflows/deploy-pages.yml`
+- `.github/workflows/pr-branch-policy.yml`
+- `scripts/repository-policy-only.mjs`
+- `scripts/repository-policy-only.test.mjs`
+- `functions/_lib/docsOnlyWorkflow.test.ts`
+- `docs/release-flow.md`
+- `docs/documentation-delivery.md`
+
+Empty, mixed, malformed, unavailable, deleted, renamed, type-changed,
+non-blob, or unsafe-path diffs fail closed and remain deployment-eligible.
+Successful repository-policy-only activation and synchronization pushes skip
+all Pages deployment jobs. They do not change application SemVer, create or
+move a release tag, or deploy application code; the immutable `v0.30.0` tag
+remains the production deployment identity. Manual deployment dispatches are
+never classified into this exception and remain subject to the normal
+release/tag gates.
+
+After the protected activation merge to `main`, synchronize the exact seven
+paths to `staging` through a protected `chore/*` pull request. The next
+application-bearing change that makes `staging` diverge must select the normal
+reviewed development version in both package files under the Versioning Policy;
+the repository-policy-only synchronization does not select that version.
+
 ## Fail-closed behavior
 
 - Mixed, empty, malformed, or unclassifiable diffs cannot use `docs/*` ->
-  `main` and do not bypass deployment.
+  `main` and do not bypass deployment. The repository-policy-only activation
+  exception applies only to the exact allowlist and file states above.
 - The staged `pull_request_target` evaluator loads its workflow and classifier
   from the protected base branch and treats pull-request content only as diff
   data. It is diagnostic foundation, not the future authorization check.
