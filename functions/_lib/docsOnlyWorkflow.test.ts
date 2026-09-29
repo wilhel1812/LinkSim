@@ -11,6 +11,9 @@ const docsBranchWorkflow = readRepositoryFile(
   ".github/workflows/docs-branch-policy.yml",
 );
 const policyScript = readRepositoryFile("scripts/docs-only-policy.mjs");
+const repositoryPolicyScript = readRepositoryFile(
+  "scripts/repository-policy-only.mjs",
+);
 
 describe("documentation-only delivery workflow", () => {
   it("classifies every deploy event without workflow-level path filters", () => {
@@ -28,11 +31,37 @@ describe("documentation-only delivery workflow", () => {
     expect(deployWorkflow.match(/!cancelled\(\)/g)).toHaveLength(3);
   });
 
+  it("skips each Pages deployment job after a successful repository-policy-only classification", () => {
+    expect(deployWorkflow).toContain(
+      "repository_policy_only: ${{ steps.classify.outputs.repository_policy_only }}",
+    );
+    expect(deployWorkflow).toContain(
+      "node scripts/repository-policy-only.mjs classify",
+    );
+    expect(
+      deployWorkflow.match(
+        /needs\.classify_changes\.outputs\.repository_policy_only != 'true'/g,
+      ),
+    ).toHaveLength(3);
+    expect(deployWorkflow).toContain(
+      'echo "repository_policy_only=false" >> "$GITHUB_OUTPUT"',
+    );
+  });
+
   it("keeps the trusted evaluator non-authorizing while the App publishes the exact-head check", () => {
     expect(branchWorkflow).toContain("  pull_request:\n");
     expect(branchWorkflow).toContain("      - main");
     expect(branchWorkflow).not.toContain("pull_request_target:");
-    expect(branchWorkflow).not.toContain("^docs/[0-9]+-[a-z0-9-]+$");
+    expect(branchWorkflow).toContain("^docs/[0-9]+-[a-z0-9-]+$");
+    expect(branchWorkflow).toContain(
+      'test "$HEAD_REPO" = "$GITHUB_REPOSITORY"',
+    );
+    expect(branchWorkflow).toContain(
+      '[ "$HEAD_REF" = "staging" ] || [[ "$HEAD_REF" =~ ^release/v[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]',
+    );
+    expect(branchWorkflow).toContain(
+      '[[ "$HEAD_REF" =~ ^docs/[0-9]+-[a-z0-9-]+$ ]] && test "$HEAD_REPO" = "$GITHUB_REPOSITORY"',
+    );
 
     expect(docsBranchWorkflow).toContain("pull_request_target:");
     expect(docsBranchWorkflow).toContain(
@@ -63,6 +92,7 @@ describe("documentation-only delivery workflow", () => {
 
   it("uses no-renames diffing so moves expose both removed and added paths", () => {
     expect(policyScript).toContain('"--no-renames"');
+    expect(repositoryPolicyScript).toContain('"--no-renames"');
   });
 
   it("documents the required activation ordering", () => {
@@ -74,5 +104,7 @@ describe("documentation-only delivery workflow", () => {
     expect(delivery).toContain("`docs/onboarding.md`");
     expect(delivery).toContain("dedicated GitHub App");
     expect(delivery).toContain("non-authorizing");
+    expect(delivery).toContain("repository-policy-only");
+    expect(delivery).toContain("immutable `v0.30.0`");
   });
 });
