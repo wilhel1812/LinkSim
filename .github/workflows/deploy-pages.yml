@@ -36,6 +36,7 @@ jobs:
       contents: read
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      repository_policy_only: ${{ steps.classify.outputs.repository_policy_only }}
     steps:
       - name: Checkout event commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -59,15 +60,20 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "repository_policy_only=false" >> "$GITHUB_OUTPUT"
             echo "changed_count=unknown" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$EVENT_NAME" = "pull_request" ]; then
             node scripts/docs-only-policy.mjs classify \
               --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --mode three-dot
+            node scripts/repository-policy-only.mjs classify \
+              --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --mode three-dot
             exit 0
           fi
           node scripts/docs-only-policy.mjs classify \
+            --base "$EVENT_BEFORE_SHA" --head "$EVENT_HEAD_SHA" --mode two-dot
+          node scripts/repository-policy-only.mjs classify \
             --base "$EVENT_BEFORE_SHA" --head "$EVENT_HEAD_SHA" --mode two-dot
 
   deploy-staging-preview:
@@ -75,6 +81,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
+      needs.classify_changes.outputs.repository_policy_only != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'
     runs-on: ubuntu-latest
@@ -221,6 +228,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
+      needs.classify_changes.outputs.repository_policy_only != 'true' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
         (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
@@ -376,6 +384,7 @@ jobs:
     if: |
       !cancelled() &&
       needs.classify_changes.outputs.docs_only != 'true' &&
+      needs.classify_changes.outputs.repository_policy_only != 'true' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'workflow_dispatch' && (
