@@ -85,8 +85,12 @@ environment variable:
 In Pages project env vars (Production + Preview):
 
 - `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
-- `ACCESS_AUD` = comma-separated Access app AUD tags for every hostname served
-  by that Pages environment
+- `ACCESS_AUD` = comma-separated AUD tags only for Access applications whose
+  authenticated JWTs the runtime accepts. Terraform derives this value from
+  `pages_access_audience_keys`; do not include managed applications whose
+  effective policy is Bypass. The checked-in selection is currently
+  `authenticated_api` plus `pages_previews` for staging, and
+  `authenticated_api` for production.
 - `ADMIN_USER_IDS` = one-time bootstrap admin user IDs
 
 `ADMIN_USER_IDS` is consulted only when a listed identity is first inserted.
