@@ -107,11 +107,16 @@ Goal: attach existing live resources to Terraform state without changing behavio
   to `app["primary"]` without replacement.
 - Verify with `terraform plan` until diff is zero or only expected/documented drift.
 
-The stable-staging application API bypass is currently reconciled by
-`scripts/access-boundary.mjs` against fixed application IDs. The existing
-`public_api_exceptions` application is not yet present in remote Terraform state;
-issue #1155 tracks its permission-gated import. Do not treat the checked-in
-Terraform intent as proof that Access state adoption is complete.
+The stable-staging application API bypass is reconciled by
+`scripts/access-boundary.mjs` against fixed application IDs. On 2026-09-28,
+issue #1155 imported the existing `public_api_exceptions` application into the
+protected remote state at
+`module.stack.cloudflare_zero_trust_access_application.app["public_api_exceptions"]`.
+The refreshed state-backed plan showed all five modeled Access applications as
+no-op, with no Access create, update, delete, or replacement. An unrelated
+in-place Pages project update remained unapplied. Continue to discover and
+import any newly modeled live application before apply; checked-in Terraform
+intent alone is not proof of adoption.
 
 ### Step B: Management (controlled updates)
 
