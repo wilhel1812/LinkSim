@@ -12,6 +12,8 @@
 - `staging`: integration branch for accepted issue work.
 - `main`: production branch only.
 - `hotfix/<slug>`: production incident branch (only when explicitly approved).
+- `docs/<issue-id>-<slug>`: same-repository documentation-only branch that may
+  target `main` only under the activated protected documentation lane.
 
 ## Delivery sequence
 1. Local test
@@ -35,6 +37,14 @@
 - Note: the CI deploy job validates that the release tag exists, the `main` HEAD tree matches the tag tree, and the release SemVer is newer than the previous production version.
 - After production deploy, continue all new work from updated `origin/staging`.
 - If a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an incident exception path and immediately run main->staging sync before starting any new work.
+
+Repository documentation and the narrowly scoped documentation-lane activation
+bundle are not production releases. When their complete diffs pass the
+fail-closed classifiers documented in `docs/documentation-delivery.md`, their
+protected `main` and synchronization pushes skip all application deployment
+jobs. They require no SemVer change or release tag, and the immutable
+`v0.30.0` tag remains the deployed production identity. Manual deployment
+dispatch is never eligible for either skip and remains release-gated.
 
 ## Guardrails
 - No direct production hotfixes unless explicitly requested by the user.
@@ -60,6 +70,8 @@
   - `staging` (default normal release path — branch policy explicitly allows this)
   - `hotfix/<slug>` (approved production incidents only)
   - `release/vX.Y.Z` (approved normal-release fallback for a current or immediately preceding documented direct `staging` -> `main` squash-history conflict)
+  - same-repository `docs/<issue-id>-<slug>` (activated documentation-only lane;
+    the protected App-authored documentation check must pass)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
 
@@ -73,6 +85,10 @@
 - Environment bump rules:
   - Same commit must keep the same base SemVer (`X.Y.Z`) in all environments.
   - Immediately after production promotion, `staging` may retain production's base version while both branch trees are identical.
+  - Documentation-only and repository-policy-only synchronization may make the
+    branch trees differ without selecting a new application version. The first
+    subsequent application-bearing staging divergence must deliberately select
+    the normal reviewed development line below.
   - The first subsequent change that makes the staging tree diverge must deliberately update `package.json` and `package-lock.json` to one reviewed development line:
     - Normal development: next minor `X.(Y+1).0`.
     - Approved patch development: next patch `X.Y.(Z+1)`, or a later patch
@@ -135,11 +151,16 @@
 - GitHub Actions deploy workflow triggers automatically on push to `staging` and `main`:
   - Push to `staging` → `deploy-staging` job → https://staging.linksim.link
   - Push to `main` → `deploy-prod-main` job → https://linksim.link
+- Successfully classified documentation-only or repository-policy-only pushes
+  keep the workflow and required checks visible but skip all three Pages
+  deployment jobs.
 - Manual override is available via `workflow_dispatch` with explicit target
   selection (`staging` or `prod-main`). The separately approved authentication
   cutover uses `prod-auth-cutover`, the protected production environment, the
   tagged release tree, and the exact confirmation documented in
   `docs/production-auth-cutover-checklist.md`.
+- Manual dispatch always forces both deployment-skip classifications false and
+  remains subject to the normal environment, version, and tag gates.
 - `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
 - `staging` runs in the `staging` environment.
 - Both branches require CI quality gates (`CI Quality Gates / verify` + `PR Branch Policy / enforce`) to pass before merge.
