@@ -25,6 +25,26 @@ not attached to the pull-request head and must never be made required. This
 preserves the required `PR Branch Policy / enforce-main` check while the
 App-authored check supplies the documentation-specific decision.
 
+## Activation record
+
+The lane was activated on 2026-09-29 with these immutable checks:
+
+- GitHub App `docs-policy-for-linksim` (App ID `5110636`) published
+  `Docs Branch Policy / enforce-main-docs` on exact observation head
+  `268dcb47d25dc4369941cec61bb6ea70010356e9`, after which that App source and
+  context were pinned in `main` branch protection.
+- Protected bootstrap commit
+  `2259e72ea8c07063e62743e9a327e4ab8cae3791` has the exact tree
+  `2fe75488cf271cb101c21fb34073e44b0dce6573` already verified on `staging`.
+- [Main bootstrap run 36538261722](https://github.com/wilhel1812/LinkSim/actions/runs/36538261722)
+  classified the complete repository-policy bundle and skipped preview,
+  staging, and production Pages deployment jobs.
+
+This record does not replace per-pull-request verification. Every direct
+documentation pull request must still receive the source-pinned App check on
+its exact head, and its merged content must be synchronized exactly to
+`staging`.
+
 ## Publisher provisioning and source pinning
 
 The `publish-main-docs` job consumes only the conclusion of
