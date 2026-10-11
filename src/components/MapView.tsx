@@ -1891,8 +1891,9 @@ export function MapView({
   }, [simulationRunToken, isSimulationRecomputing]);
 
   useEffect(() => {
+    const areaScheduler = areaSchedulerRef.current;
     return () => {
-      areaSchedulerRef.current.dispose();
+      areaScheduler.dispose();
       coverageOverlaySchedulerRef.current?.dispose();
       terrainOverlaySchedulerRef.current?.dispose();
       if (hiddenOverlayTimeoutRef.current !== null) {

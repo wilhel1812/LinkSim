@@ -25,8 +25,8 @@ const overlayMock = vi.hoisted(() => {
           requests.push({ resolve });
         }),
     ),
-    buildArea: vi.fn(async (_input: import("../lib/overlayRaster").CoverageAreaInput) => ({ totalCoverageKm2: 12.34, clearPathCoverageKm2: 5.67,
-      analysisStats: { evaluatedPaths: 1, refinedBlocks: 0, filledPixels: 1, totalPixels: 1 } })),
+    buildArea: vi.fn<(input: import("../lib/overlayRaster").CoverageAreaInput) => Promise<import("../lib/overlayRaster").CoverageAreaResult>>().mockResolvedValue({ totalCoverageKm2: 12.34, clearPathCoverageKm2: 5.67,
+      analysisStats: { evaluatedPaths: 1, refinedBlocks: 0, filledPixels: 1, totalPixels: 1 } }),
     encodedRasterCount: 0,
   };
 });
