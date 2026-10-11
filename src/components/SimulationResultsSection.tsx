@@ -6,6 +6,7 @@ import { analyzeLink } from "../lib/propagation";
 import { resolveLinkRadio } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
+import type { CoverageAreaResult } from "../lib/overlayRaster";
 import type { PropagationEnvironment } from "../types/radio";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
@@ -57,7 +58,7 @@ const downloadJson = (fileName: string, payload: unknown) => {
   URL.revokeObjectURL(url);
 };
 
-export function SimulationResultsSection() {
+export function SimulationResultsSection({ coverageArea }: { coverageArea?: CoverageAreaResult | null }) {
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -283,6 +284,11 @@ export function SimulationResultsSection() {
     downloadJson(`linksim-manifest-${stamp}.json`, manifest);
   };
 
+  const coverageMetrics = <div className="metrics">
+    {metric("Total coverage", coverageArea ? `${coverageArea.totalCoverageKm2.toFixed(1)} km²` : "Not calculated")}
+    {metric("Clear-path coverage", coverageArea ? `${coverageArea.clearPathCoverageKm2.toFixed(1)} km²` : "Not calculated")}
+  </div>;
+
   // Contextual message when no valid link topology
   if (!showResults) {
     const message =
@@ -291,11 +297,12 @@ export function SimulationResultsSection() {
         : selectionCount >= 3
           ? "Select exactly two sites to see link analysis."
           : "Select two sites or choose a saved link.";
-    return <div className="chart-empty">{message}</div>;
+    return <>{coverageMetrics}<div className="chart-empty">{message}</div></>;
   }
 
   return (
     <>
+      {coverageMetrics}
       <div className="metrics">
         {metric("Network", selectedNetwork.name)}
         {metric(

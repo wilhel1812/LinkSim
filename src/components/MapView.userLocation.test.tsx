@@ -159,7 +159,7 @@ const renderMapView = (props: Partial<React.ComponentProps<typeof MapView>> = {}
   );
 
 const openVisibleSiteSources = async () => {
-  fireEvent.click(screen.getByRole("button", { name: /Simulation/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Simulation/ }));
   return screen.findByRole("dialog", { name: "Visible site sources" });
 };
 
