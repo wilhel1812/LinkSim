@@ -5,6 +5,7 @@ import {
   buildCoverageGridPoints,
   computeCoverageGridDimensions,
   type CoverageContributorEvaluator,
+  requireTerrainSample,
 } from "./coverage";
 import { haversineDistanceKm } from "./geo";
 import { getPathLossDb } from "./rfModels";
@@ -53,6 +54,7 @@ export type OverlayRasterPixels = {
   maxAreaKm2?: number;
   analysisStats?: OverlayAnalysisStats;
   signalValuesDbm?: Float32Array;
+  passFailStates?: Int8Array;
   targetContour?: ContourLineFeatureCollection;
 };
 
@@ -66,6 +68,8 @@ export type OverlayAnalysisStats = {
 export type AdaptiveOverlayOptions = {
   adaptive?: boolean;
   analysisCacheKey?: string;
+  terrainCacheKey?: string;
+  requireCompleteTerrain?: boolean;
 };
 
 export type OverlayRasterDataUrl = {
@@ -141,6 +145,7 @@ type PassFailMetricCache = {
   rxDbm: Float64Array;
   obstruction: Int8Array;
   evaluated: Uint8Array;
+  completeTerrain: Uint8Array;
 };
 
 type CoverageMetricCache = {
@@ -1003,9 +1008,11 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
   const pixels = new Uint8ClampedArray(width * height * 4);
   const stateByPixel = new Int8Array(width * height).fill(-1);
   const marginByPixel = new Float64Array(width * height).fill(Number.NaN);
-  const metricCacheKey = options?.analysisCacheKey
-    ? `${options.analysisCacheKey}|${width}x${height}`
-    : "";
+  const metricCacheKey = options?.terrainCacheKey
+    ? JSON.stringify([options.terrainCacheKey, bounds, width, height, fromSite, [effectiveLink.frequencyMHz, effectiveLink.txPowerDbm, effectiveLink.txGainDbi, effectiveLink.rxGainDbi, effectiveLink.cableLossDb],
+        receiverAntennaHeightM, receiverRxGainDbi, propagationEnvironment, terrainSamples,
+        receiverSite])
+    : options?.analysisCacheKey ? `${options.analysisCacheKey}|${width}x${height}` : "";
   const cachedMetrics = metricCacheKey ? passFailMetricCache.get(metricCacheKey) : undefined;
   const metricCache =
     cachedMetrics?.width === width && cachedMetrics.height === height
@@ -1016,6 +1023,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
           rxDbm: new Float64Array(width * height),
           obstruction: new Int8Array(width * height),
           evaluated: new Uint8Array(width * height),
+          completeTerrain: new Uint8Array(width * height),
         };
   let evaluatedPaths = 0;
 
@@ -1045,13 +1053,20 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
   const evaluate = (index: number): number => {
     const cached = stateByPixel[index];
     if (cached >= 0) return cached;
-    if (!metricCache.evaluated[index]) {
+    if (!metricCache.evaluated[index] || (options?.requireCompleteTerrain && !metricCache.completeTerrain[index])) {
       const y = Math.floor(index / width);
       const x = index - y * width;
       const lat = latByRow[y];
       const lon = lonByCol[x];
       metricCache.evaluated[index] = 1;
-      if ((pointMask && !pointMask(lat, lon)) || terrainSampler(lat, lon) === null) {
+      let completeTerrain = true;
+      const observedTerrain = ({ lat, lon }: { lat: number; lon: number }) => {
+        const elevation = terrainSampler(lat, lon);
+        if (elevation === null) completeTerrain = false;
+        return elevation;
+      };
+      const sampleTerrain = options?.requireCompleteTerrain ? requireTerrainSample(observedTerrain) : observedTerrain;
+      if ((pointMask && !pointMask(lat, lon)) || sampleTerrain({ lat, lon }) === null) {
         metricCache.obstruction[index] = -1;
       } else {
         const metrics = computeSourceCentricRxMetrics(
@@ -1061,7 +1076,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
           effectiveLink,
           receiverAntennaHeightM,
           receiverRxGainDbi,
-          terrainSampler,
+          (lat, lon) => sampleTerrain({ lat, lon }),
           terrainSamples,
           propagationEnvironment,
           receiverSite,
@@ -1070,6 +1085,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
         metricCache.obstruction[index] = metrics.terrainObstructed ? 1 : 0;
         evaluatedPaths += 1;
       }
+      metricCache.completeTerrain[index] = completeTerrain ? 1 : 0;
     }
     if (metricCache.obstruction[index] < 0) {
       stateByPixel[index] = 0;
@@ -1132,7 +1148,77 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
     pixels,
     coordinates: overlayCoordinates(bounds),
     analysisStats: { evaluatedPaths, refinedBlocks, filledPixels, totalPixels: width * height },
+    passFailStates: stateByPixel,
   };
+};
+
+export type CoverageAreaResult = {
+  totalCoverageKm2: number;
+  clearPathCoverageKm2: number;
+  analysisStats: OverlayAnalysisStats;
+};
+
+export type CoverageAreaInput = {
+  bounds: TerrainBounds;
+  dimensions: { width: number; height: number };
+  sites: readonly Site[];
+  frequencyMHz: number;
+  propagationEnvironment: PropagationEnvironment;
+  rxTargetDbm: number;
+  environmentLossDb: number;
+  terrainSampler: (lat: number, lon: number) => number | null;
+  terrainSamples: number;
+  pointMask?: (lat: number, lon: number) => boolean;
+  context?: OverlayTaskContext;
+  adaptive?: boolean;
+  terrainCacheKey?: string;
+};
+
+/** Union semantic Pass/Fail cells; a passing clear path wins even over stronger blocked paths. */
+export const buildCoverageAreaAsync = async (input: CoverageAreaInput): Promise<CoverageAreaResult | null> => {
+  const sites = [...new Map(input.sites.map((site) => [site.id, site])).values()];
+  if (!sites.length) return null;
+  const { width, height } = input.dimensions;
+  const union = new Uint8Array(width * height);
+  const analysisStats = { evaluatedPaths: 0, refinedBlocks: 0, filledPixels: 0, totalPixels: width * height };
+  for (let siteIndex = 0; siteIndex < sites.length; siteIndex += 1) {
+    const site = sites[siteIndex];
+    const raster = await buildSourcePassFailOverlayPixelsAsync(
+      input.bounds, site,
+      { id: "__coverage_area__", fromSiteId: site.id, toSiteId: site.id, frequencyMHz: input.frequencyMHz,
+        txPowerDbm: site.txPowerDbm, txGainDbi: site.txGainDbi, rxGainDbi: site.rxGainDbi, cableLossDb: site.cableLossDb },
+      site.antennaHeightM ?? 2, site.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
+      input.propagationEnvironment, input.rxTargetDbm, input.environmentLossDb,
+      input.terrainSampler, input.dimensions, input.terrainSamples, input.pointMask,
+      { ...input.context, phase: input.context?.phase ?? "coverage-area", signature: input.context?.signature ?? "coverage-area",
+        onProgress: (progress) => input.context?.onProgress?.({ ...progress, percent: (siteIndex * 100 + progress.percent) / sites.length }) },
+      { adaptive: input.adaptive, terrainCacheKey: input.terrainCacheKey, requireCompleteTerrain: true },
+    );
+    if (!raster?.passFailStates) return null;
+    analysisStats.evaluatedPaths += raster.analysisStats?.evaluatedPaths ?? 0;
+    analysisStats.refinedBlocks += raster.analysisStats?.refinedBlocks ?? 0;
+    await runCooperativeLoop(union.length, (index) => {
+      const state = raster.passFailStates![index];
+      if (state === 1) union[index] = 2;
+      else if (state === 2 && union[index] === 0) union[index] = 1;
+    }, input.context ? { ...input.context, onProgress: undefined } : undefined);
+  }
+  let totalCoverageKm2 = 0;
+  let clearPathCoverageKm2 = 0;
+  const { latByRow, lonByCol } = precomputeGridAxes(input.bounds, input.dimensions);
+  const requiredTerrain = requireTerrainSample(({ lat, lon }) => input.terrainSampler(lat, lon));
+  await runCooperativeLoop(union.length, (index) => {
+    const row = Math.floor(index / width);
+    // Adaptive fills must still respect the exact analysis mask at every cell.
+    if (input.pointMask && !input.pointMask(latByRow[row], lonByCol[index % width])) return;
+    requiredTerrain({ lat: latByRow[row], lon: lonByCol[index % width] });
+    if (!union[index]) return;
+    const area = cellAreaKm2(index, { rows: height, cols: width }, input.bounds, latByRow[row], latByRow);
+    totalCoverageKm2 += area;
+    if (union[index] === 2) clearPathCoverageKm2 += area;
+  }, input.context ? { ...input.context, onProgress: undefined } : undefined);
+  analysisStats.filledPixels = union.length;
+  return { totalCoverageKm2, clearPathCoverageKm2, analysisStats };
 };
 
 export const buildRelayCandidateOverlayPixelsAsync = async (
@@ -1413,6 +1499,7 @@ const cellAreaKm2 = (
   dimensions: { rows: number; cols: number },
   bounds: TerrainBounds,
   lat: number,
+  latitudes?: ArrayLike<number>,
 ): number => {
   const row = Math.floor(index / dimensions.cols);
   const col = index - row * dimensions.cols;
@@ -1420,7 +1507,11 @@ const cellAreaKm2 = (
   const lonStep = (bounds.maxLon - bounds.minLon) / Math.max(1, dimensions.cols - 1);
   const latShare = row === 0 || row === dimensions.rows - 1 ? 0.5 : 1;
   const lonShare = col === 0 || col === dimensions.cols - 1 ? 0.5 : 1;
-  const heightKm = Math.abs(latStep) * 111.32 * latShare;
+  const latitudeHeight = latitudes
+    ? Math.abs((row === 0 ? bounds.maxLat : (latitudes[row - 1] + lat) / 2)
+      - (row === dimensions.rows - 1 ? bounds.minLat : (lat + latitudes[row + 1]) / 2))
+    : Math.abs(latStep) * latShare;
+  const heightKm = latitudeHeight * 111.32;
   const widthKm = Math.abs(lonStep) * 111.32 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)) * lonShare;
   return heightKm * widthKm;
 };

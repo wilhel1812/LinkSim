@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { FloatingPopover } from "./ui/FloatingPopover";
@@ -83,6 +83,8 @@ import {
   buildMeshExtensionOverlayPixelsAsync,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
+  buildCoverageAreaAsync,
+  type CoverageAreaResult,
   buildTerrainShadeOverlayPixelsAsync,
   overlayPixelsToDataUrl,
   OverlayTaskCancelledError,
@@ -1279,7 +1281,6 @@ export function MapView({
     if (
       !autoCalculateEnabled ||
       automaticCalculationThresholdCrossed ||
-      coverageVizMode === "none" ||
       analysisTargetSites.length === 0
     ) {
       return;
@@ -1375,13 +1376,6 @@ export function MapView({
   }>({ signature: "", terrainLoadEpoch: -1 });
   useEffect(() => {
     if (!calculationWorkAllowed) {
-      targetRadiusFetchAttemptRef.current = {
-        signature: "",
-        terrainLoadEpoch: -1,
-      };
-      return;
-    }
-    if (coverageVizMode === "none") {
       targetRadiusFetchAttemptRef.current = {
         signature: "",
         terrainLoadEpoch: -1,
@@ -1704,6 +1698,8 @@ export function MapView({
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   const coverageOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
+  const areaSchedulerRef = useRef(createLatestOnlyTaskScheduler());
+  const [coverageArea, setCoverageArea] = useState<{ signature: string; result: CoverageAreaResult | null; attempt: string } | null>(null);
   const terrainOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
   if (!coverageOverlaySchedulerRef.current) {
     coverageOverlaySchedulerRef.current = createLatestOnlyTaskScheduler();
@@ -1723,9 +1719,10 @@ export function MapView({
   const [overlayJobsInFlight, setOverlayJobsInFlight] = useState(0);
   const [overlayProgressMode, setOverlayProgressMode] = useState<"determinate" | "indeterminate">("indeterminate");
   const [overlayProgressPercent, setOverlayProgressPercent] = useState<number | null>(null);
-  const overlayProgressByPipelineRef = useRef<{ coverage: number | null; terrain: number | null }>({
+  const overlayProgressByPipelineRef = useRef<{ coverage: number | null; terrain: number | null; area: number | null }>({
     coverage: null,
     terrain: null,
+    area: null,
   });
   const overlayProgressFloorRef = useRef<number | null>(null);
   const overlayJobsInFlightRef = useRef(0);
@@ -1734,7 +1731,7 @@ export function MapView({
     const terrainProgress = overlayProgressByPipelineRef.current.terrain;
     const nextProgress = resolveMonotonicOverlayProgress(
       overlayProgressFloorRef.current,
-      [coverageProgress, terrainProgress],
+      [coverageProgress, terrainProgress, overlayProgressByPipelineRef.current.area],
     );
     if (nextProgress === null) {
       setOverlayProgressMode("indeterminate");
@@ -1746,7 +1743,7 @@ export function MapView({
     setOverlayProgressPercent(nextProgress);
   }, []);
   const setOverlayPipelineProgress = useCallback(
-    (pipeline: "coverage" | "terrain", percent: number | null) => {
+    (pipeline: "coverage" | "terrain" | "area", percent: number | null) => {
       const normalized =
         typeof percent === "number" && Number.isFinite(percent)
           ? Math.max(0, Math.min(100, Math.round(percent)))
@@ -1757,11 +1754,11 @@ export function MapView({
     },
     [syncOverlayProgressState],
   );
-  const beginOverlayJob = useCallback((pipeline: "coverage" | "terrain") => {
+  const beginOverlayJob = useCallback((pipeline: "coverage" | "terrain" | "area") => {
     let finished = false;
     if (overlayJobsInFlightRef.current === 0) {
       overlayProgressFloorRef.current = null;
-      overlayProgressByPipelineRef.current = { coverage: null, terrain: null };
+      overlayProgressByPipelineRef.current = { coverage: null, terrain: null, area: null };
       setOverlayProgressMode("indeterminate");
       setOverlayProgressPercent(null);
     }
@@ -1776,7 +1773,7 @@ export function MapView({
       setOverlayPipelineProgress(pipeline, null);
       if (overlayJobsInFlightRef.current === 0) {
         overlayProgressFloorRef.current = null;
-        overlayProgressByPipelineRef.current = { coverage: null, terrain: null };
+        overlayProgressByPipelineRef.current = { coverage: null, terrain: null, area: null };
         setOverlayProgressMode("indeterminate");
         setOverlayProgressPercent(null);
       }
@@ -1895,6 +1892,7 @@ export function MapView({
 
   useEffect(() => {
     return () => {
+      areaSchedulerRef.current.dispose();
       coverageOverlaySchedulerRef.current?.dispose();
       terrainOverlaySchedulerRef.current?.dispose();
       if (hiddenOverlayTimeoutRef.current !== null) {
@@ -1961,6 +1959,71 @@ export function MapView({
   );
   const meshExtensionFrequencyMHz =
     selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? activeSelectionLink?.frequencyMHz ?? 869.618;
+
+  const areaDimensions = useMemo(() => analysisBounds
+    ? computeOverlayDimensions(analysisBounds, selectedGridSize, "passfail", overlayResolutionScale)
+    : { width: 24, height: 24 }, [analysisBounds, selectedGridSize, overlayResolutionScale]);
+  const areaCacheInstance = useId();
+  const areaTerrainRevisionRef = useRef({ tiles: srtmTiles, revision: 0 });
+  if (areaTerrainRevisionRef.current.tiles !== srtmTiles) {
+    areaTerrainRevisionRef.current = { tiles: srtmTiles, revision: areaTerrainRevisionRef.current.revision + 1 };
+  }
+  const areaTerrainRevision = areaTerrainRevisionRef.current.revision;
+  const areaTerrainCacheKey = useMemo(() => JSON.stringify([
+    areaCacheInstance, areaTerrainRevision,
+    terrainLoadEpoch, srtmTiles.map((tile) => [tile.key, tile.sourceId]),
+    coverageSites, analysisBounds, overlayRadiusKm,
+  ]), [areaCacheInstance, areaTerrainRevision, terrainLoadEpoch, srtmTiles, coverageSites, analysisBounds, overlayRadiusKm]);
+  const areaSignature = JSON.stringify([
+    areaTerrainCacheKey, areaDimensions, selectedGridSize, selectedScenarioId,
+    meshExtensionFrequencyMHz, propagationEnvironment, propagationModel,
+    rxSensitivityTargetDbm, environmentLossDb,
+  ]);
+  const latestAreaSignatureRef = useRef(areaSignature);
+  latestAreaSignatureRef.current = areaSignature;
+  const currentCoverageArea = coverageArea?.signature === areaSignature ? coverageArea.result : null;
+  useEffect(() => {
+    const scheduler = areaSchedulerRef.current;
+    const snapshot = scheduler.snapshot();
+    if (snapshot.activeSignature && snapshot.activeSignature !== areaSignature) scheduler.cancelActive();
+    scheduler.clearQueue();
+    if (!analysisBounds || !coverageSites.length || isDraggingSite || isTerrainFetching || isTerrainRecommending || isSimulationRecomputing) {
+      scheduler.cancelActive();
+      return;
+    }
+    if (!calculationWorkAllowed || (coverageArea?.signature === areaSignature &&
+      (coverageArea.result !== null || coverageArea.attempt === completedCoverageRunToken))) return;
+    scheduler.enqueue({
+      signature: areaSignature,
+      run: async (task) => {
+        if (task.isCancelled()) return;
+        const endJob = beginOverlayJob("area");
+        try {
+          const result = await buildCoverageAreaAsync({
+            bounds: analysisBounds, dimensions: areaDimensions, sites: coverageSites,
+            frequencyMHz: meshExtensionFrequencyMHz, propagationEnvironment,
+            rxTargetDbm: rxSensitivityTargetDbm, environmentLossDb,
+            terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+            terrainSamples: selectedGridSize, pointMask: overlayPointMask,
+            adaptive: true, terrainCacheKey: areaTerrainCacheKey,
+            context: { phase: "coverage-area", signature: areaSignature,
+              ...overlayTaskBudgetForMode("passfail"), shouldCancel: task.isCancelled,
+              onProgress: ({ percent }) => { if (!task.isCancelled()) setOverlayPipelineProgress("area", percent); } },
+          });
+          if (!task.isCancelled() && latestAreaSignatureRef.current === areaSignature) setCoverageArea({ signature: areaSignature, result, attempt: completedCoverageRunToken });
+        } catch (error) {
+          if (task.isCancelled() || latestAreaSignatureRef.current !== areaSignature || error instanceof OverlayTaskCancelledError) return;
+          setCoverageArea({ signature: areaSignature, result: null, attempt: completedCoverageRunToken });
+          onPublishNotice?.({ id: "coverage-area-unavailable", tone: "error", persistent: false,
+            message: "Could not calculate coverage area. Check terrain availability, then press Start to retry." });
+        } finally { endJob(); }
+      },
+    });
+  }, [areaSignature, areaTerrainCacheKey, areaDimensions, analysisBounds, coverageSites, coverageArea,
+    isDraggingSite, isTerrainFetching, isTerrainRecommending, isSimulationRecomputing,
+    calculationWorkAllowed, completedCoverageRunToken, overlayJobsInFlight, beginOverlayJob, meshExtensionFrequencyMHz, propagationEnvironment,
+    rxSensitivityTargetDbm, environmentLossDb, srtmTiles, selectedGridSize, overlayPointMask,
+    setOverlayPipelineProgress, onPublishNotice]);
 
   useEffect(() => {
     const scheduler = coverageOverlaySchedulerRef.current!;
@@ -2226,7 +2289,8 @@ export function MapView({
               effectiveGridSize,
               overlayPointMask,
               context,
-              { adaptive: true, analysisCacheKey: directAnalysisCacheKey },
+              { adaptive: true, analysisCacheKey: directAnalysisCacheKey,
+                terrainCacheKey: areaTerrainCacheKey },
               selectedToSite ?? undefined,
             );
           } else if (mode === "relay") {
@@ -2345,6 +2409,7 @@ export function MapView({
     selectedFromSite,
     selectedToSite,
     hasPassFailTopology,
+    areaTerrainCacheKey,
     hasRelayTopology,
     overlayDimensions,
     overlayPointMask,
@@ -2727,8 +2792,15 @@ export function MapView({
     dispatchOverlayHandoff({ type: "exit-complete", requestKey });
   }, []);
   const calculationControlRunning = calculationCycleSource !== null || isSimulationRecomputing;
+  const handleStartCalculation = useCallback(() => {
+    // A failed area attempt must be retryable even when the preparation store deduplicates unchanged inputs.
+    setCoverageArea((current) => current?.result === null ? null : current);
+    startManualCalculation();
+  }, [startManualCalculation]);
   const handleStopCalculation = useCallback(() => {
     stopCalculation();
+    areaSchedulerRef.current.clearQueue();
+    areaSchedulerRef.current.cancelActive();
     cancelTerrainLoad();
     coverageOverlaySchedulerRef.current?.clearQueue();
     coverageOverlaySchedulerRef.current?.cancelActive();
@@ -2736,6 +2808,7 @@ export function MapView({
     terrainOverlaySchedulerRef.current?.cancelActive();
     setOverlayPipelineProgress("coverage", null);
     setOverlayPipelineProgress("terrain", null);
+    setOverlayPipelineProgress("area", null);
     const requestKey = overlayHandoffRef.current.requestKey;
     if (requestKey) failCoverageHandoff(requestKey);
   }, [cancelTerrainLoad, failCoverageHandoff, setOverlayPipelineProgress, stopCalculation]);
@@ -2748,6 +2821,7 @@ export function MapView({
       const appState = useAppStore.getState();
       const coverageScheduler = coverageOverlaySchedulerRef.current?.snapshot();
       const terrainScheduler = terrainOverlaySchedulerRef.current?.snapshot();
+      const areaScheduler = areaSchedulerRef.current.snapshot();
       if (
         coverageState.isSimulationRecomputing ||
         appState.isTerrainFetching ||
@@ -2755,7 +2829,8 @@ export function MapView({
         coverageScheduler?.running ||
         coverageScheduler?.queuedSignature ||
         terrainScheduler?.running ||
-        terrainScheduler?.queuedSignature
+        terrainScheduler?.queuedSignature ||
+        areaScheduler.running || areaScheduler.queuedSignature
       ) return;
       finishCalculationCycle();
     }, 240);
@@ -3551,7 +3626,7 @@ export function MapView({
                 <ActionButton
                   aria-label={calculationControlRunning ? "Stop calculation" : "Start calculation"}
                   className={`map-calculation-control map-calculation-action ${calculationControlRunning ? "is-stop" : "is-start"}`}
-                  onClick={calculationControlRunning ? handleStopCalculation : startManualCalculation}
+                  onClick={calculationControlRunning ? handleStopCalculation : handleStartCalculation}
                   title={calculationControlRunning ? "Stop calculation" : "Start calculation"}
                   variant="ghost"
                 >
@@ -4081,8 +4156,8 @@ export function MapView({
               onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
               open={showResultsSummary}
             >
-              <CompactDetailsSummary infoTipText="Computed link budget summary for the selected path and current channel/model settings.">Results</CompactDetailsSummary>
-              <SimulationResultsSection />
+              <CompactDetailsSummary infoTipText="Coverage estimates union selected Sites, or all Simulation Sites when none are selected, within the current radius and at Simulation Resolution. Total includes passing clear and blocked paths; clear-path includes passing clear paths. Each Site uses its own single-Site receiver height and gain. Path results use the selected Path and current Channel/model settings.">Results</CompactDetailsSummary>
+              <SimulationResultsSection coverageArea={currentCoverageArea} />
             </CompactDetails>
             <CompactDetails
               className="compact-details map-inspector-details"

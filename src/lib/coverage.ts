@@ -39,7 +39,7 @@ export class CoverageTerrainUnavailableError extends Error {
   }
 }
 
-const requireTerrainSample = (
+export const requireTerrainSample = (
   terrainSampler: (coordinates: Coordinates) => number | null,
 ): ((coordinates: Coordinates) => number) =>
   (coordinates) => {

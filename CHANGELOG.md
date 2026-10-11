@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.31.0] - Unreleased
+
+### Added
+- Show total and clear-path coverage area in the Inspector for selected Sites, or all Simulation Sites when none are selected, without counting overlaps twice. Coverage estimates follow the existing calculation controls, radius, and Simulation Resolution. (#1260)
+
 ## [0.30.0] - 2026-09-29
 
 ### Changed
