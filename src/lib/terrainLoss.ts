@@ -72,6 +72,24 @@ const shortestLongitudeSpan = (fromLon: number, toLon: number): { fromLon: numbe
   return { fromLon: unwrappedFrom, span: unwrappedTo - unwrappedFrom };
 };
 
+// Share the exact dateline-safe sample coordinates across RF calculations and completeness checks.
+const terrainPathSampler = (from: Coordinates, to: Coordinates, sampleAt: (lat: number, lon: number) => number | null) => {
+  const latSpan = to.lat - from.lat;
+  const longitude = shortestLongitudeSpan(from.lon, to.lon);
+  return (t: number) => sampleAt(from.lat + latSpan * t, longitude.fromLon + longitude.span * t);
+};
+
+/** Visit every sample used by loss and LOS, including LOS samples after an early obstruction. */
+export const validateTerrainPath = (
+  from: Coordinates, to: Coordinates, samples: number, requireSampleAt: (lat: number, lon: number) => number,
+): void => {
+  const sampleAtProgress = terrainPathSampler(from, to, requireSampleAt);
+  const lossCount = Math.max(16, Math.round(samples));
+  const losCount = Math.max(12, Math.round(samples * 0.66));
+  for (let i = 0; i < lossCount; i += 1) sampleAtProgress(i / (lossCount - 1));
+  for (let i = 1; i < losCount - 1; i += 1) sampleAtProgress(i / (losCount - 1));
+};
+
 export const estimateTerrainExcessLossDb = ({
   from,
   to,
@@ -94,13 +112,10 @@ export const estimateTerrainExcessLossDb = ({
   const sampleTerrainAt =
     terrainSamplerAt ??
     ((lat: number, lon: number) => terrainSampler({ lat, lon }));
-  const latSpan = to.lat - from.lat;
-  const longitude = shortestLongitudeSpan(from.lon, to.lon);
+  const sampleAtProgress = terrainPathSampler(from, to, sampleTerrainAt);
   for (let i = 0; i < sampleCount; i += 1) {
     const t = sampleCount <= 1 ? 0 : i / (sampleCount - 1);
-    const lat = from.lat + latSpan * t;
-    const lon = longitude.fromLon + longitude.span * t;
-    const terrain = sampleTerrainAt(lat, lon);
+    const terrain = sampleAtProgress(t);
     if (terrain === null) continue;
     trace.push({
       distanceM: distanceM * t,
@@ -191,14 +206,11 @@ export const isTerrainLineObstructed = ({
   const sampleTerrainAt =
     terrainSamplerAt ??
     ((lat: number, lon: number) => terrainSampler({ lat, lon }));
-  const latSpan = to.lat - from.lat;
-  const longitude = shortestLongitudeSpan(from.lon, to.lon);
+  const sampleAtProgress = terrainPathSampler(from, to, sampleTerrainAt);
 
   for (let i = 1; i < sampleCount - 1; i += 1) {
     const t = i / (sampleCount - 1);
-    const lat = from.lat + latSpan * t;
-    const lon = longitude.fromLon + longitude.span * t;
-    const terrain = sampleTerrainAt(lat, lon);
+    const terrain = sampleAtProgress(t);
     if (terrain === null) continue;
     const d1 = distanceM * t;
     const losM = fromAntennaAbsM + (toAntennaAbsM - fromAntennaAbsM) * t;

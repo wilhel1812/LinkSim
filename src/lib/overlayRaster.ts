@@ -1,4 +1,5 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
+import { validateTerrainPath } from "./terrainLoss";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
 import { effectiveGainTowardSiteDbi } from "./antennaPattern";
 import {
@@ -146,6 +147,7 @@ type PassFailMetricCache = {
   obstruction: Int8Array;
   evaluated: Uint8Array;
   completeTerrain: Uint8Array;
+  validatedTerrain: Uint8Array;
 };
 
 type CoverageMetricCache = {
@@ -1024,6 +1026,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
           obstruction: new Int8Array(width * height),
           evaluated: new Uint8Array(width * height),
           completeTerrain: new Uint8Array(width * height),
+          validatedTerrain: new Uint8Array(width * height),
         };
   let evaluatedPaths = 0;
 
@@ -1139,6 +1142,17 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
     );
     refinedBlocks = result.refinedBlocks;
     filledPixels = result.filledPixels;
+  }
+  if (options?.requireCompleteTerrain) {
+    const requireSample = requireTerrainSample(({ lat, lon }) => terrainSampler(lat, lon));
+    await runCooperativeLoop(width * height, (index) => {
+      if (metricCache.validatedTerrain[index]) return;
+      const row = Math.floor(index / width);
+      const point = { lat: latByRow[row], lon: lonByCol[index % width] };
+      if (pointMask && !pointMask(point.lat, point.lon)) return;
+      validateTerrainPath(fromSite.position, point, terrainSamples, (lat, lon) => requireSample({ lat, lon }));
+      metricCache.validatedTerrain[index] = 1;
+    }, context ? { ...context, onProgress: undefined } : undefined);
   }
   if (metricCacheKey) passFailMetricCache.set(metricCacheKey, metricCache);
 

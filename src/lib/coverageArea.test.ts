@@ -92,6 +92,46 @@ describe("coverage area union", () => {
     expect(adaptive!.clearPathCoverageKm2).toBeLessThanOrEqual(adaptive!.totalCoverageKm2);
   });
 
+  it("rejects unavailable intermediate terrain on an adaptively inherited path", async () => {
+    const spy = vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockImplementation((lat, lon, from, _link, _height, _gain, sampler) => {
+      for (let sample = 0; sample < 16; sample += 1) {
+        const t = sample / 15;
+        sampler(from.position.lat + (lat - from.position.lat) * t, from.position.lon + (lon - from.position.lon) * t);
+      }
+      return metrics(-80);
+    });
+    const current = { ...input(), dimensions: { width: 97, height: 97 }, terrainSamples: 2, adaptive: true };
+    await buildCoverageAreaAsync(current);
+    const evaluated = new Set(spy.mock.calls.map(([lat, lon]) => `${lat},${lon}`));
+    let inherited: { lat: number; lon: number } | undefined;
+    for (let row = 1; row < 96 && !inherited; row += 1) {
+      for (let col = 1; col < 96 && !inherited; col += 1) {
+        const point = { lat: latitudeForRasterRow(row, 97, 59, 60), lon: 10 + col / 96 };
+        if (!evaluated.has(`${point.lat},${point.lon}`)) inherited = point;
+      }
+    }
+    expect(inherited).toBeDefined();
+    const missing = { lat: 60 + (inherited!.lat - 60) / 15, lon: 10 + (inherited!.lon - 10) / 15 };
+    await expect(buildCoverageAreaAsync({ ...current, terrainSampler: (lat: number, lon: number) =>
+      Math.abs(lat - missing.lat) < 1e-10 && Math.abs(lon - missing.lon) < 1e-10 ? null : 0,
+    })).rejects.toThrow("Terrain data is unavailable");
+  });
+
+  it("reuses complete-path validation and cancels before the validation pass publishes results", async () => {
+    vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockReturnValue(metrics(-80));
+    const sampler = vi.fn(() => 0);
+    const current = { ...input(), terrainSampler: sampler, terrainCacheKey: "validated-path-cache" };
+    await buildCoverageAreaAsync(current);
+    sampler.mockClear();
+    await buildCoverageAreaAsync(current);
+    expect(sampler).toHaveBeenCalledTimes(25); // Only the final receiver-grid guard remains.
+    let cancelled = false;
+    await expect(buildCoverageAreaAsync({ ...input(), adaptive: true,
+      context: { phase: "area", signature: "cancel-after-classification", shouldCancel: () => cancelled,
+        onProgress: ({ percent }) => { if (percent === 100) cancelled = true; } },
+    })).rejects.toBeInstanceOf(OverlayTaskCancelledError);
+  });
+
   it("scales by unique contributors and cancels cooperatively", async () => {
     vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockReturnValue(metrics(-80));
     const eight = await buildCoverageAreaAsync({ ...input(), sites: Array.from({ length: 8 }, (_, i) => ({ ...site, id: `perf-${i}` })) });
