@@ -58,7 +58,7 @@ const downloadJson = (fileName: string, payload: unknown) => {
   URL.revokeObjectURL(url);
 };
 
-export function SimulationResultsSection({ coverageArea, coverageRadiusKm }: { coverageArea?: CoverageAreaResult | null; coverageRadiusKm: number }) {
+export function SimulationResultsSection({ coverageArea, coverageRadiusKm, isCoverageCalculating }: { coverageArea?: CoverageAreaResult | null; coverageRadiusKm: number; isCoverageCalculating: boolean }) {
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -287,6 +287,12 @@ export function SimulationResultsSection({ coverageArea, coverageRadiusKm }: { c
   const coverageMetrics = <div className="metrics">
     <div className="section-heading" role="heading" aria-level={3}>Coverage</div>
     <p className="field-help">Calculated area only · {coverageRadiusKm} km radius</p>
+    {isCoverageCalculating && <div role="status" aria-label="Coverage calculation">
+      <p className="field-help">Calculating coverage…</p>
+      <div className="map-progress-track" aria-hidden="true">
+        <div className="map-progress-fill map-progress-fill-indeterminate" />
+      </div>
+    </div>}
     {metric("Within RX target", coverageArea ? `${coverageArea.totalCoverageKm2.toFixed(1)} km²` : "Not calculated")}
     {metric("With line of sight", coverageArea ? `${coverageArea.clearPathCoverageKm2.toFixed(1)} km²` : "Not calculated")}
   </div>;
