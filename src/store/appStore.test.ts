@@ -28,7 +28,6 @@ const storage = vi.hoisted(() => {
 });
 
 vi.mock("../lib/coverage", () => ({
-  buildCoverage: vi.fn(() => []),
   clearTerrainLossCache: vi.fn(),
 }));
 
@@ -46,6 +45,7 @@ vi.mock("../lib/cloudLibrary", async () => {
   };
 });
 
+import { defaultScenario } from "../lib/scenarios";
 import { useAppStore } from "./appStore";
 import { useCoverageStore } from "./coverageStore";
 import { fetchElevations } from "../lib/elevationService";
@@ -1181,8 +1181,45 @@ describe("appStore new simulation default frequency preset", () => {
       .getState()
       .createBlankSimulationPreset("Fallback Session", { visibility: "private", ownerUserId: "owner-1" });
     const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
-    expect(created?.snapshot.selectedFrequencyPresetId).toBe("oslo-local-869618");
+    expect(created?.snapshot).toMatchObject({ selectedFrequencyPresetId: "mt-eu_n_868-narrow-fast", rxSensitivityTargetDbm: -130 });
   });
+  it("uses NarrowFast when an auto Link has no saved radio settings", () => {
+    useAppStore.setState({ sites: defaultScenario.sites, networks: [], links: [], selectedNetworkId: "", selectedLinkId: "" });
+    expect(useAppStore.getState().getSelectedLink().frequencyMHz).toBe(869.44165);
+  });
+  it("recovers missing topology radio settings with the shared NarrowFast default", () => {
+    const sites = defaultScenario.sites;
+    const id = useAppStore.getState().createBlankSimulationPreset("Recovery", { visibility: "private", ownerUserId: "owner-1" });
+    useAppStore.setState((state) => ({ simulationPresets: state.simulationPresets.map((entry) => entry.id === id ? { ...entry, snapshot: { ...entry.snapshot, sites, links: [], networks: [] } } : entry) }));
+    useAppStore.getState().loadSimulationPreset(id as string);
+    expect(useAppStore.getState().networks[0]).toMatchObject({ frequencyMHz: 869.44165, frequencyOverrideMHz: 869.44165, bandwidthKhz: 62.5, spreadFactor: 7, codingRate: 6, regionCode: "EU_N_868" });
+    expect(useAppStore.getState().links[0].frequencyMHz).toBe(869.44165);
+  });
+  it("preserves explicit saved Oslo settings after the user chooses NarrowFast", () => {
+    useAppStore.setState((state) => ({ currentUser: { ...state.currentUser!, defaultFrequencyPresetId: "oslo-local-869618", simulationDefaultsPreference: null } }));
+    const id = useAppStore.getState().createBlankSimulationPreset("Saved Oslo", { visibility: "private", ownerUserId: "owner-1" });
+    const network = { id: "legacy-net", name: "Oslo", frequencyMHz: 869.618, bandwidthKhz: 62, spreadFactor: 8, codingRate: 5, regionCode: "EU_868", memberships: [] };
+    useAppStore.setState((state) => ({
+      currentUser: { ...state.currentUser!, defaultFrequencyPresetId: "mt-eu_n_868-narrow-fast" },
+      simulationPresets: state.simulationPresets.map((entry) => entry.id === id ? { ...entry, snapshot: { ...entry.snapshot, networks: [network], simulationDefaultsOverrideEnabled: true, simulationDefaultsOverride: simulationDefaultsFromPreset("oslo-local-869618") } } : entry),
+    }));
+    useAppStore.getState().loadSimulationPreset(id as string);
+    expect(useAppStore.getState().selectedFrequencyPresetId).toBe("oslo-local-869618");
+    expect(useAppStore.getState().networks).toEqual([network]);
+    expect(useAppStore.getState().rxSensitivityTargetDbm).toBe(-130);
+  });
+
+  it("keeps saved network radio values while continuing explicit account-default inheritance", () => {
+    useAppStore.setState((state) => ({ currentUser: { ...state.currentUser!, defaultFrequencyPresetId: "oslo-local-869618", simulationDefaultsPreference: null } }));
+    const id = useAppStore.getState().createBlankSimulationPreset("Inherited Oslo", { visibility: "private", ownerUserId: "owner-1" });
+    const network = { id: "legacy-net", name: "Oslo", frequencyMHz: 869.618, bandwidthKhz: 62, spreadFactor: 8, codingRate: 5, regionCode: "EU_868", memberships: [] };
+    useAppStore.setState((state) => ({ currentUser: { ...state.currentUser!, defaultFrequencyPresetId: "mt-eu_n_868-narrow-fast" }, simulationPresets: state.simulationPresets.map((entry) => entry.id === id ? { ...entry, snapshot: { ...entry.snapshot, networks: [network] } } : entry) }));
+    useAppStore.getState().loadSimulationPreset(id as string);
+    expect(useAppStore.getState().selectedFrequencyPresetId).toBe("mt-eu_n_868-narrow-fast");
+    expect(useAppStore.getState().networks).toEqual([network]);
+    expect(useAppStore.getState().simulationPresets.find((entry) => entry.id === id)?.snapshot.selectedFrequencyPresetId).toBe("oslo-local-869618");
+  });
+
 });
 
 describe("appStore simulation copy", () => {

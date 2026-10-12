@@ -9,7 +9,6 @@ import {
   fetchUserDirectory,
   fetchMe,
   fetchSchemaDiagnostics,
-  fetchUsers,
   runMetadataRepair,
   reassignResourceOwner,
   restoreDeletedCloudUser,
@@ -183,11 +182,11 @@ export function UserAdminPanel({
         setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers(deleted);
       } else {
-        const all = await fetchUsers();
-        allUsers = all;
+        const directory = await fetchUserDirectory();
+        allUsers = directory.users;
         setUsers(allUsers);
-        setAuthMigrationAvailable(false);
-        setAuthMigrationProgress(null);
+        setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers([]);
       }
       if (canAdmin) {
@@ -290,11 +289,11 @@ export function UserAdminPanel({
         setAuditEvents(events);
         setUserDirectoryState("loaded");
       } else if (current.isModerator) {
-        const all = await fetchUsers();
+        const directory = await fetchUserDirectory();
         if (scope !== accountScopeRef.current) return;
-        setUsers(all);
-        setAuthMigrationAvailable(false);
-        setAuthMigrationProgress(null);
+        setUsers(directory.users);
+        setAuthMigrationAvailable(directory.authMigrationAvailable);
+        setAuthMigrationProgress(directory.authMigrationProgress);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
@@ -792,7 +791,7 @@ export function UserAdminPanel({
               <p className="field-help">Users: open a profile to review and manage.</p>
               <p className="field-help">Revoked: {revokedUserCount}</p>
             </div>
-            {canAdmin && userDirectoryState === "loaded" && authMigrationAvailable && authMigrationProgress ? (
+            {canModerate && userDirectoryState === "loaded" && authMigrationAvailable && authMigrationProgress ? (
               <div className="map-progress">
                 <div className="map-progress-label">
                   {authMigrationProgress.migrated} of {authMigrationProgress.total} accounts migrated
@@ -816,15 +815,15 @@ export function UserAdminPanel({
                 </div>
               </div>
             ) : null}
-            {canAdmin && userDirectoryState === "loaded" && !authMigrationAvailable ? (
+            {canModerate && userDirectoryState === "loaded" && !authMigrationAvailable ? (
               <p className="field-help">
                 Authentication migration progress unavailable until authentication setup is complete.
               </p>
             ) : null}
-            {canAdmin && userDirectoryState === "loading" ? (
+            {canModerate && userDirectoryState === "loading" ? (
               <p className="field-help">Loading authentication migration progress…</p>
             ) : null}
-            {canAdmin && userDirectoryState === "error" ? (
+            {canModerate && userDirectoryState === "error" ? (
               <p className="field-help">Authentication migration progress unavailable. Refresh admin data to try again.</p>
             ) : null}
             <label className="field-grid user-field-grid">

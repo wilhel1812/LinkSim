@@ -125,3 +125,9 @@ describe("api/v1/calculate job status CORS", () => {
     await expect(terminal.json()).resolves.toMatchObject({ status: JOB_STATUS.FAILED });
   });
 });
+
+it("sanitizes stored diagnostics from jobs created before the fix", async () => {
+  const { env } = makeEnv({ id: "job-1", status: JOB_STATUS.FAILED, error_message: "private_marker required DB credentials", created_at: "2026-10-12T10:00:00Z", updated_at: "2026-10-12T10:01:00Z" });
+  const response = await onRequestGet({ request: new Request("https://linksim.link/api/v1/calculate/jobs/job-1"), env });
+  await expect(response.json()).resolves.toMatchObject({ status: JOB_STATUS.FAILED, error: "Request failed." });
+});

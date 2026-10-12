@@ -1,3 +1,4 @@
+import { NARROW_FAST_DEFAULT_PRESET as defaultRadioPreset } from "./frequencyPresets.data";
 import type { Link, MapViewport, Network, RadioSystem, Site } from "../types/radio";
 
 export type BuiltinScenario = {
@@ -68,7 +69,7 @@ export const BUILTIN_SCENARIOS: BuiltinScenario[] = [
         id: "lnk-starter-1",
         fromSiteId: "site-a",
         toSiteId: "site-b",
-        frequencyMHz: 869.618,
+        frequencyMHz: defaultRadioPreset.frequencyMHz,
       },
     ],
     systems: mkSystems(),
@@ -76,12 +77,12 @@ export const BUILTIN_SCENARIOS: BuiltinScenario[] = [
       {
         id: "net-starter",
         name: "Scenario Channel",
-        frequencyMHz: 869.618,
-        bandwidthKhz: 62,
-        spreadFactor: 8,
-        codingRate: 5,
-        frequencyOverrideMHz: 869.618,
-        regionCode: "EU_868",
+        frequencyMHz: defaultRadioPreset.frequencyMHz,
+        bandwidthKhz: defaultRadioPreset.bandwidthKhz,
+        spreadFactor: defaultRadioPreset.spreadFactor,
+        codingRate: defaultRadioPreset.codingRate,
+        frequencyOverrideMHz: defaultRadioPreset.frequencyMHz,
+        regionCode: defaultRadioPreset.regionCode,
         memberships: [
           { siteId: "site-a", systemId: "sys-base" },
           { siteId: "site-b", systemId: "sys-mobile" },
@@ -95,7 +96,7 @@ export const BUILTIN_SCENARIOS: BuiltinScenario[] = [
     defaultSiteId: "site-a",
     defaultLinkId: "lnk-starter-1",
     defaultNetworkId: "net-starter",
-    defaultFrequencyPresetId: "oslo-local-869618",
+    defaultFrequencyPresetId: defaultRadioPreset.id,
   },
 ];
 
@@ -162,7 +163,7 @@ export const DEMO_SCENARIO: BuiltinScenario = {
       id: "demo-lnk-kikut-kolsas",
       fromSiteId: "demo-site-kikut",
       toSiteId: "demo-site-kolsas",
-      frequencyMHz: 869.618,
+      frequencyMHz: defaultRadioPreset.frequencyMHz,
     },
   ],
   systems: mkSystems(),
@@ -170,12 +171,12 @@ export const DEMO_SCENARIO: BuiltinScenario = {
     {
       id: "demo-net-1",
       name: "Demo Channel",
-      frequencyMHz: 869.618,
-      bandwidthKhz: 62,
-      spreadFactor: 8,
-      codingRate: 5,
-      frequencyOverrideMHz: 869.618,
-      regionCode: "EU_868",
+      frequencyMHz: defaultRadioPreset.frequencyMHz,
+      bandwidthKhz: defaultRadioPreset.bandwidthKhz,
+      spreadFactor: defaultRadioPreset.spreadFactor,
+      codingRate: defaultRadioPreset.codingRate,
+      frequencyOverrideMHz: defaultRadioPreset.frequencyMHz,
+      regionCode: defaultRadioPreset.regionCode,
       memberships: [
         { siteId: "demo-site-tryvanns", systemId: "sys-base" },
         { siteId: "demo-site-haukasen", systemId: "sys-mobile" },
@@ -189,5 +190,5 @@ export const DEMO_SCENARIO: BuiltinScenario = {
   defaultSiteId: "demo-site-kikut",
   defaultLinkId: "demo-lnk-kikut-kolsas",
   defaultNetworkId: "demo-net-1",
-  defaultFrequencyPresetId: "oslo-local-869618",
+  defaultFrequencyPresetId: defaultRadioPreset.id,
 };

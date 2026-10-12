@@ -59,3 +59,9 @@ describe("buildImportedRadioPresetPreference", () => {
     })).toThrow(/unique/i);
   });
 });
+
+it("preserves complete imported Oslo radio parameters when the app default changes", () => {
+  const oslo = simulationDefaultsFromPreset("oslo-local-869618");
+  const result = buildImportedRadioPresetPreference({ preference: { mode: "preset", presetId: "oslo-local-869618", overridePresetDefaults: false }, sharedPreset: { name: "Oslo", defaults: oslo }, requestedName: "Imported Oslo", conflictMode: null, makeDefault: false, createId: () => "radio-oslo-import" });
+  expect(result.preference.customPresets?.[0]?.defaults).toMatchObject({ frequencyMHz: 869.618, bandwidthKhz: 62, spreadFactor: 8, codingRate: 5, rxSensitivityTargetDbm: -130 });
+});

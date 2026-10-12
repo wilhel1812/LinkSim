@@ -1,3 +1,4 @@
+import { ApiRequestError } from "./http";
 import type { Link, Site } from "../../src/types/radio";
 import { effectiveGainTowardSiteDbi } from "../../src/lib/antennaPattern";
 
@@ -50,24 +51,24 @@ export const TERMINAL_JOB_RETENTION_HOURS = 24;
 export const MAX_TERMINAL_JOBS = 1000;
 
 const asRecord = (value: unknown, errorMessage: string): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(errorMessage);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ApiRequestError(errorMessage, 400);
   return value as Record<string, unknown>;
 };
 
 const asFiniteNumber = (value: unknown, fieldName: string): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${fieldName} must be a valid number.`);
+    throw new ApiRequestError(`${fieldName} must be a valid number.`, 400);
   }
   return value;
 };
 
 const asString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${fieldName} is required.`);
+    throw new ApiRequestError(`${fieldName} is required.`, 400);
   }
   const normalized = value.trim();
   if (Array.from(normalized).length > MAX_NODE_NAME_LENGTH) {
-    throw new Error(`${fieldName} may not exceed ${MAX_NODE_NAME_LENGTH} characters.`);
+    throw new ApiRequestError(`${fieldName} may not exceed ${MAX_NODE_NAME_LENGTH} characters.`, 400);
   }
   return normalized;
 };
@@ -83,13 +84,13 @@ const normalizeAntennaMode = (
 ): "omnidirectional" | "directional" => {
   if (value === undefined || value === null || value === "omnidirectional") return "omnidirectional";
   if (value === "directional") return "directional";
-  throw new Error(`${fieldName} must be omnidirectional or directional.`);
+  throw new ApiRequestError(`${fieldName} must be omnidirectional or directional.`, 400);
 };
 
 const optionalNumberInRange = (value: unknown, fieldName: string, min: number, max: number): number | undefined => {
   if (value === undefined) return undefined;
   const number = asFiniteNumber(value, fieldName);
-  if (number < min || number > max) throw new Error(`${fieldName} must be between ${min} and ${max}.`);
+  if (number < min || number > max) throw new ApiRequestError(`${fieldName} must be between ${min} and ${max}.`, 400);
   return number;
 };
 
@@ -97,8 +98,8 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
   const row = asRecord(value, `nodes[${index}] must be an object.`);
   const lat = asFiniteNumber(row.lat, `nodes[${index}].lat`);
   const lon = asFiniteNumber(row.lon, `nodes[${index}].lon`);
-  if (lat < -90 || lat > 90) throw new Error(`nodes[${index}].lat must be between -90 and 90.`);
-  if (lon < -180 || lon > 180) throw new Error(`nodes[${index}].lon must be between -180 and 180.`);
+  if (lat < -90 || lat > 90) throw new ApiRequestError(`nodes[${index}].lat must be between -90 and 90.`, 400);
+  if (lon < -180 || lon > 180) throw new ApiRequestError(`nodes[${index}].lon must be between -180 and 180.`, 400);
   return {
     name: asString(row.name, `nodes[${index}].name`),
     lat,
@@ -121,12 +122,12 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
 export const normalizeCalculationRequest = (value: unknown): CalculationRequest => {
   const root = asRecord(value, "Request body must be a JSON object.");
   if (root.calculation !== "link_budget") {
-    throw new Error("Unsupported calculation type: link_budget is currently the only supported value.");
+    throw new ApiRequestError("Unsupported calculation type: link_budget is currently the only supported value.", 400);
   }
   const input = asRecord(root.input, "input is required.");
   const nodesRaw = input.nodes;
   if (!Array.isArray(nodesRaw) || nodesRaw.length < 2) {
-    throw new Error("input.nodes must contain at least 2 sites.");
+    throw new ApiRequestError("input.nodes must contain at least 2 sites.", 400);
   }
 
   const fromSite = typeof input.from_site === "string" ? input.from_site : typeof input.from_node === "string" ? input.from_node : "";
@@ -144,8 +145,8 @@ export const normalizeCalculationRequest = (value: unknown): CalculationRequest 
     nodes: nodesRaw.map((row, index) => normalizeNode(row, index)),
   };
 
-  if (normalizedInput.frequency_mhz <= 0) throw new Error("input.frequency_mhz must be greater than 0.");
-  if (normalizedInput.nodes.length > MAX_NODES) throw new Error(`input.nodes exceeds maximum of ${MAX_NODES} sites.`);
+  if (normalizedInput.frequency_mhz <= 0) throw new ApiRequestError("input.frequency_mhz must be greater than 0.", 400);
+  if (normalizedInput.nodes.length > MAX_NODES) throw new ApiRequestError(`input.nodes exceeds maximum of ${MAX_NODES} sites.`, 400);
 
   return { calculation: "link_budget", input: normalizedInput };
 };
@@ -165,9 +166,9 @@ export const haversineKm = (a: { lat: number; lon: number }, b: { lat: number; l
 export const findEndpointNodes = (payload: CalculationRequest): { fromNode: NodeInput; toNode: NodeInput } => {
   const nodesByName = new Map<string, NodeInput>(payload.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]));
   const fromNode = nodesByName.get(payload.input.from_site.trim().toLowerCase());
-  if (!fromNode) throw new Error(`Site not found: ${payload.input.from_site}`);
+  if (!fromNode) throw new ApiRequestError(`Site not found: ${payload.input.from_site}`, 404);
   const toNode = nodesByName.get(payload.input.to_site.trim().toLowerCase());
-  if (!toNode) throw new Error(`Site not found: ${payload.input.to_site}`);
+  if (!toNode) throw new ApiRequestError(`Site not found: ${payload.input.to_site}`, 404);
   return { fromNode, toNode };
 };
 

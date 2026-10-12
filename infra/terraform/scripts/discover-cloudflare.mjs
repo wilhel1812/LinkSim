@@ -118,7 +118,7 @@ try {
 }
 
 const text = JSON.stringify(out, null, 2);
-console.log(text);
+console.log("Cloudflare discovery complete. Pass an output path to save the inventory.");
 
 if (writePath) {
   await writeFile(writePath, `${text}\n`, "utf8");

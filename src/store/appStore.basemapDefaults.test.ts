@@ -27,9 +27,6 @@ const storage = vi.hoisted(() => {
   return { data, mock };
 });
 
-vi.mock("../lib/coverage", () => ({
-  buildCoverage: vi.fn(() => []),
-}));
 
 vi.mock("../lib/elevationService", () => ({
   fetchElevations: vi.fn(async () => [123]),
