@@ -1,3 +1,4 @@
+import { NARROW_FAST_DEFAULT_PRESET as defaultRadioPreset } from "../lib/frequencyPresets.data";
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
@@ -1111,7 +1112,7 @@ export function MapView({
       name: `${selectedFromSite.name} -> ${toSite.name}`,
       fromSiteId: selectedFromSite.id,
       toSiteId: toSite.id,
-      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink?.frequencyMHz ?? 869.618,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink?.frequencyMHz ?? defaultRadioPreset.frequencyMHz,
       txPowerDbm: selectedFromSite.txPowerDbm,
       txGainDbi: selectedFromSite.txGainDbi,
       rxGainDbi: toSite.rxGainDbi,
@@ -1960,7 +1961,7 @@ export function MapView({
     [selectedNetwork, sites, systems],
   );
   const meshExtensionFrequencyMHz =
-    selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? activeSelectionLink?.frequencyMHz ?? 869.618;
+    selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? activeSelectionLink?.frequencyMHz ?? defaultRadioPreset.frequencyMHz;
 
   const areaDimensions = useMemo(() => analysisBounds
     ? computeOverlayDimensions(analysisBounds, selectedGridSize, "passfail", overlayResolutionScale)

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import * as frequencyPlans from "./frequencyPlans";
+import { describe, expect, it, vi } from "vitest";
 import {
   LEGACY_CUSTOM_RADIO_PRESET_ID,
   MAX_CUSTOM_RADIO_PRESETS,
@@ -139,4 +140,11 @@ describe("custom radio presets", () => {
     });
     expect(normalized.overrides).toBeUndefined();
   });
+});
+
+it("retains the NarrowFast fallback even if catalogue lookup is unavailable", () => {
+  const lookup = vi.spyOn(frequencyPlans, "findPresetById").mockReturnValue(undefined);
+  try {
+    expect(simulationDefaultsFromPreset("missing")).toMatchObject({ frequencyPresetId: "mt-eu_n_868-narrow-fast", frequencyMHz: 869.44165, bandwidthKhz: 62.5, spreadFactor: 7, codingRate: 6, regionCode: "EU_N_868", rxSensitivityTargetDbm: -130 });
+  } finally { lookup.mockRestore(); }
 });

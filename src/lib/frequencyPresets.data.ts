@@ -49,6 +49,103 @@ const GENERIC_PLANNING_DEFAULTS: Omit<FrequencyPresetDefaults, "rxSensitivityTar
   autoPropagationEnvironment: true,
 };
 
+// Pinned to meshtastic/firmware v2.8.1.8e6a88d; see docs/meshtastic-2.8-presets.md.
+export const NARROW_FAST_DEFAULT_PRESET_ID = "mt-eu_n_868-narrow-fast";
+// Normal bandwidth, 2.4 GHz bandwidth, spreading factor, coding rate, firmware channel name.
+const MESHTASTIC_MODEMS = {
+  SHORT_TURBO: [500.0, 1625.0, 7, 5, "ShortTurbo"],
+  SHORT_FAST: [250.0, 812.5, 7, 5, "ShortFast"],
+  SHORT_SLOW: [250.0, 812.5, 8, 5, "ShortSlow"],
+  MEDIUM_FAST: [250.0, 812.5, 9, 5, "MediumFast"],
+  MEDIUM_SLOW: [250.0, 812.5, 10, 5, "MediumSlow"],
+  MEDIUM_TURBO: [500.0, 1625.0, 9, 5, "MediumTurbo"],
+  LONG_TURBO: [500.0, 1625.0, 11, 8, "LongTurbo"],
+  LONG_MODERATE: [125.0, 406.25, 11, 8, "LongMod"],
+  LONG_SLOW: [125.0, 406.25, 12, 8, "LongSlow"],
+  LITE_FAST: [125.0, 125.0, 9, 5, "LiteFast"],
+  LITE_SLOW: [125.0, 125.0, 10, 5, "LiteSlow"],
+  NARROW_FAST: [62.5, 62.5, 7, 6, "NarrowFast"],
+  NARROW_SLOW: [62.5, 62.5, 8, 6, "NarrowSlow"],
+  TINY_FAST: [15.6, 15.6, 7, 5, "TinyFast"],
+  TINY_SLOW: [15.6, 15.6, 8, 6, "TinySlow"],
+  LONG_FAST: [250.0, 812.5, 11, 5, "LongFast"],
+} satisfies Record<string, readonly [number, number, number, number, string]>;
+type MeshtasticProfile = { presets: Array<keyof typeof MESHTASTIC_MODEMS>; spacing: number; padding: number; licensed: boolean };
+const MESHTASTIC_REGION_PROFILES = {
+  STD: { presets: ["LONG_FAST", "LONG_SLOW", "MEDIUM_SLOW", "MEDIUM_FAST", "SHORT_SLOW", "SHORT_FAST", "LONG_MODERATE", "SHORT_TURBO", "LONG_TURBO", "MEDIUM_TURBO"], spacing: 0.0, padding: 0.0, licensed: false },
+  EU868: { presets: ["LONG_FAST", "LONG_SLOW", "MEDIUM_SLOW", "MEDIUM_FAST", "SHORT_SLOW", "SHORT_FAST", "LONG_MODERATE"], spacing: 0.0, padding: 0.0, licensed: false },
+  LITE: { presets: ["LITE_FAST", "LITE_SLOW"], spacing: 0.4, padding: 0.0375, licensed: false },
+  NARROW: { presets: ["NARROW_FAST", "NARROW_SLOW"], spacing: 0.0, padding: 0.0104, licensed: false },
+  HAM_20KHZ: { presets: ["TINY_FAST", "TINY_SLOW"], spacing: 0.0, padding: 0.0022, licensed: true },
+  HAM_100KHZ: { presets: ["NARROW_FAST", "NARROW_SLOW"], spacing: 0.0, padding: 0.01875, licensed: true },
+} satisfies Record<string, MeshtasticProfile>;
+// Region, band start/end (MHz), profile, 2.4 GHz modem, explicit 1-based slot (0 = channel-name hash).
+const MESHTASTIC_REGIONS: Array<readonly [string, number, number, keyof typeof MESHTASTIC_REGION_PROFILES, boolean, number]> = [
+  ["US", 902.0, 928.0, "STD", false, 0],
+  ["EU_433", 433.0, 434.0, "STD", false, 0],
+  ["EU_868", 869.4, 869.65, "EU868", false, 0],
+  ["EU_866", 865.6, 867.6, "LITE", false, 0],
+  ["EU_N_868", 869.4, 869.65, "NARROW", false, 1],
+  ["CN", 470.0, 510.0, "STD", false, 0],
+  ["JP", 920.5, 923.5, "STD", false, 0],
+  ["ANZ", 915.0, 928.0, "STD", false, 0],
+  ["ANZ_433", 433.05, 434.79, "STD", false, 0],
+  ["RU", 868.7, 869.2, "STD", false, 0],
+  ["KR", 920.0, 923.0, "STD", false, 0],
+  ["TW", 920.0, 925.0, "STD", false, 0],
+  ["IN", 865.0, 867.0, "STD", false, 0],
+  ["NZ_865", 864.0, 868.0, "STD", false, 0],
+  ["TH", 920.0, 925.0, "STD", false, 0],
+  ["UA_433", 433.0, 434.7, "STD", false, 0],
+  ["MY_433", 433.0, 435.0, "STD", false, 0],
+  ["MY_919", 919.0, 924.0, "STD", false, 0],
+  ["SG_923", 917.0, 925.0, "STD", false, 0],
+  ["PH_433", 433.0, 434.7, "STD", false, 0],
+  ["PH_868", 868.0, 869.4, "STD", false, 0],
+  ["PH_915", 915.0, 918.0, "STD", false, 0],
+  ["KZ_433", 433.075, 434.775, "STD", false, 0],
+  ["KZ_863", 863.0, 868.0, "STD", false, 0],
+  ["NP_865", 865.0, 868.0, "STD", false, 0],
+  ["BR_902", 902.0, 907.5, "STD", false, 0],
+  ["ITU1_2M", 144.0, 146.0, "HAM_20KHZ", false, 26],
+  ["ITU2_2M", 144.0, 148.0, "HAM_20KHZ", false, 51],
+  ["ITU3_2M", 144.0, 148.0, "HAM_20KHZ", false, 33],
+  ["ITU2_125CM", 220.0, 225.0, "HAM_100KHZ", false, 37],
+  ["ITU1_70CM", 430.0, 440.0, "HAM_100KHZ", false, 37],
+  ["ITU2_70CM", 420.0, 450.0, "HAM_100KHZ", false, 137],
+  ["ITU3_70CM", 430.0, 450.0, "HAM_100KHZ", false, 37],
+  ["LORA_24", 2400.0, 2483.5, "STD", true, 0],
+];
+// Firmware djb2 uses uint32 overflow; an unnamed primary Channel uses the modem display name.
+const meshtasticChannelHash = (name: string): number => {
+  let hash = 5381;
+  for (const character of name) hash = (hash * 33 + character.charCodeAt(0)) >>> 0;
+  return hash;
+};
+
+const MESHTASTIC_28_PRESETS: FrequencyPresetData[] = MESHTASTIC_REGIONS.flatMap(([regionCode, start, end, profileKey, wide, explicitSlot]) => {
+  const profile: MeshtasticProfile = MESHTASTIC_REGION_PROFILES[profileKey];
+  return profile.presets.map((key) => {
+    const [normalBandwidth, wideBandwidth, spreadFactor, codingRate, channelName] = MESHTASTIC_MODEMS[key];
+    const bandwidthKhz = wide ? wideBandwidth : normalBandwidth;
+    const slotWidth = profile.spacing + profile.padding * 2 + bandwidthKhz / 1000;
+    const slotCount = Math.round((end - start + profile.spacing) / slotWidth);
+    const slot = explicitSlot > 0 ? explicitSlot - 1 : meshtasticChannelHash(channelName) % slotCount;
+    const frequencyMHz = Number((start + bandwidthKhz / 2000 + profile.padding + slot * slotWidth).toFixed(6));
+    const id = `mt-${regionCode.toLowerCase()}-${key.toLowerCase().replaceAll("_", "-")}`;
+    return {
+      id, label: `Meshtastic ${regionCode} ${channelName} · Channel ${slot + 1}`,
+      source: "Meshtastic", sourceFamily: "meshtastic",
+      group: profile.licensed ? "Amateur / Reference" : "Meshtastic Regional",
+      frequencyMHz, bandwidthKhz, spreadFactor, codingRate, regionCode,
+      notes: `Meshtastic 2.8.1; Channel ${slot + 1}. ${profile.licensed ? "Amateur profile for licensed operators. " : ""}RX target and propagation settings are planning assumptions.`,
+      defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: id === NARROW_FAST_DEFAULT_PRESET_ID ? -130 : -120 },
+    };
+  });
+});
+
+export const NARROW_FAST_DEFAULT_PRESET = MESHTASTIC_28_PRESETS.find(({ id }) => id === NARROW_FAST_DEFAULT_PRESET_ID)!;
+
 export const FREQUENCY_PRESET_DATA_BY_GROUP: Array<{
   group: FrequencyPresetGroup;
   presets: FrequencyPresetData[];
@@ -82,6 +179,7 @@ export const FREQUENCY_PRESET_DATA_BY_GROUP: Array<{
       { id: "mt-br_902", label: "Meshtastic BR_902", source: "Meshtastic", sourceFamily: "meshtastic", group: "Meshtastic Regional", frequencyMHz: 904.75, bandwidthKhz: 250, spreadFactor: 11, codingRate: 5, regionCode: "BR_902", notes: "902-907.5 MHz region span", defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
       { id: "mt-np_865", label: "Meshtastic NP_865", source: "Meshtastic", sourceFamily: "meshtastic", group: "Meshtastic Regional", frequencyMHz: 866.5, bandwidthKhz: 250, spreadFactor: 11, codingRate: 5, regionCode: "NP_865", notes: "865-868 MHz region span", defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
       { id: "mt-lora_24", label: "Meshtastic LORA_24", source: "Meshtastic", sourceFamily: "meshtastic", group: "Meshtastic Regional", frequencyMHz: 2441.75, bandwidthKhz: 812.5, spreadFactor: 11, codingRate: 5, regionCode: "LORA_24", notes: "2400-2483.5 MHz region span", defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
+      ...MESHTASTIC_28_PRESETS.filter(({ group }) => group === "Meshtastic Regional"),
     ],
   },
   {
@@ -97,6 +195,7 @@ export const FREQUENCY_PRESET_DATA_BY_GROUP: Array<{
   {
     group: "Amateur / Reference",
     presets: [
+      ...MESHTASTIC_28_PRESETS.filter(({ group }) => group === "Amateur / Reference"),
       { id: "rm-vhf-2m", label: "VHF 2m Reference", source: "Reference", sourceFamily: "reference", group: "Amateur / Reference", frequencyMHz: 145.0, bandwidthKhz: 125, spreadFactor: 11, codingRate: 5, defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
       { id: "rm-uhf-70cm", label: "UHF 70cm Reference", source: "Reference", sourceFamily: "reference", group: "Amateur / Reference", frequencyMHz: 433.92, bandwidthKhz: 125, spreadFactor: 11, codingRate: 5, defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
       { id: "rm-23cm", label: "23cm Reference", source: "Reference", sourceFamily: "reference", group: "Amateur / Reference", frequencyMHz: 1296.0, bandwidthKhz: 125, spreadFactor: 11, codingRate: 5, defaults: { ...GENERIC_PLANNING_DEFAULTS, rxSensitivityTargetDbm: -120 } },
