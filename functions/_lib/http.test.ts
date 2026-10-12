@@ -1,5 +1,8 @@
+import { LibraryValidationError } from "../../src/lib/libraryLimits";
 import { describe, expect, it } from "vitest";
 import {
+  ApiRequestError,
+  errorResponse,
   corsHeaders,
   corsRejectionResponse,
   getCorsOriginDecision,
@@ -135,5 +138,36 @@ describe("http error normalization", () => {
     expect(normalizeApiErrorMessage("Identity subject is no longer current")).toBe("Session revoked by admin.");
     expect(normalizeApiErrorMessage("Identity is blocked by an administrator")).toBe("Session revoked by admin.");
     expect(normalizeApiErrorMessage("")).toBe("Request failed.");
+  });
+});
+
+describe("public error response privacy", () => {
+  const request = new Request("https://linksim.link/api/users", { headers: { origin: "https://linksim.link" } });
+  it.each([
+    new Error("database required missing table private_marker\n at secret.ts:12"),
+    "private_marker: provider credentials invalid",
+    { status: 422, code: "private_marker", toString: () => "private_marker" },
+  ])("does not return unexpected diagnostics or untrusted error codes", async (error) => {
+    const response = errorResponse(request, error);
+    expect(await response.text()).not.toContain("private_marker");
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://linksim.link");
+  });
+  it("preserves schema availability status/code with a fixed public message", async () => {
+    const response = errorResponse(request, new Error("Schema out of date. Missing: private_marker"));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Service temporarily unavailable. Please try again later.", code: "schema_unavailable" });
+  });
+  it.each([400, 401, 502])("sanitizes unexpected errors with fallback %s", async (status) => {
+    const response = errorResponse(request, new Error("private_marker"), status);
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toEqual({ error: "Request failed." });
+  });
+  it("preserves explicit request-validation contracts", async () => {
+    const response = errorResponse(request, new ApiRequestError("Request body exceeds 64 bytes.", 413, "request_too_large"));
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Request body exceeds 64 bytes.", code: "request_too_large" });
+    const library = errorResponse(request, new LibraryValidationError("Site name must be a non-empty string."));
+    expect(library.status).toBe(422);
+    await expect(library.json()).resolves.toEqual({ error: "Site name must be a non-empty string.", code: "invalid_library_payload" });
   });
 });

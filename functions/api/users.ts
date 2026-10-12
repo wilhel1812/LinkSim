@@ -24,16 +24,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, data }) =
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     if (!canListUsers(me)) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
-    const includeAuthMigration = me.isAdmin && await authMigrationSchemaAvailable(env.DB);
+    const includeAuthMigration = await authMigrationSchemaAvailable(env.DB);
     const [users, authMigrationProgress] = includeAuthMigration
       ? await Promise.all([
-        listUsers(env, true, true),
+        listUsers(env, me.isAdmin, me.isAdmin),
         getAuthMigrationProgress(env.DB),
       ])
       : [await listUsers(env, me.isAdmin, false), null];
     return withCors(request, json({
       users,
-      ...(me.isAdmin ? { authMigrationAggregateAvailable: includeAuthMigration } : {}),
+      authMigrationAggregateAvailable: includeAuthMigration,
       ...(authMigrationProgress ? { authMigrationProgress } : {}),
     }));
   } catch (error) {

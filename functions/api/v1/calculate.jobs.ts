@@ -1,4 +1,4 @@
-import { errorResponse, handleOptions, json, readBoundedJson, withCors } from "../../_lib/http";
+import { ApiRequestError, normalizeApiErrorMessage, errorResponse, handleOptions, json, readBoundedJson, withCors } from "../../_lib/http";
 import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "../../_lib/rateLimit";
 import { analyzeTerrainLink } from "../../_lib/terrainAnalysis";
 import {
@@ -26,7 +26,7 @@ const generateJobId = (): string => {
 export const validateTerrainRequest = (payload: CalculationRequest): { distanceKm: number; samples: number } => {
   const { fromNode, toNode } = findEndpointNodes(payload);
   const distanceKm = haversineKm(fromNode, toNode);
-  if (distanceKm > MAX_TERRAIN_DISTANCE_KM) throw new Error(`Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_TERRAIN_DISTANCE_KM} km for terrain jobs.`);
+  if (distanceKm > MAX_TERRAIN_DISTANCE_KM) throw new ApiRequestError(`Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_TERRAIN_DISTANCE_KM} km for terrain jobs.`, 400);
   return { distanceKm, samples: estimateSampleCount(distanceKm) };
 };
 
@@ -91,7 +91,7 @@ export const processTerrainJob = async (env: Env, jobId: string, requestUrl: str
     else if (!await failCalculationJobBeforeDeadline(
       env,
       jobId,
-      error instanceof Error ? error.message : String(error),
+      normalizeApiErrorMessage(error instanceof Error ? error.message : String(error)),
     )) await timeoutCalculationJob(env, jobId);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
@@ -103,7 +103,7 @@ export const queueTerrainCalculationJob = async (request: Request, env: Env, pay
   await ensureCalculationJobsTable(env);
   const limiter = takeRateLimitToken({ key: `calc-jobs:${getClientAddress(request)}`, limit: parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 60) });
   if (!limiter.allowed) return withCors(request, json({ error: "Calculation jobs rate limit reached. Please wait and try again." }, { status: 429, headers: { "retry-after": String(limiter.retryAfterSec) } }));
-  if (payload.input.mode !== "terrain") throw new Error("Only terrain mode is supported on /api/v1/calculate/jobs.");
+  if (payload.input.mode !== "terrain") throw new ApiRequestError("Only terrain mode is supported on /api/v1/calculate/jobs.", 400);
   validateTerrainRequest(payload);
   await cleanupCalculationJobs(env);
   const jobId = generateJobId();
