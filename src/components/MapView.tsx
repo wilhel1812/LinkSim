@@ -4157,8 +4157,8 @@ export function MapView({
               onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
               open={showResultsSummary}
             >
-              <CompactDetailsSummary infoTipText="Coverage estimates union selected Sites, or all Simulation Sites when none are selected, within the current radius and at Simulation Resolution. Total includes passing clear and blocked paths; clear-path includes passing clear paths. Each Site uses its own single-Site receiver height and gain. Path results use the selected Path and current Channel/model settings.">Results</CompactDetailsSummary>
-              <SimulationResultsSection coverageArea={currentCoverageArea} />
+              <CompactDetailsSummary infoTipText="Coverage estimates union selected Sites, or all Simulation Sites when none are selected, within the current radius and at Simulation Resolution. Both values meet the RX target. Within RX target includes clear and terrain-obstructed paths; With line of sight is the subset with an unobstructed path to at least one included Site. Totals apply only to the calculated area, so changing the radius changes the area being measured. Each Site uses its own single-Site receiver height and gain. Path results use the selected Path and current Channel/model settings.">Results</CompactDetailsSummary>
+              <SimulationResultsSection coverageArea={currentCoverageArea} coverageRadiusKm={overlayRadiusKm} />
             </CompactDetails>
             <CompactDetails
               className="compact-details map-inspector-details"
