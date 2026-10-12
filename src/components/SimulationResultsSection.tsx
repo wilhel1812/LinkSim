@@ -58,7 +58,7 @@ const downloadJson = (fileName: string, payload: unknown) => {
   URL.revokeObjectURL(url);
 };
 
-export function SimulationResultsSection({ coverageArea }: { coverageArea?: CoverageAreaResult | null }) {
+export function SimulationResultsSection({ coverageArea, coverageRadiusKm }: { coverageArea?: CoverageAreaResult | null; coverageRadiusKm: number }) {
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -285,8 +285,10 @@ export function SimulationResultsSection({ coverageArea }: { coverageArea?: Cove
   };
 
   const coverageMetrics = <div className="metrics">
-    {metric("Total coverage", coverageArea ? `${coverageArea.totalCoverageKm2.toFixed(1)} km²` : "Not calculated")}
-    {metric("Clear-path coverage", coverageArea ? `${coverageArea.clearPathCoverageKm2.toFixed(1)} km²` : "Not calculated")}
+    <div className="section-heading" role="heading" aria-level={3}>Coverage</div>
+    <p className="field-help">Calculated area only · {coverageRadiusKm} km radius</p>
+    {metric("Within RX target", coverageArea ? `${coverageArea.totalCoverageKm2.toFixed(1)} km²` : "Not calculated")}
+    {metric("With line of sight", coverageArea ? `${coverageArea.clearPathCoverageKm2.toFixed(1)} km²` : "Not calculated")}
   </div>;
 
   // Contextual message when no valid link topology

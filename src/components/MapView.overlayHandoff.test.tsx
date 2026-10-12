@@ -293,6 +293,10 @@ describe("MapView overlay handoff", () => {
       const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
       await waitFor(() => expect(screen.getByText("12.3 km²")).toBeInTheDocument());
       expect(screen.getByText("5.7 km²")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Coverage", level: 3 })).toBeInTheDocument();
+      expect(screen.getByText("Within RX target")).toBeInTheDocument();
+      expect(screen.getByText("With line of sight")).toBeInTheDocument();
+      expect(screen.getByText("Calculated area only · 20 km radius")).toBeInTheDocument();
       expect(overlayMock.buildArea.mock.calls[0][0].sites.map((value: Site) => value.id)).toEqual([site.id]);
       view.unmount();
     },
@@ -304,7 +308,9 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(screen.getByText("12.3 km²")).toBeInTheDocument());
     expect(overlayMock.buildArea.mock.calls[0][0].sites).toEqual([site, receiverSite]);
     await act(async () => { useCoverageStore.setState({ autoCalculateEnabled: false }); });
-    await act(async () => { useAppStore.setState({ rxSensitivityTargetDbm: -99 }); });
+    await act(async () => { useAppStore.setState({ rxSensitivityTargetDbm: -99, selectedOverlayRadiusOption: "200" }); });
+    expect(screen.getByText("Calculated area only · 200 km radius")).toBeInTheDocument();
+    expect(screen.queryByText("Calculated area only · 20 km radius")).not.toBeInTheDocument();
     expect(screen.queryByText("12.3 km²")).not.toBeInTheDocument();
     expect(screen.getAllByText("Not calculated")).toHaveLength(2);
     await act(async () => { useCoverageStore.setState({ calculationCycleSource: "manual", completedCoverageRunToken: "area-manual" }); });
@@ -312,7 +318,7 @@ describe("MapView overlay handoff", () => {
     await act(async () => { useAppStore.setState({ selectedSiteIds: [site.id, receiverSite.id] }); });
     await act(async () => { useCoverageStore.setState({ autoCalculateEnabled: true }); });
     await waitFor(() => expect(screen.getByText("Path")).toBeInTheDocument());
-    expect(screen.getByText("Total coverage")).toBeInTheDocument();
+    expect(screen.getByText("Within RX target")).toBeInTheDocument();
     view.unmount();
   });
 
