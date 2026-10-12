@@ -9,6 +9,9 @@
 - Let moderators view aggregate authentication migration progress in Admin → Users while preserving administrator-only account details and actions. (#1264)
 - Updated dependency security patches in the application tooling and Better Auth experiment, sanitized unexpected API errors, and kept Cloudflare discovery inventory out of console output. (#1264)
 
+### Internal
+- Removed unused legacy coverage builders and stale test mocks while retaining regression coverage through the active grid, contributor and raster pipeline. (#1258)
+
 ## [0.30.0] - 2026-09-29
 
 ### Changed

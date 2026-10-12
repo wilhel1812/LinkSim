@@ -25,7 +25,7 @@ const terrainClient = vi.hoisted(() => ({
 vi.mock("../lib/copernicusTerrainClient", () => terrainClient);
 vi.mock("../lib/coverage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverage")>();
-  return { ...actual, buildCoverage: vi.fn(() => []), clearTerrainLossCache: vi.fn() };
+  return { ...actual, clearTerrainLossCache: vi.fn() };
 });
 vi.mock("../lib/elevationService", () => ({ fetchElevations: vi.fn(async () => [123]) }));
 

@@ -28,7 +28,6 @@ const storage = vi.hoisted(() => {
 });
 
 vi.mock("../lib/coverage", () => ({
-  buildCoverage: vi.fn(() => []),
   clearTerrainLossCache: vi.fn(),
 }));
 

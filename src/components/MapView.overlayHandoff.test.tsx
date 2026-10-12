@@ -19,7 +19,7 @@ const overlayMock = vi.hoisted(() => {
   }> = [];
   return {
     requests,
-    buildCoverage: vi.fn(
+    buildOverlay: vi.fn(
       () =>
         new Promise<{ width: number; height: number; pixels: Uint8ClampedArray; targetContour?: TargetContour }>((resolve) => {
           requests.push({ resolve });
@@ -70,11 +70,11 @@ vi.hoisted(() => {
 
 vi.mock("../lib/overlayRaster", () => ({
   buildCoverageAreaAsync: overlayMock.buildArea,
-  buildAdaptiveCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
-  buildCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
+  buildAdaptiveCoverageOverlayPixelsAsync: overlayMock.buildOverlay,
+  buildCoverageOverlayPixelsAsync: overlayMock.buildOverlay,
   buildMeshExtensionOverlayPixelsAsync: vi.fn(),
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
-  buildSourcePassFailOverlayPixelsAsync: overlayMock.buildCoverage,
+  buildSourcePassFailOverlayPixelsAsync: overlayMock.buildOverlay,
   buildTerrainShadeOverlayPixelsAsync: vi.fn(async () => null),
   overlayPixelsToDataUrl: vi.fn((raster: { targetContour?: unknown }) => ({
     coordinates: [
@@ -594,7 +594,7 @@ describe("MapView overlay handoff", () => {
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
     expect(loadingOverlayMock.props?.handoffKey).toBeTruthy();
-    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+    expect(overlayMock.buildOverlay).not.toHaveBeenCalled();
   });
 
   it("ends a terrain-started cloud when Auto Calculate is disabled and work becomes idle", async () => {
@@ -627,7 +627,7 @@ describe("MapView overlay handoff", () => {
     });
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
-    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+    expect(overlayMock.buildOverlay).not.toHaveBeenCalled();
   });
 
   it("ends a terrain-started cloud when the calculation topology becomes invalid", async () => {
@@ -660,7 +660,7 @@ describe("MapView overlay handoff", () => {
     });
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
-    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+    expect(overlayMock.buildOverlay).not.toHaveBeenCalled();
   });
 
   it("keeps the cloud active while a matching overlay job is still running", async () => {
@@ -885,7 +885,7 @@ describe("MapView overlay handoff", () => {
     );
 
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
-    expect(overlayMock.buildCoverage).toHaveBeenCalledTimes(1);
+    expect(overlayMock.buildOverlay).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("linksim-coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
