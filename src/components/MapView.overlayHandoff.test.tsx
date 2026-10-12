@@ -293,6 +293,7 @@ describe("MapView overlay handoff", () => {
       const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
       await waitFor(() => expect(screen.getByText("12.3 km²")).toBeInTheDocument());
       expect(screen.getByText("5.7 km²")).toBeInTheDocument();
+      expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Coverage", level: 3 })).toBeInTheDocument();
       expect(screen.getByText("Within RX target")).toBeInTheDocument();
       expect(screen.getByText("With line of sight")).toBeInTheDocument();
@@ -329,13 +330,33 @@ describe("MapView overlay handoff", () => {
     useCoverageStore.setState({ autoCalculateEnabled: false, calculationCycleSource: null });
     const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
     expect(overlayMock.buildArea).not.toHaveBeenCalled();
+    expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument();
     await act(async () => { useCoverageStore.setState({ calculationCycleSource: "manual", completedCoverageRunToken: "first-area" }); });
     await waitFor(() => expect(overlayMock.buildArea).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Calculating coverage…")).toBeInTheDocument();
     await act(async () => { screen.getByRole("button", { name: "Stop calculation" }).click(); });
+    expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument();
     await act(async () => { resolveArea({ totalCoverageKm2: 99, clearPathCoverageKm2: 99, analysisStats: { evaluatedPaths: 1, refinedBlocks: 0, filledPixels: 1, totalPixels: 1 } }); });
     expect(screen.queryByText("99.0 km²")).not.toBeInTheDocument();
     await act(async () => { useCoverageStore.setState({ calculationCycleSource: "manual", completedCoverageRunToken: "second-area" }); });
     await waitFor(() => expect(screen.getByText("12.3 km²")).toBeInTheDocument());
+    view.unmount();
+  });
+
+  it("keeps coverage loading through final validation and clears it on failure", async () => {
+    let rejectArea!: (error: Error) => void;
+    overlayMock.buildArea.mockImplementationOnce((input) => {
+      input.context?.onProgress?.({ phase: "coverage-area", signature: input.context.signature, processed: 1, total: 1, percent: 100 });
+      return new Promise((_, reject) => { rejectArea = reject; });
+    });
+    useAppStore.setState({ mapOverlayMode: "none" });
+    const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
+    await waitFor(() => expect(screen.getByText("Calculating coverage…")).toBeInTheDocument());
+    expect(screen.getByText("Calculated area only · 20 km radius")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Coverage calculation" })).toHaveTextContent("Calculating coverage…");
+    await act(async () => { rejectArea(new Error("Terrain unavailable")); });
+    await waitFor(() => expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument());
+    expect(screen.getAllByText("Not calculated")).toHaveLength(2);
     view.unmount();
   });
 
@@ -345,7 +366,9 @@ describe("MapView overlay handoff", () => {
     useAppStore.setState({ mapOverlayMode: "none" });
     const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
     await waitFor(() => expect(overlayMock.buildArea).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Calculating coverage…")).toBeInTheDocument();
     await act(async () => { useCoverageStore.setState({ autoCalculateEnabled: false }); useAppStore.setState({ environmentLossDb: 4 }); });
+    expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument();
     await act(async () => { resolveArea({ totalCoverageKm2: 99, clearPathCoverageKm2: 99, analysisStats: { evaluatedPaths: 1, refinedBlocks: 0, filledPixels: 1, totalPixels: 1 } }); });
     expect(screen.queryByText("99.0 km²")).not.toBeInTheDocument();
     expect(screen.getAllByText("Not calculated")).toHaveLength(2);
@@ -376,6 +399,7 @@ describe("MapView overlay handoff", () => {
     const view = render(<MapView canPersist isMapExpanded={false} onToggleMapExpanded={() => undefined} showInspector />);
     expect(screen.getAllByText("Not calculated")).toHaveLength(2);
     expect(overlayMock.buildArea).not.toHaveBeenCalled();
+    expect(screen.queryByText("Calculating coverage…")).not.toBeInTheDocument();
     view.unmount();
   });
 

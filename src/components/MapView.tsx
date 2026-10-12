@@ -1699,6 +1699,7 @@ export function MapView({
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   const coverageOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
   const areaSchedulerRef = useRef(createLatestOnlyTaskScheduler());
+  const [coverageAreaLoadingSignature, setCoverageAreaLoadingSignature] = useState<string | null>(null);
   const [coverageArea, setCoverageArea] = useState<{ signature: string; result: CoverageAreaResult | null; attempt: string } | null>(null);
   const terrainOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
   if (!coverageOverlaySchedulerRef.current) {
@@ -1986,10 +1987,14 @@ export function MapView({
   useEffect(() => {
     const scheduler = areaSchedulerRef.current;
     const snapshot = scheduler.snapshot();
-    if (snapshot.activeSignature && snapshot.activeSignature !== areaSignature) scheduler.cancelActive();
+    if (snapshot.activeSignature && snapshot.activeSignature !== areaSignature) {
+      scheduler.cancelActive();
+      setCoverageAreaLoadingSignature(null);
+    }
     scheduler.clearQueue();
     if (!analysisBounds || !coverageSites.length || isDraggingSite || isTerrainFetching || isTerrainRecommending || isSimulationRecomputing) {
       scheduler.cancelActive();
+      setCoverageAreaLoadingSignature(null);
       return;
     }
     if (!calculationWorkAllowed || (coverageArea?.signature === areaSignature &&
@@ -1999,6 +2004,7 @@ export function MapView({
       run: async (task) => {
         if (task.isCancelled()) return;
         const endJob = beginOverlayJob("area");
+        setCoverageAreaLoadingSignature(areaSignature);
         try {
           const result = await buildCoverageAreaAsync({
             bounds: analysisBounds, dimensions: areaDimensions, sites: coverageSites,
@@ -2017,7 +2023,10 @@ export function MapView({
           setCoverageArea({ signature: areaSignature, result: null, attempt: completedCoverageRunToken });
           onPublishNotice?.({ id: "coverage-area-unavailable", tone: "error", persistent: false,
             message: "Could not calculate coverage area. Check terrain availability, then press Start to retry." });
-        } finally { endJob(); }
+        } finally {
+          setCoverageAreaLoadingSignature((current) => current === areaSignature ? null : current);
+          endJob();
+        }
       },
     });
   }, [areaSignature, areaTerrainCacheKey, areaDimensions, analysisBounds, coverageSites, coverageArea,
@@ -2802,6 +2811,7 @@ export function MapView({
     stopCalculation();
     areaSchedulerRef.current.clearQueue();
     areaSchedulerRef.current.cancelActive();
+    setCoverageAreaLoadingSignature(null);
     cancelTerrainLoad();
     coverageOverlaySchedulerRef.current?.clearQueue();
     coverageOverlaySchedulerRef.current?.cancelActive();
@@ -4158,7 +4168,7 @@ export function MapView({
               open={showResultsSummary}
             >
               <CompactDetailsSummary infoTipText="Coverage estimates union selected Sites, or all Simulation Sites when none are selected, within the current radius and at Simulation Resolution. Both values meet the RX target. Within RX target includes clear and terrain-obstructed paths; With line of sight is the subset with an unobstructed path to at least one included Site. Totals apply only to the calculated area, so changing the radius changes the area being measured. Each Site uses its own single-Site receiver height and gain. Path results use the selected Path and current Channel/model settings.">Results</CompactDetailsSummary>
-              <SimulationResultsSection coverageArea={currentCoverageArea} coverageRadiusKm={overlayRadiusKm} />
+              <SimulationResultsSection coverageArea={currentCoverageArea} coverageRadiusKm={overlayRadiusKm} isCoverageCalculating={coverageAreaLoadingSignature === areaSignature} />
             </CompactDetails>
             <CompactDetails
               className="compact-details map-inspector-details"
