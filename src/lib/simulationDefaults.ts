@@ -1,4 +1,4 @@
-import { defaultPropagationEnvironment } from "./propagationEnvironment";
+import { NARROW_FAST_DEFAULT_PRESET, NARROW_FAST_DEFAULT_PRESET_ID } from "./frequencyPresets.data";
 import { findPresetById } from "./frequencyPlans";
 import type { PropagationEnvironment } from "../types/radio";
 import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
@@ -36,24 +36,11 @@ export type UserSimulationDefaultsPreference = {
   custom?: Partial<SimulationDefaults>;
 };
 
-export const FALLBACK_SIMULATION_PRESET_ID = "oslo-local-869618";
+export const FALLBACK_SIMULATION_PRESET_ID = NARROW_FAST_DEFAULT_PRESET_ID;
 
 export const simulationDefaultsFromPreset = (presetId: string): SimulationDefaults => {
-  const preset = findPresetById(presetId) ?? findPresetById(FALLBACK_SIMULATION_PRESET_ID);
-  if (!preset) {
-    return {
-      frequencyPresetId: FALLBACK_SIMULATION_PRESET_ID,
-      frequencyMHz: 869.618,
-      bandwidthKhz: 62,
-      spreadFactor: 8,
-      codingRate: 5,
-      regionCode: "EU_868",
-      rxSensitivityTargetDbm: -130,
-      environmentLossDb: 0,
-      propagationEnvironment: defaultPropagationEnvironment(),
-      autoPropagationEnvironment: true,
-    };
-  }
+  const preset = findPresetById(presetId) ?? findPresetById(FALLBACK_SIMULATION_PRESET_ID)
+    ?? { ...NARROW_FAST_DEFAULT_PRESET, ...NARROW_FAST_DEFAULT_PRESET.defaults };
   return {
     frequencyPresetId: preset.id,
     frequencyMHz: preset.frequencyMHz,

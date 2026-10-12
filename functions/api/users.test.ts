@@ -41,8 +41,8 @@ describe("users directory email privacy", () => {
     const response = await onRequestGet({ request: new Request("https://example.test/api/users"), env } as never);
     expect(response.status).toBe(200);
     expect(listUsersMock).toHaveBeenCalledWith(env, false, false);
-    expect(getAuthMigrationProgressMock).not.toHaveBeenCalled();
-    await expect(response.json()).resolves.toEqual({ users: [] });
+    expect(getAuthMigrationProgressMock).toHaveBeenCalledWith(env.DB);
+    await expect(response.json()).resolves.toEqual({ users: [], authMigrationAggregateAvailable: true, authMigrationProgress: { migrated: 7, total: 11 } });
   });
 
   it("allows administrators to receive hidden email", async () => {
@@ -69,4 +69,19 @@ describe("users directory email privacy", () => {
     expect(getAuthMigrationProgressMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({ users: [], authMigrationAggregateAvailable: false });
   });
+});
+
+it("rejects ordinary users before reading migration aggregates", async () => {
+  fetchUserProfileMock.mockResolvedValue({ id: "user", isAdmin: false, isModerator: false });
+  const response = await onRequestGet({ request: new Request("https://example.test/api/users"), env } as never);
+  expect(response.status).toBe(403);
+  expect(getAuthMigrationProgressMock).not.toHaveBeenCalled();
+});
+it("keeps moderator directory usable when migration schema is absent", async () => {
+  fetchUserProfileMock.mockResolvedValue({ id: "mod", isAdmin: false, isModerator: true });
+  authMigrationSchemaAvailableMock.mockResolvedValue(false);
+  const response = await onRequestGet({ request: new Request("https://example.test/api/users"), env } as never);
+  expect(listUsersMock).toHaveBeenCalledWith(env, false, false);
+  expect(getAuthMigrationProgressMock).not.toHaveBeenCalled();
+  await expect(response.json()).resolves.toEqual({ users: [], authMigrationAggregateAvailable: false });
 });

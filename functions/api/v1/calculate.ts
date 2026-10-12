@@ -132,12 +132,6 @@ export const onRequestPost = async (ctx: Context) => {
   } catch (error) {
     if (error instanceof ApiRequestError) return errorResponse(request, error);
     const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith("Site not found:")) {
-      return withCors(request, json({ error: message }, { status: 404 }));
-    }
-    if (message.includes("must") || message.includes("required") || message.includes("Unsupported calculation type")) {
-      return withCors(request, json({ error: message }, { status: 400 }));
-    }
     if (message.includes("No terrain tiles available")) {
       return withCors(
         request,

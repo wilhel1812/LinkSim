@@ -859,7 +859,7 @@ describe("MapEditorPanel", () => {
     expect(await screen.findByText("Simulation settings")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "869.618 MHz · 62 kHz · SF8 · CR5 · Region EU_868 · RX -130 dBm · Auto environment",
+        "869.44165 MHz · 62.5 kHz · SF7 · CR6 · Region EU_N_868 · RX -130 dBm · Auto environment",
       ),
     ).toBeInTheDocument();
     expect(

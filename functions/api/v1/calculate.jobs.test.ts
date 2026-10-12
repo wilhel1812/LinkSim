@@ -125,6 +125,15 @@ describe("terrain calculation jobs", () => {
     expect(new TextEncoder().encode(row.error_message).byteLength).toBeLessThanOrEqual(1024);
   });
 
+  it("records a failed job even when an unexpected object has throwing stringification", async () => {
+    const db = new TestD1();
+    db.db.exec("CREATE TABLE calculation_jobs (id TEXT PRIMARY KEY, status TEXT NOT NULL, input_json TEXT NOT NULL, result_json TEXT, error_message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+    db.db.prepare("INSERT INTO calculation_jobs VALUES (?, 'queued', ?, NULL, NULL, datetime('now'), datetime('now'))").run("job", input);
+    analyzeTerrainLinkMock.mockRejectedValueOnce({ toString() { throw new Error("private_marker"); } });
+    await expect(processTerrainJob(envFor(db), "job", "https://linksim.link/api/v1/calculate/jobs")).resolves.toBeUndefined();
+    expect(db.db.prepare("SELECT status, error_message FROM calculation_jobs WHERE id = 'job'").get()).toEqual({ status: "failed", error_message: "Request failed." });
+  });
+
   it("records a transient initial job lookup failure instead of leaving the job queued", async () => {
     let failFirstRead = true;
     const db = new TestD1(undefined, (sql) => {
@@ -139,7 +148,7 @@ describe("terrain calculation jobs", () => {
     await expect(processTerrainJob(envFor(db), "job", "https://linksim.link/api/v1/calculate/jobs")).resolves.toBeUndefined();
     expect(db.db.prepare("SELECT status, error_message FROM calculation_jobs WHERE id = 'job'").get()).toEqual({
       status: JOB_STATUS.FAILED,
-      error_message: "Transient D1 read failure",
+      error_message: "Request failed.",
     });
     expect(analyzeTerrainLinkMock).not.toHaveBeenCalled();
   });

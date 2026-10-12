@@ -1,3 +1,6 @@
+import { LibraryValidationError } from "../../src/lib/libraryLimits";
+import { BasemapPreferenceError } from "../../src/lib/basemapPreferences";
+
 export const json = (body: unknown, init?: ResponseInit): Response => {
   const headers = new Headers(init?.headers ?? {});
   if (!headers.has("content-type")) {
@@ -28,7 +31,7 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code: string,
+    readonly code: string = "",
   ) {
     super(message);
   }
@@ -179,10 +182,26 @@ const isRevokedAuthMessage = (message: string): boolean => {
     || lower.includes("identity is blocked by an administrator");
 };
 
-export const isRevokedAuthError = (error: unknown): boolean =>
-  isRevokedAuthMessage(error instanceof Error ? error.message : String(error));
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : typeof error === "string" ? error : "";
 
-export const normalizeApiErrorMessage = (message: string): string => {
+export const isRevokedAuthError = (error: unknown): boolean =>
+  isRevokedAuthMessage(getErrorMessage(error));
+
+// These legacy validation messages are application-authored and contain no dynamic diagnostics.
+const publicValidationMessages = new Map([
+  "Default frequency preset must be a string or null.",
+  "Unknown default frequency preset.",
+  "Simulation defaults preference must be an object or null.",
+  "Name is required (2-80 chars).",
+  "Email is required and must be valid.",
+  "Profile picture must be a valid http(s) URL.",
+  "Username is already in use.",
+  "Source and target owner must differ.",
+].map((message) => [message, message] as const));
+
+export const normalizeApiErrorMessage = (error: unknown): string => {
+  const message = getErrorMessage(error);
   const lower = message.toLowerCase();
   if (isRevokedAuthMessage(message)) return "Session revoked by admin.";
   if (lower.includes("auth verification timed out")) return "Auth verification timed out.";
@@ -191,10 +210,8 @@ export const normalizeApiErrorMessage = (message: string): string => {
   if (lower.includes("unauthorized")) return "Unauthorized.";
   if (lower.includes("forbidden")) return "Forbidden.";
   if (lower.includes("not found")) return "Not found.";
-  if (lower.includes("required") || lower.includes("must be valid") || lower.includes("missing ")) {
-    return message;
-  }
-  return message || "Request failed.";
+  if (lower.includes("schema out of date")) return "Service temporarily unavailable. Please try again later.";
+  return publicValidationMessages.get(message) ?? "Request failed.";
 };
 
 export const statusFromErrorMessage = (message: string, fallback = 500): number => {
@@ -219,24 +236,24 @@ const codeFromErrorMessage = (message: string): string | null => {
 };
 
 export const errorResponse = (request: Request, error: unknown, fallback = 500): Response => {
-  const message = error instanceof Error ? error.message : String(error);
-  const explicitStatus = error && typeof error === "object" && "status" in error && typeof error.status === "number"
-    ? error.status
-    : null;
-  const explicitCode = error && typeof error === "object" && "code" in error && typeof error.code === "string"
-    ? error.code
-    : null;
+  const message = getErrorMessage(error);
+  const isPublicError = error instanceof ApiRequestError || error instanceof LibraryValidationError;
+  const publicMessage = isPublicError || error instanceof BasemapPreferenceError
+    ? error.message
+    : normalizeApiErrorMessage(message);
+  const explicitStatus = isPublicError ? error.status : null;
+  const explicitCode = isPublicError ? error.code : null;
   const code = explicitCode ?? codeFromErrorMessage(message);
   return withCors(
     request,
     json(
       code
         ? {
-            error: normalizeApiErrorMessage(message),
+            error: publicMessage,
             code,
           }
         : {
-            error: normalizeApiErrorMessage(message),
+            error: publicMessage,
           },
       { status: explicitStatus ?? statusFromErrorMessage(message, fallback) },
     ),
