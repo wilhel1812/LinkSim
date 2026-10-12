@@ -91,7 +91,7 @@ export const processTerrainJob = async (env: Env, jobId: string, requestUrl: str
     else if (!await failCalculationJobBeforeDeadline(
       env,
       jobId,
-      normalizeApiErrorMessage(error instanceof Error ? error.message : String(error)),
+      normalizeApiErrorMessage(error),
     )) await timeoutCalculationJob(env, jobId);
   } finally {
     if (timer !== undefined) clearTimeout(timer);

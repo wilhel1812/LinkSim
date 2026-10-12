@@ -182,11 +182,14 @@ const isRevokedAuthMessage = (message: string): boolean => {
     || lower.includes("identity is blocked by an administrator");
 };
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : typeof error === "string" ? error : "";
+
 export const isRevokedAuthError = (error: unknown): boolean =>
-  isRevokedAuthMessage(error instanceof Error ? error.message : String(error));
+  isRevokedAuthMessage(getErrorMessage(error));
 
 // These legacy validation messages are application-authored and contain no dynamic diagnostics.
-const publicValidationMessages = new Set([
+const publicValidationMessages = new Map([
   "Default frequency preset must be a string or null.",
   "Unknown default frequency preset.",
   "Simulation defaults preference must be an object or null.",
@@ -195,9 +198,10 @@ const publicValidationMessages = new Set([
   "Profile picture must be a valid http(s) URL.",
   "Username is already in use.",
   "Source and target owner must differ.",
-]);
+].map((message) => [message, message] as const));
 
-export const normalizeApiErrorMessage = (message: string): string => {
+export const normalizeApiErrorMessage = (error: unknown): string => {
+  const message = getErrorMessage(error);
   const lower = message.toLowerCase();
   if (isRevokedAuthMessage(message)) return "Session revoked by admin.";
   if (lower.includes("auth verification timed out")) return "Auth verification timed out.";
@@ -207,8 +211,7 @@ export const normalizeApiErrorMessage = (message: string): string => {
   if (lower.includes("forbidden")) return "Forbidden.";
   if (lower.includes("not found")) return "Not found.";
   if (lower.includes("schema out of date")) return "Service temporarily unavailable. Please try again later.";
-  if (publicValidationMessages.has(message)) return message;
-  return "Request failed.";
+  return publicValidationMessages.get(message) ?? "Request failed.";
 };
 
 export const statusFromErrorMessage = (message: string, fallback = 500): number => {
@@ -233,10 +236,10 @@ const codeFromErrorMessage = (message: string): string | null => {
 };
 
 export const errorResponse = (request: Request, error: unknown, fallback = 500): Response => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = getErrorMessage(error);
   const isPublicError = error instanceof ApiRequestError || error instanceof LibraryValidationError;
   const publicMessage = isPublicError || error instanceof BasemapPreferenceError
-    ? message
+    ? error.message
     : normalizeApiErrorMessage(message);
   const explicitStatus = isPublicError ? error.status : null;
   const explicitCode = isPublicError ? error.code : null;
