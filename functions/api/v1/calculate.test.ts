@@ -77,6 +77,14 @@ describe("api/v1/calculate", () => {
     return `${base.slice(0, -2)}${"x".repeat(size - new TextEncoder().encode(base).byteLength)}"}`;
   };
 
+  it("does not expose upstream diagnostics containing validation keywords", async () => {
+    analyzeTerrainLinkMock.mockRejectedValue(new Error("internal private_marker required connection secret"));
+    const response = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", body: JSON.stringify(mkPayload()),
+    }), { DB: {} }));
+    await expect(response.json()).resolves.toEqual({ error: "Request failed." });
+  });
+
   const bodyAtDepth = (depth: number): string => {
     let padding: unknown = 0;
     for (let level = 1; level < depth; level += 1) padding = [padding];

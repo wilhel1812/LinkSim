@@ -57,6 +57,8 @@ Use discovery script to collect current IDs and verify what exists:
 - `npm run tf:discover:staging`
 - `npm run tf:discover:prod`
 
+Discovery writes the inventory to the ignored output file selected by these commands. Console output reports completion without printing the inventory or configuration values. Direct script usage also needs an output path to retain the inventory.
+
 Fill import input files from examples:
 
 - `infra/terraform/environments/staging/imports.env`

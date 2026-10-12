@@ -1,5 +1,5 @@
-import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
-import { boundedJobError, ensureCalculationJobsTable, getAddressedCalculationJob, JOB_STATUS } from "../../_lib/calculationJobs";
+import { normalizeApiErrorMessage, errorResponse, handleOptions, json, withCors } from "../../_lib/http";
+import { ensureCalculationJobsTable, getAddressedCalculationJob, JOB_STATUS } from "../../_lib/calculationJobs";
 import type { Env } from "../../_lib/types";
 
 type Context = { request: Request; env: Env };
@@ -17,7 +17,7 @@ export const onRequestGet = async ({ request, env }: Context) => {
     if (job.status === JOB_STATUS.COMPLETED && job.result_json) {
       try { response.result = JSON.parse(job.result_json); } catch { response.result = job.result_json; }
     }
-    if (job.status === JOB_STATUS.FAILED && job.error_message) response.error = boundedJobError(job.error_message);
+    if (job.status === JOB_STATUS.FAILED && job.error_message) response.error = normalizeApiErrorMessage(job.error_message);
     if (job.status === JOB_STATUS.TIMED_OUT) response.error = "Job timed out before completion.";
     return withCors(request, json(response));
   } catch (error) { return errorResponse(request, error, 500); }

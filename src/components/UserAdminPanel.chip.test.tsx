@@ -272,17 +272,17 @@ it("marks migration progress unavailable when the directory load fails", async (
   expect(screen.queryByRole("progressbar", { name: "Authentication migration progress" })).not.toBeInTheDocument();
 });
 
-it("does not expose authentication migration progress to moderators", async () => {
+it("shows aggregate migration progress to moderators without per-user authentication details", async () => {
   mockStoreState.currentUser = { ...signedInUser, isModerator: true } as CloudUser;
-  vi.mocked(fetchUsers).mockResolvedValue([
-    { ...signedInUser, id: "user-1" } as CloudUser,
-  ]);
-
+  vi.mocked(fetchUserDirectory).mockResolvedValue({
+    users: [{ ...signedInUser, id: "user-1", authMigrationState: "migrated" } as CloudUser],
+    authMigrationAvailable: true,
+    authMigrationProgress: { migrated: 7, total: 11 },
+  });
   render(<UserAdminPanel renderMode="admin-inline" />);
-
-  await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1));
-  expect(screen.queryByRole("progressbar", { name: "Authentication migration progress" })).not.toBeInTheDocument();
-  expect(screen.queryByText(/accounts migrated/)).not.toBeInTheDocument();
+  expect(await screen.findByText("7 of 11 accounts migrated")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "Authentication migration progress" })).toHaveAttribute("aria-valuenow", "7");
+  expect(screen.queryByText("Migrated", { selector: ".auth-migration-state" })).not.toBeInTheDocument();
 });
 
 it("keeps the user directory usable but marks migration progress unavailable without the auth schema", async () => {

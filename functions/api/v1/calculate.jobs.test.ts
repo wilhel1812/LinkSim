@@ -139,7 +139,7 @@ describe("terrain calculation jobs", () => {
     await expect(processTerrainJob(envFor(db), "job", "https://linksim.link/api/v1/calculate/jobs")).resolves.toBeUndefined();
     expect(db.db.prepare("SELECT status, error_message FROM calculation_jobs WHERE id = 'job'").get()).toEqual({
       status: JOB_STATUS.FAILED,
-      error_message: "Transient D1 read failure",
+      error_message: "Request failed.",
     });
     expect(analyzeTerrainLinkMock).not.toHaveBeenCalled();
   });
