@@ -15,7 +15,7 @@ const storage = vi.hoisted(() => {
   return { data };
 });
 
-vi.mock("../lib/coverage", () => ({ buildCoverage: vi.fn(() => []), clearTerrainLossCache: vi.fn() }));
+vi.mock("../lib/coverage", () => ({ clearTerrainLossCache: vi.fn() }));
 vi.mock("../lib/elevationService", () => ({ fetchElevations: vi.fn(async () => [123]) }));
 
 describe("appStore persisted Library validation", () => {

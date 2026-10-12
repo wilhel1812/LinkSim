@@ -5,7 +5,6 @@ import {
   setAppStoreBridge,
   useCoverageStore,
 } from "./coverageStore";
-import * as coverageLib from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import type { Site, SrtmTile } from "../types/radio";
@@ -119,7 +118,6 @@ describe("coverageStore simulation progress phases", () => {
   });
 
   it("hands every area overlay to the canonical raster pipeline", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
 
     useCoverageStore.getState().recomputeCoverage();
     expect(useCoverageStore.getState().simulationProgressMode).toBe("indeterminate");
@@ -128,7 +126,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(180);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
     expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
@@ -143,7 +140,6 @@ describe("coverageStore simulation progress phases", () => {
   });
 
   it("runs once manually without enabling Auto calculate", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     useCoverageStore.getState().setAutoCalculateEnabled(false);
     useCoverageStore.getState().startManualCalculation();
 
@@ -152,13 +148,11 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
     expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
   });
 
   it("clears legacy coverage samples when handing off to the canonical raster", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     bridgeState.mapOverlayMode = "passfail";
     useCoverageStore.setState({
       coverageSamples: [{ lat: site.position.lat, lon: site.position.lon, valueDbm: -88 }],
@@ -168,14 +162,12 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
     expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
     expect(useCoverageStore.getState().coverageSamples).toEqual([]);
   });
 
   it("does not calculate or retain results when required terrain tiles remain unavailable", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     bridgeState.srtmTiles = completeTerrainTiles().slice(0, 1);
     useCoverageStore.setState({
       coverageSamples: [{ lat: site.position.lat, lon: site.position.lon, valueDbm: -80 }],
@@ -185,14 +177,12 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().coverageSamples).toEqual([]);
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("50 km");
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
   });
 
   it("settles a queued run when the requested terrain area exceeds the tile cap", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     const bridgeSetState = vi.fn();
     const wideSites = [-100, 0, 100].map((lon, index) => ({
       ...site,
@@ -214,7 +204,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState()).toMatchObject({
       coverageSamples: [],
       isSimulationRecomputing: false,
@@ -233,7 +222,6 @@ describe("coverageStore simulation progress phases", () => {
   });
 
   it("accepts zero-elevation Copernicus ocean cells as complete 100 km terrain", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     const terrainTiles = completeTerrainTiles(100);
     terrainTiles[0] = {
       ...terrainTiles[0],
@@ -248,7 +236,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().simulationErrorMessage).toBe("");
   });
 
@@ -289,14 +276,12 @@ describe("coverageStore simulation progress phases", () => {
   });
 
   it("defers coverage work until terrain loading has settled", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     bridgeState.isTerrainFetching = true;
 
     useCoverageStore.getState().recomputeCoverage();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
 
     bridgeState.isTerrainFetching = false;
@@ -307,12 +292,10 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
 
   it("keeps a manual Start waiting without committing coverage while terrain loads", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     bridgeState.isTerrainFetching = true;
     useCoverageStore.setState({ coverageSamples: [] });
 
@@ -320,7 +303,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().coverageSamples).toEqual([]);
     expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
 
@@ -332,7 +314,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
 
