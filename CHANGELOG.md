@@ -3,7 +3,11 @@
 ## [0.31.0] - Unreleased
 
 ### Added
+- Added 265 named Meshtastic 2.8.1 preset/region combinations, including Lite, Narrow and Tiny profiles, through the existing radio selectors. (#1257)
 - Show coverage area within the RX target and its line-of-sight subset in the Inspector for selected Sites, or all Simulation Sites when none are selected, without counting overlaps twice. Coverage estimates follow the existing calculation controls, radius, and Simulation Resolution. The Coverage group shows the current radius, clarifies that totals only apply to the calculated area, and shows an animated indicator while calculating. (#1260)
+
+### Changed
+- Fresh workspaces, starter/demo scenarios, new Simulations without a user default, and fallback/reset paths now use EU_N_868 NarrowFast Channel 1 while retaining the −130 dBm planning target. Existing explicit defaults, saved radio settings and the selectable Oslo profile remain unchanged. (#1257)
 
 ### Fixed
 - Let moderators view aggregate authentication migration progress in Admin → Users while preserving administrator-only account details and actions. (#1264)

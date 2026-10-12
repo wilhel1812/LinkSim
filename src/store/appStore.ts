@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { clearTerrainLossCache } from "../lib/coverage";
 import { normalizeCoverageResolution } from "../lib/coverageResolution";
 import { setAppStoreBridge, useCoverageStore } from "./coverageStore";
+import { NARROW_FAST_DEFAULT_PRESET as defaultRadioPreset } from "../lib/frequencyPresets.data";
 import { findPresetById } from "../lib/frequencyPlans";
 import {
   FALLBACK_SIMULATION_PRESET_ID,
@@ -1102,7 +1103,7 @@ const ensureMinimumTopology = (
               id: "link-1",
               fromSiteId: sites[0].id,
               toSiteId: sites[1].id,
-              frequencyMHz: 869.618,
+              frequencyMHz: defaultRadioPreset.frequencyMHz,
               name: `${sites[0].name} -> ${sites[1].name}`,
             },
           ]
@@ -1124,11 +1125,12 @@ const ensureMinimumTopology = (
           {
             id: "network-1",
             name: "Recovered Network",
-            frequencyMHz: 869.618,
-            bandwidthKhz: 62,
-            spreadFactor: 8,
-            codingRate: 5,
-            frequencyOverrideMHz: 869.618,
+            frequencyMHz: defaultRadioPreset.frequencyMHz,
+            bandwidthKhz: defaultRadioPreset.bandwidthKhz,
+            spreadFactor: defaultRadioPreset.spreadFactor,
+            codingRate: defaultRadioPreset.codingRate,
+            frequencyOverrideMHz: defaultRadioPreset.frequencyMHz,
+            regionCode: defaultRadioPreset.regionCode,
             memberships: sites.map((site) => ({
               siteId: site.id,
               systemId: systems[0].id,
@@ -2518,7 +2520,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const base = state.links[0];
         const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
         const inheritedFrequencyMHz =
-          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? 869.618;
+          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? defaultRadioPreset.frequencyMHz;
         remainingLinks = [
             {
               id: makeId("lnk"),
@@ -2582,7 +2584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!fromSite || !toSite) return;
     const base = state.links[0];
     const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
-    const inheritedFrequencyMHz = selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
+    const inheritedFrequencyMHz = selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? defaultRadioPreset.frequencyMHz;
     const autoName = `${fromSite.name} -> ${toSite.name}`;
     const id = makeId("lnk");
     const link: Link = {
@@ -2689,7 +2691,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const base = state.links[0];
         const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
         const inheritedFrequencyMHz =
-          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? 869.618;
+          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? defaultRadioPreset.frequencyMHz;
         const fallbackLink: Link = {
           id: makeId("lnk"),
           name: "Auto Link",
@@ -2789,7 +2791,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedNetwork?.frequencyOverrideMHz ??
         selectedNetwork?.frequencyMHz ??
         state.links[0]?.frequencyMHz ??
-        869.618;
+        defaultRadioPreset.frequencyMHz;
 
       const nextNetworks =
         state.networks.length > 0
@@ -2805,10 +2807,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                 id: makeId("network"),
                 name: "Local Mesh",
                 frequencyMHz: inheritedFrequencyMHz,
-                bandwidthKhz: 62,
-                spreadFactor: 8,
-                codingRate: 5,
+                bandwidthKhz: defaultRadioPreset.bandwidthKhz,
+                spreadFactor: defaultRadioPreset.spreadFactor,
+                codingRate: defaultRadioPreset.codingRate,
                 frequencyOverrideMHz: inheritedFrequencyMHz,
+                regionCode: defaultRadioPreset.regionCode,
                 memberships: nextSites.map((site) => ({ siteId: site.id, systemId: nextSystems[0].id })),
               },
             ];
@@ -4216,7 +4219,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (sites.length >= 2) {
       const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
       const inheritedFrequencyMHz =
-        selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
+        selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? defaultRadioPreset.frequencyMHz;
       return {
         id: "__auto__",
         name: "Auto Link",
