@@ -455,13 +455,13 @@ describe("MapView overlay handoff", () => {
 
     act(() => mapMock.props?.onError?.({ sourceId: "openmaptiles" }));
     expect(mapMock.props?.mapStyle).not.toBe("https://maps.test/broken.json");
-    act(() => useAppStore.getState().setCurrentUser({
+    await act(async () => { await useAppStore.getState().setCurrentUser({
       ...user,
       basemapPreferences: {
         version: 1,
         customSources: [{ id: "field", name: "Field", kind: "style", lightUrl: "https://maps.test/fixed.json", attribution: "Field" }],
       },
-    }));
+    }); });
 
     await waitFor(() => expect(mapMock.props?.mapStyle).toBe("https://maps.test/fixed.json"));
   });

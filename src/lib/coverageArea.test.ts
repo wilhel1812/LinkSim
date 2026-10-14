@@ -140,3 +140,29 @@ describe("coverage area union", () => {
     expect(await buildCoverageAreaAsync({ ...input(), sites: [] })).toBeNull();
   });
 });
+
+
+describe("coverage area terrain certification", () => {
+  it("avoids exhaustive path sampling only after certifying the whole source-to-grid rectangle", async () => {
+    vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockReturnValue(metrics(-80));
+    const sampler = vi.fn(() => 0);
+    const certificate = vi.fn(() => true);
+    const current = { ...input(), dimensions: { width: 97, height: 97 }, adaptive: true, terrainSampler: sampler };
+    const baseline = await buildCoverageAreaAsync(current);
+    const baselineCalls = sampler.mock.calls.length;
+    sampler.mockClear();
+    const certified = await buildCoverageAreaAsync({ ...current, terrainCompleteness: certificate });
+    expect(certified!.totalCoverageKm2).toBe(baseline!.totalCoverageKm2);
+    expect(certified!.clearPathCoverageKm2).toBe(baseline!.clearPathCoverageKm2);
+    expect(sampler.mock.calls.length).toBeLessThan(baselineCalls / 10);
+    expect(certificate).toHaveBeenCalledWith(current.bounds, undefined);
+    await buildCoverageAreaAsync({ ...current, sites: [{ ...site, position: { lat: 61, lon: 9 } }], terrainCompleteness: certificate });
+    expect(certificate).toHaveBeenLastCalledWith({ ...current.bounds, maxLat: 61, minLon: 9 }, undefined);
+  });
+  it("retains exhaustive validation when completeness cannot be certified", async () => {
+    vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockReturnValue(metrics(-80));
+    await expect(buildCoverageAreaAsync({ ...input(), terrainCompleteness: () => false,
+      terrainSampler: (lat: number, lon: number) => Math.abs(lat - 60) < 1e-8 && Math.abs(lon - 10) < 1e-8 ? null : 0,
+    })).rejects.toThrow("Terrain data is unavailable");
+  });
+});

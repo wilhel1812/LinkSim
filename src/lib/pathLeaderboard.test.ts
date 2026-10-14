@@ -9,7 +9,7 @@ const { analyzeLinkMock, sampleSrtmElevationMock } = vi.hoisted(() => ({
 vi.mock("./propagation", () => ({ analyzeLink: analyzeLinkMock }));
 vi.mock("./srtm", () => ({ sampleSrtmElevation: sampleSrtmElevationMock }));
 
-import { buildPathLeaderboardCandidate } from "./pathLeaderboard";
+import { buildPathLeaderboardCandidate, submitPathLeaderboardCandidate, createPathLeaderboardSubmitter } from "./pathLeaderboard";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 
 const fromSite: Site = {
@@ -144,4 +144,55 @@ describe("path leaderboard candidate gate", () => {
       reason: "preview-active",
     });
   });
+});
+
+describe("path leaderboard submission", () => {
+  const candidate = () => {
+    const result = buildPathLeaderboardCandidate(baseInput());
+    if (!result.ok) throw new Error("fixture");
+    return result.candidate;
+  };
+  it("returns stored/skipped outcomes and distinguishes unexpected HTTP and transport failures", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, stored: true })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, stored: false, reason: "stale_simulation" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, stored: false, reason: "private_simulation" })))
+      .mockResolvedValueOnce(new Response("internal", { status: 503 }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      expect(await submitPathLeaderboardCandidate(candidate())).toEqual({ status: "stored" });
+      expect(await submitPathLeaderboardCandidate(candidate())).toEqual({ status: "skipped", reason: "stale_simulation" });
+      expect(await submitPathLeaderboardCandidate(candidate())).toEqual({ status: "skipped", reason: "private_simulation" });
+      expect(await submitPathLeaderboardCandidate(candidate())).toEqual({ status: "retryable" });
+      expect(await submitPathLeaderboardCandidate(candidate())).toEqual({ status: "retryable" });
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("deduplicates in-flight and terminal outcomes but allows two bounded transient attempts", async () => {
+    let finish!: (value: { status: "stored" }) => void;
+    const submit = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue({ status: "retryable" });
+    let now = 0;
+    const run = createPathLeaderboardSubmitter(submit, () => now);
+    const first = run("stored", candidate());
+    await run("stored", candidate()); expect(submit).toHaveBeenCalledTimes(1);
+    finish({ status: "stored" }); await first;
+    await run("stored", candidate()); expect(submit).toHaveBeenCalledTimes(1);
+    await run("retry", candidate()); expect(submit).toHaveBeenCalledTimes(2);
+    await run("retry", candidate()); expect(submit).toHaveBeenCalledTimes(2);
+    now = 6000; await run("retry", candidate()); expect(submit).toHaveBeenCalledTimes(3);
+    now = 12000; await run("retry", candidate()); expect(submit).toHaveBeenCalledTimes(3);
+  });
+  it("never repeatedly submits an expected rejection", async () => {
+    const submit = vi.fn().mockResolvedValue({ status: "skipped", reason: "stale_simulation" });
+    const run = createPathLeaderboardSubmitter(submit);
+    await run("stale", candidate()); await run("stale", candidate());
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+});
+
+it("does not send an auto-generated analysis link as a saved Path id", () => {
+  const result = buildPathLeaderboardCandidate({ ...baseInput(), link: { ...link, id: "__auto__" } });
+  expect(result.ok).toBe(true);
+  if (result.ok) expect(result.candidate.linkId).toBeNull();
 });

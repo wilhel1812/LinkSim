@@ -1,3 +1,4 @@
+import { isExpectedPathLeaderboardRejection } from "../../../src/types/pathLeaderboard";
 import { verifyAuth } from "../../_lib/auth";
 import { assertUserAccess, ensureUser } from "../../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
@@ -40,7 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       normalizeCandidate(await request.json()),
     );
 
-    return withCors(request, json(result, { status: result.ok ? 200 : 400 }));
+    return withCors(request, json(result, { status: result.ok || isExpectedPathLeaderboardRejection(result.reason) ? 200 : 400 }));
   } catch (error) {
     return errorResponse(request, error, 400);
   }
