@@ -269,8 +269,9 @@ export function UserAdminPanel({
     setUserDirectoryState("loading");
     try {
       const current = refreshProfile ? await fetchMe() : currentUser;
-      if (!current || scope !== accountScopeRef.current) return;
-      if (refreshProfile) setCurrentUser(current);
+      if (!current || scope !== accountScopeRef.current || current.id !== useAppStore.getState().currentUser?.id) return;
+      const prepared = refreshProfile ? await setCurrentUser(current) : true;
+      if (prepared === false || prepared === null) return;
       if (current.isAdmin) {
         const [directory, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUserDirectory(),

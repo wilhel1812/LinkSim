@@ -16,7 +16,7 @@ import {
 import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
-import { buildPathLeaderboardCandidate, submitPathLeaderboardCandidate } from "../lib/pathLeaderboard";
+import { buildPathLeaderboardCandidate, createPathLeaderboardSubmitter, isPathLeaderboardReady } from "../lib/pathLeaderboard";
 import { buildProfile } from "../lib/propagation";
 import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
@@ -253,7 +253,9 @@ export function LinkProfileChart({
   const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
   const autoFetchAttemptRef = useRef("");
-  const leaderboardSubmissionSignaturesRef = useRef<Set<string>>(new Set());
+  const leaderboardUserId = useAppStore((state) => state.currentUser?.id);
+  const leaderboardReady = useAppStore(isPathLeaderboardReady);
+  const submitLeaderboard = useMemo(() => createPathLeaderboardSubmitter(), [leaderboardUserId]);
   const terrainSignature = `${requiredTerrainTileKeys.join(",")}|missing:${missingTerrainTileKeys.join(",")}`;
   const terrainFillGradientId = useMemo(
     () => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`,
@@ -513,7 +515,7 @@ export function LinkProfileChart({
   ]);
 
   useEffect(() => {
-    if (!activeSimulationPreset) return;
+    if (!activeSimulationPreset || !leaderboardReady) return;
     if (terrainSegmentStates.length !== Math.max(0, profile.length - 1)) return;
 
     const result = buildPathLeaderboardCandidate({
@@ -536,17 +538,9 @@ export function LinkProfileChart({
     });
     if (!result.ok) return;
 
-    const submitted = leaderboardSubmissionSignaturesRef.current;
-    if (submitted.has(result.signature)) return;
-    submitted.add(result.signature);
-    if (submitted.size > 48) {
-      const oldest = submitted.values().next().value;
-      if (oldest) submitted.delete(oldest);
-    }
-    void submitPathLeaderboardCandidate(result.candidate).catch(() => {
-      // Leaderboard submission is opportunistic; normal profile analysis should not surface failures.
-    });
+    void submitLeaderboard(result.signature, result.candidate);
   }, [
+    leaderboardReady, submitLeaderboard,
     activeSimulationPreset,
     effectiveLink,
     environmentLossDb,

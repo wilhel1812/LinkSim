@@ -64,7 +64,7 @@ export function SettingsPanel({ initialSection, onClose, onSignedOut, suspended 
         if (cancelled) return;
         meRef.current = current;
         setMe(current);
-        setCurrentUser(current);
+        await setCurrentUser(current);
       } catch (error) {
         if (cancelled) return;
         setLoadError(getUiErrorMessage(error));
@@ -119,11 +119,13 @@ export function SettingsPanel({ initialSection, onClose, onSignedOut, suspended 
   }, [suspended]);
 
   const handleMeUpdated = useCallback(
-    (user: CloudUser, patch?: CloudUserProfilePatch) => {
+    async (user: CloudUser, patch?: CloudUserProfilePatch) => {
+      if (useAppStore.getState().currentUser?.id !== user.id) return;
       const next = mergeCloudUserProfilePatch(meRef.current, user, patch);
       meRef.current = next;
       setMe(next);
-      setCurrentUser(next);
+      const prepared = await setCurrentUser(next);
+      if (prepared === false || prepared === null) return;
       setAuthState("signed_in");
     },
     [setAuthState, setCurrentUser],
@@ -145,7 +147,7 @@ export function SettingsPanel({ initialSection, onClose, onSignedOut, suspended 
       clearAuthenticatedSessionMarker();
       meRef.current = null;
       setMe(null);
-      setCurrentUser(null);
+      await setCurrentUser(null);
       setAuthState("signed_out");
       window.location.href = "/cdn-cgi/access/logout";
     } catch (error) {

@@ -897,7 +897,9 @@ export function AppShell() {
         defaultFrequencyPresetId: importResult.preference.presetId,
         simulationDefaultsPreference: importResult.preference,
       });
-      setCurrentUser(updated);
+      if (useAppStore.getState().currentUser?.id !== updated.id) return;
+      const prepared = await setCurrentUser(updated);
+      if (prepared === false || prepared === null) return;
       setAuthState("signed_in");
       clearPresetImport();
       pushNotification({ id: "radio-preset-imported", message: `Saved radio preset: ${importResult.importedName}`, tone: "info" });
@@ -987,7 +989,7 @@ export function AppShell() {
   }, [clearAuthRetryTimer, closeSettings, removeNotificationImmediately, setAuthState, setCurrentUser]);
 
   const applyRecoveredProfile = useCallback(
-    (profile: CloudUser, reason: "initial" | "retry" | "online") => {
+    async (profile: CloudUser, reason: "initial" | "retry" | "online") => {
       clearAuthRetryTimer();
       authRecoveryActiveRef.current = false;
       authRecoveryDisabledRef.current = false;
@@ -1011,7 +1013,13 @@ export function AppShell() {
         setLegacyMigrationStage("failed");
         return;
       }
-      setCurrentUser(profile);
+      const prepared = await setCurrentUser(profile);
+      if (prepared === null) return;
+      if (prepared === false) {
+        setAccessDiagnosticMessage(useAppStore.getState().syncErrorMessage);
+        setAccessState("readonly");
+        return;
+      }
       setAuthState("signed_in");
       hadAuthenticatedSessionRef.current = true;
       markAuthenticatedSession();
@@ -1068,9 +1076,16 @@ export function AppShell() {
   }, [applyRecoveredProfile, legacyMigrationExistingProfile]);
 
   const completeUsernameSetup = useCallback(
-    (profile: CloudUser) => {
+    async (profile: CloudUser) => {
+      if (useAppStore.getState().currentUser?.id !== profile.id) return;
       setShowUsernameSetup(false);
-      setCurrentUser(profile);
+      const prepared = await setCurrentUser(profile);
+      if (prepared === null) return;
+      if (prepared === false) {
+        setAccessDiagnosticMessage(useAppStore.getState().syncErrorMessage);
+        setAccessState("readonly");
+        return;
+      }
       setAuthState("signed_in");
       setActiveUserId(profile.id);
       hadAuthenticatedSessionRef.current = true;
@@ -1310,7 +1325,7 @@ export function AppShell() {
           const profile = await fetchMe({ timeoutMs: ACCESS_FETCH_TIMEOUT_MS });
           if (!isCurrentRun()) return;
           window.clearTimeout(timeoutId);
-          applyRecoveredProfile(profile, reason);
+          await applyRecoveredProfile(profile, reason);
         } catch (error) {
           if (authCheckGenerationRef.current !== runId || timedOut) return;
           window.clearTimeout(timeoutId);
