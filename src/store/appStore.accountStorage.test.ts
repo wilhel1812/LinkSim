@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CloudUser } from "../lib/cloudUser";
+import type { PathLeaderboardCandidate } from "../types/pathLeaderboard";
 
 const cloud = vi.hoisted(() => ({ fetch: vi.fn(), push: vi.fn() }));
 vi.mock("../lib/cloudLibrary", () => ({
@@ -205,6 +206,17 @@ it("keeps healthy localStorage preparation working when optional CacheStorage is
   expect(app.getState().currentUser?.id).toBe("a");
 });
 
+const setRetainedSimulation = (app: Awaited<ReturnType<typeof store>>, simulationId: string, updatedAt: string) => {
+  const state = app.getState();
+  app.setState({ simulationPresets: [{ id: simulationId, name: "Retained Simulation",
+    updatedAt: updatedAt, ownerUserId: "a", effectiveRole: "owner", visibility: "public",
+    snapshot: { sites: [draft], links: [], systems: [], networks: [], selectedSiteId: draft.id,
+      selectedLinkId: "", selectedNetworkId: "", propagationModel: state.propagationModel,
+      selectedFrequencyPresetId: state.selectedFrequencyPresetId, rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
+      environmentLossDb: state.environmentLossDb, propagationEnvironment: state.propagationEnvironment,
+      autoPropagationEnvironment: state.autoPropagationEnvironment, terrainDataset: state.terrainDataset } }] });
+};
+
 it("submits a retained Path only after sign-in initialization uploads its local revision", async () => {
   const { isPathLeaderboardReady, createPathLeaderboardSubmitter } = await import("../lib/pathLeaderboard");
   const app = await store();
@@ -213,15 +225,8 @@ it("submits a retained Path only after sign-in initialization uploads its local 
   const candidate = { simulationId: "local-simulation", simulationUpdatedAt: "2026-10-14T10:00:00Z",
     fromSiteId: "a", toSiteId: "b", distanceKm: 20, rxAfterEnvLossDbm: -100, rxMarginDb: 20,
     terrainObstructed: false, terrainDataset: "srtm", terrainTileSignature: "terrain" };
-  const state = app.getState();
-  app.setState({ simulationPresets: [{ id: candidate.simulationId, name: "Retained Simulation",
-    updatedAt: candidate.simulationUpdatedAt, ownerUserId: "a", effectiveRole: "owner", visibility: "public",
-    snapshot: { sites: [draft], links: [], systems: [], networks: [], selectedSiteId: draft.id,
-      selectedLinkId: "", selectedNetworkId: "", propagationModel: state.propagationModel,
-      selectedFrequencyPresetId: state.selectedFrequencyPresetId, rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
-      environmentLossDb: state.environmentLossDb, propagationEnvironment: state.propagationEnvironment,
-      autoPropagationEnvironment: state.autoPropagationEnvironment, terrainDataset: state.terrainDataset } }] });
-  const submit = vi.fn(async () => ({ status: "stored" as const }));
+  setRetainedSimulation(app, candidate.simulationId, candidate.simulationUpdatedAt);
+  const submit = vi.fn(async (_candidate: PathLeaderboardCandidate) => ({ status: "stored" as const }));
   const submitPath = createPathLeaderboardSubmitter(submit);
   const unsubscribe = app.subscribe((state) => {
     if (isPathLeaderboardReady(state)) void submitPath("same-local-revision", candidate);
@@ -250,4 +255,89 @@ it("submits a retained Path only after sign-in initialization uploads its local 
     await app.getState().setCurrentUser(user("b"));
     expect(isPathLeaderboardReady(app.getState())).toBe(false);
   } finally { unsubscribe(); }
+});
+
+const syncedRetainedSimulation = async () => {
+  const { isPathLeaderboardReady } = await import("../lib/pathLeaderboard");
+  const app = await store();
+  setRetainedSimulation(app, "local-simulation", "2026-01-01T00:00:00Z");
+  app.setState({ isOnline: true });
+  await app.getState().setCurrentUser(user("a"));
+  await app.getState().initializeCloudSync();
+  await vi.advanceTimersByTimeAsync(3000);
+  await vi.waitFor(() => expect(isPathLeaderboardReady(app.getState())).toBe(true));
+  app.setState({ selectedScenarioId: "local-simulation", sites: [draft] });
+  return app;
+};
+
+it.each(["snapshot", "metadata", "rename", "overwrite", "save"].flatMap((mutation) =>
+  [false, true].map((editDuringUpload) => ({ mutation, editDuringUpload })),
+))("blocks $mutation edits until their revision uploads (edit during upload: $editDuringUpload)", async ({ mutation, editDuringUpload }) => {
+  const { isPathLeaderboardReady, createPathLeaderboardSubmitter } = await import("../lib/pathLeaderboard");
+  const app = await syncedRetainedSimulation();
+  const originalRevision = app.getState().simulationPresets[0].updatedAt;
+  const edit = () => {
+    const state = app.getState();
+    const preset = state.simulationPresets.find((entry) => entry.id === "local-simulation")!;
+    if (mutation === "snapshot") state.updateCurrentSimulationSnapshot();
+    else if (mutation === "metadata") state.updateSimulationPresetEntry(preset.id, { description: `Edited ${Date.now()}` });
+    else if (mutation === "rename") state.renameSimulationPreset(preset.id, `Renamed ${Date.now()}`);
+    else if (mutation === "overwrite") state.overwriteSimulationPreset(preset.id);
+    else state.saveCurrentSimulationPreset(preset.name);
+  };
+  const submit = vi.fn(async (_candidate: PathLeaderboardCandidate) => ({ status: "stored" as const }));
+  const submitPath = createPathLeaderboardSubmitter(submit);
+  const unsubscribe = app.subscribe((state) => {
+    const preset = state.simulationPresets[0];
+    if (preset.updatedAt !== originalRevision && isPathLeaderboardReady(state)) {
+      void submitPath(preset.updatedAt, { simulationId: preset.id, simulationUpdatedAt: preset.updatedAt,
+        fromSiteId: "a", toSiteId: "b", distanceKm: 20, rxAfterEnvLossDbm: -100, rxMarginDb: 20,
+        terrainObstructed: false, terrainDataset: "srtm", terrainTileSignature: "terrain" });
+    }
+  });
+  try {
+    edit();
+    // No AppShell effect has scheduled a push yet.
+    expect(isPathLeaderboardReady(app.getState())).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
+    let releasePush!: () => void;
+    if (editDuringUpload) cloud.push.mockImplementationOnce(() => new Promise<void>((resolve) => { releasePush = resolve; }));
+    app.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(3000);
+    if (editDuringUpload) {
+      await vi.waitFor(() => expect(releasePush).toBeTypeOf("function"));
+      app.setState({ environmentLossDb: app.getState().environmentLossDb + 1 });
+      edit();
+      // Even when the parent effect is deferred, the old upload cannot clear this edit.
+      releasePush();
+      await vi.waitFor(() => expect(app.getState().syncBusy).toBe(false));
+      expect(isPathLeaderboardReady(app.getState())).toBe(false);
+      expect(submit).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(3000);
+    }
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const latest = app.getState().simulationPresets[0];
+    expect(submit.mock.calls[0][0]).toEqual(expect.objectContaining({ simulationUpdatedAt: latest.updatedAt }));
+    expect(cloud.push.mock.lastCall?.[0].simulationPresets).toEqual([expect.objectContaining({ updatedAt: latest.updatedAt })]);
+  } finally { unsubscribe(); }
+});
+
+it.each(["copy", "blank", "saveNew", "restore"])("keeps %s revisions pending until their upload completes", async (mutation) => {
+  const { isPathLeaderboardReady } = await import("../lib/pathLeaderboard");
+  const app = await syncedRetainedSimulation();
+  const state = app.getState();
+  let id: string | null = "local-simulation";
+  if (mutation === "copy") id = state.createSimulationCopyFromCurrent("New copy");
+  else if (mutation === "blank") id = state.createBlankSimulationPreset("New blank");
+  else if (mutation === "saveNew") id = state.saveCurrentSimulationPreset("New saved Simulation");
+  else {
+    app.setState({ currentUser: { ...user("a"), isAdmin: true } });
+    await state.restoreSimulationPreset(id!);
+  }
+  expect(id).toBeTruthy();
+  expect(isPathLeaderboardReady(app.getState())).toBe(false);
+  app.getState().performCloudSyncPush();
+  await vi.advanceTimersByTimeAsync(3000);
+  await vi.waitFor(() => expect(isPathLeaderboardReady(app.getState())).toBe(true));
+  expect(cloud.push.mock.lastCall?.[0].simulationPresets).toContainEqual(expect.objectContaining({ id }));
 });

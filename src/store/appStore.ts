@@ -164,6 +164,13 @@ const markDirtySim = (id: string): void => {
   dirtySimIds.add(id);
 };
 
+// Publish this patch with every local saved Simulation revision. It closes the
+// gap before React schedules sync and protects later edits from older uploads.
+const pendingSimulationMutation = (id: string) => {
+  markDirtySim(id);
+  return { syncPending: true, pendingChangesCount: recordLocalMutation() };
+};
+
 const resolveDescriptionUpdate = (
   currentDescription: string | undefined,
   descriptionPatch: string | undefined,
@@ -3087,13 +3094,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
         effectiveRole: existing?.effectiveRole ?? "owner",
       };
-      markDirtySim(nextPreset.id);
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
       if (normalized.addedCount > 0) {
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
+        ...pendingSimulationMutation(nextPreset.id),
         simulationPresets: next,
         siteLibrary: mergedLibrary,
         sites: normalized.sites,
@@ -3156,13 +3163,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
         effectiveRole: "owner",
       };
-      markDirtySim(nextPreset.id);
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
       if (normalized.addedCount > 0) {
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
+        ...pendingSimulationMutation(nextPreset.id),
         simulationPresets: next,
         ...(normalized.addedCount > 0 ? { siteLibrary: mergedLibrary } : {}),
       };
@@ -3226,7 +3233,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      return { ...pendingSimulationMutation(nextPreset.id), simulationPresets: next };
     });
     return get().simulationPresets[0]?.id ?? null;
   },
@@ -3284,6 +3291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
+        ...pendingSimulationMutation(nextPreset.id),
         simulationPresets: next,
         siteLibrary: mergedLibrary,
         sites: normalized.sites,
@@ -3356,9 +3364,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (normalizedSites.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
     }
-    markDirtySim(selectedScenarioId);
     writeStorage(SIM_PRESETS_KEY, newPresets);
-    set({ simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
+    set({ ...pendingSimulationMutation(selectedScenarioId),
+      simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
   loadSimulationPreset: (presetId) => {
@@ -3566,7 +3574,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const user = requireAuth(currentUser, "renameSimulationPreset");
     if (!user) return;
     const existing = get().simulationPresets.find((preset) => preset.id === presetId);
-    if (existing && !canEditItem(existing, user)) {
+    if (!existing) return;
+    if (!canEditItem(existing, user)) {
       console.warn(`[appStore] renameSimulationPreset: User ${user.id} cannot edit simulation ${presetId}`);
       return;
     }
@@ -3597,7 +3606,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : preset,
       );
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      return { ...pendingSimulationMutation(presetId), simulationPresets: next };
     });
   },
   updateSimulationPresetEntry: (presetId, patch) => {
@@ -3605,7 +3614,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const user = requireAuth(currentUser, "updateSimulationPresetEntry");
     if (!user) return;
     const existing = get().simulationPresets.find((preset) => preset.id === presetId);
-    if (existing && !canEditItem(existing, user)) {
+    if (!existing) return;
+    if (!canEditItem(existing, user)) {
       console.warn(`[appStore] updateSimulationPresetEntry: User ${user.id} cannot edit simulation ${presetId}`);
       return;
     }
@@ -3614,7 +3624,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!candidate) return;
       if (hasDuplicateSimulationName(get().simulationPresets, candidate, presetId)) return;
     }
-    markDirtySim(presetId);
     set((state) => {
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
@@ -3676,7 +3685,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ),
           }
         : {};
-      return { simulationPresets: next, ...activeAppearance };
+      return { ...pendingSimulationMutation(presetId), simulationPresets: next, ...activeAppearance };
     });
   },
   applyDeletedSimulationTombstones: (presetIds) => {
@@ -3744,7 +3753,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         preset.id === presetId ? { ...preset, status: "active" as const, updatedAt: new Date().toISOString() } : preset,
       );
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      return { ...pendingSimulationMutation(presetId), simulationPresets: next };
     });
     lastSyncedPayloadDigest = null;
     localStorage.removeItem(SYNC_DIGEST_KEY);
