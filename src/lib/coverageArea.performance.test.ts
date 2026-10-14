@@ -2,11 +2,11 @@ import { expect, it } from "vitest";
 import { buildCoverageAreaAsync } from "./overlayRaster";
 import { computeCalibratedOverlayGridDimensions } from "./coverage";
 import { buildBufferedSelectionArea } from "./simulationOverlayRadius";
-import { isSrtmAreaComplete, sampleSrtmElevation } from "./srtm";
+import { isSrtmAreaCompleteAsync, sampleSrtmElevation } from "./srtm";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Site, SrtmTile } from "../types/radio";
 
-it("preserves two-Site 20 km 2× totals with at least 80% fewer terrain lookups", async () => {
+it("preserves two-Site 20 km 2× totals with at least 80% fewer total DEM reads", async () => {
   const sites: Site[] = [
     { id: "a", name: "A", position: { lat: 59.9, lon: 10.65 }, groundElevationM: 100,
       antennaHeightM: 15, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
@@ -22,6 +22,13 @@ it("preserves two-Site 20 km 2× totals with at least 80% fewer terrain lookups"
   const area = buildBufferedSelectionArea(sites, 20)!;
   const dimensions = computeCalibratedOverlayGridDimensions(42, area.bounds, "passfail");
   let lookups = 0;
+  let certificateReads = 0;
+  const certificateTiles = tiles.map((tile) => ({ ...tile, elevations: new Proxy(tile.elevations, {
+    get(target, key) {
+      if (typeof key === "string" && /^\d+$/.test(key)) certificateReads += 1;
+      return Reflect.get(target, key, target);
+    },
+  }) }));
   const input = {
     bounds: area.bounds, dimensions, sites, frequencyMHz: 868,
     propagationEnvironment: defaultPropagationEnvironment(), rxTargetDbm: -130,
@@ -30,11 +37,16 @@ it("preserves two-Site 20 km 2× totals with at least 80% fewer terrain lookups"
     context: { phase: "area-performance", signature: "area-performance", frameBudgetMs: 14 },
   };
   // Use separate cold metric-cache keys so the optimization cannot pass through RF cache reuse.
+  const referenceStarted = performance.now();
   const reference = await buildCoverageAreaAsync({ ...input, terrainCacheKey: "performance-reference" });
+  const referenceMs = performance.now() - referenceStarted;
   const referenceLookups = lookups;
   lookups = 0;
+  const optimizedStarted = performance.now();
   const optimized = await buildCoverageAreaAsync({ ...input, terrainCacheKey: "performance-certified",
-    terrainCompleteness: (bounds) => isSrtmAreaComplete(tiles, bounds) });
+    terrainCompleteness: (bounds, context) => isSrtmAreaCompleteAsync(certificateTiles, bounds, context) });
   expect(optimized).toEqual(reference);
-  expect(lookups).toBeLessThan(referenceLookups * 0.2);
+  expect(certificateReads).toBeGreaterThan(0);
+  expect(lookups + certificateReads).toBeLessThan(referenceLookups * 0.2);
+  expect(performance.now() - optimizedStarted).toBeLessThan(referenceMs * 0.5);
 }, 60_000);

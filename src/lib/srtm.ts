@@ -2,6 +2,7 @@ import type { SrtmTile } from "../types/radio";
 import { choosePreferredTerrainTile } from "./terrainTileRank";
 import { normalizeLongitude } from "./terrainTiles";
 import { createLruCache, type LruCache } from "./lruCache";
+import { OverlayTaskCancelledError, runCooperativeLoop, type OverlayTaskContext } from "./overlayRaster";
 import type { CoverageGridBounds } from "./coverage";
 
 const inTile = (tile: SrtmTile, lat: number, lon: number): boolean =>
@@ -145,7 +146,10 @@ const AREA_COMPLETENESS_CACHE = new WeakMap<ReadonlyArray<SrtmTile>, LruCache<bo
  * A failed proof is inconclusive: callers must retain exact path validation.
  * Tile arrays/data are immutable snapshots, as required by tileLookupFor.
  */
-export const isSrtmAreaComplete = (tiles: ReadonlyArray<SrtmTile>, bounds: CoverageGridBounds): boolean => {
+export const isSrtmAreaCompleteAsync = async (
+  tiles: ReadonlyArray<SrtmTile>, bounds: CoverageGridBounds, context?: OverlayTaskContext,
+): Promise<boolean> => {
+  if (context?.shouldCancel?.()) throw new OverlayTaskCancelledError();
   // Keep dateline and malformed bounds on the existing dateline-safe path sampler.
   if (!Object.values(bounds).every(Number.isFinite) || bounds.minLat > bounds.maxLat ||
       bounds.minLon > bounds.maxLon || bounds.minLon <= -180 || bounds.maxLon >= 180 ||
@@ -175,14 +179,24 @@ export const isSrtmAreaComplete = (tiles: ReadonlyArray<SrtmTile>, bounds: Cover
           tile.elevations.length !== width * height) { complete = false; break; }
       const first = tileGridPosition(tile, Math.min(maxLat, latStart + 1), Math.max(minLon, lonStart));
       const last = tileGridPosition(tile, Math.max(minLat, latStart), Math.min(maxLon, lonStart + 1));
-      for (let row = first.row; row <= last.row && complete; row += 1) {
-        for (let col = first.col; col <= last.col; col += 1) {
+      const scanWidth = last.col - first.col + 1;
+      const totalCells = scanWidth * (last.row - first.row + 1);
+      // Bound each cooperative callback even for very wide DEMs. Reuse the raster
+      // scheduler's frame budget and cancellation instead of blocking on a whole tile.
+      const cellsPerChunk = 256;
+      await runCooperativeLoop(Math.ceil(totalCells / cellsPerChunk), (chunk) => {
+        if (!complete) return;
+        const end = Math.min(totalCells, (chunk + 1) * cellsPerChunk);
+        for (let index = chunk * cellsPerChunk; index < end; index += 1) {
+          const row = first.row + Math.floor(index / scanWidth);
+          const col = first.col + index % scanWidth;
           const raw = tile.elevations[row * width + col];
           if (!Number.isFinite(raw) || raw <= -32760) { complete = false; break; }
         }
-      }
+      }, context);
     }
   }
+  if (context?.shouldCancel?.()) throw new OverlayTaskCancelledError();
   cache.set(key, complete);
   return complete;
 };

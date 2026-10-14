@@ -26,7 +26,7 @@ import {
 import { resolveSimulationSitesForSelection } from "../lib/simulationArea";
 import { formatCompactCount } from "../lib/locale";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
-import { isSrtmAreaComplete, sampleSrtmElevation } from "../lib/srtm";
+import { isSrtmAreaCompleteAsync, sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
 import { configureMapLibreWorker } from "../lib/maplibreWorker";
@@ -2012,7 +2012,7 @@ export function MapView({
             frequencyMHz: meshExtensionFrequencyMHz, propagationEnvironment,
             rxTargetDbm: rxSensitivityTargetDbm, environmentLossDb,
             terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-            terrainCompleteness: (bounds) => isSrtmAreaComplete(srtmTiles, bounds),
+            terrainCompleteness: (bounds, context) => isSrtmAreaCompleteAsync(srtmTiles, bounds, context),
             terrainSamples: selectedGridSize, pointMask: overlayPointMask,
             adaptive: true, terrainCacheKey: areaTerrainCacheKey,
             context: { phase: "coverage-area", signature: areaSignature,

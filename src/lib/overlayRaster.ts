@@ -223,7 +223,7 @@ const throwIfCancelled = (context?: OverlayTaskContext): void => {
   if (context?.shouldCancel?.()) throw new OverlayTaskCancelledError();
 };
 
-const runCooperativeLoop = async (
+export const runCooperativeLoop = async (
   total: number,
   runner: (index: number) => void,
   context?: OverlayTaskContext,
@@ -1188,7 +1188,7 @@ export type CoverageAreaInput = {
   context?: OverlayTaskContext;
   adaptive?: boolean;
   terrainCacheKey?: string;
-  terrainCompleteness?: (bounds: TerrainBounds) => boolean;
+  terrainCompleteness?: (bounds: TerrainBounds, context?: OverlayTaskContext) => boolean | Promise<boolean>;
 };
 
 /** Union semantic Pass/Fail cells; a passing clear path wins even over stronger blocked paths. */
@@ -1205,7 +1205,8 @@ export const buildCoverageAreaAsync = async (input: CoverageAreaInput): Promise<
     terrainBounds.minLon = Math.min(terrainBounds.minLon, site.position.lon);
     terrainBounds.maxLon = Math.max(terrainBounds.maxLon, site.position.lon);
   }
-  const terrainAreaComplete = input.terrainCompleteness?.(terrainBounds) === true;
+  const terrainAreaComplete = await input.terrainCompleteness?.(terrainBounds,
+    input.context ? { ...input.context, onProgress: undefined } : undefined) === true;
   throwIfCancelled(input.context);
   const { width, height } = input.dimensions;
   const union = new Uint8Array(width * height);

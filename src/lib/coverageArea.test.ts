@@ -155,9 +155,9 @@ describe("coverage area terrain certification", () => {
     expect(certified!.totalCoverageKm2).toBe(baseline!.totalCoverageKm2);
     expect(certified!.clearPathCoverageKm2).toBe(baseline!.clearPathCoverageKm2);
     expect(sampler.mock.calls.length).toBeLessThan(baselineCalls / 10);
-    expect(certificate).toHaveBeenCalledWith(current.bounds);
+    expect(certificate).toHaveBeenCalledWith(current.bounds, undefined);
     await buildCoverageAreaAsync({ ...current, sites: [{ ...site, position: { lat: 61, lon: 9 } }], terrainCompleteness: certificate });
-    expect(certificate).toHaveBeenLastCalledWith({ ...current.bounds, maxLat: 61, minLon: 9 });
+    expect(certificate).toHaveBeenLastCalledWith({ ...current.bounds, maxLat: 61, minLon: 9 }, undefined);
   });
   it("retains exhaustive validation when completeness cannot be certified", async () => {
     vi.spyOn(passFail, "computeSourceCentricRxMetrics").mockReturnValue(metrics(-80));
