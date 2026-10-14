@@ -164,9 +164,17 @@ const markDirtySim = (id: string): void => {
   dirtySimIds.add(id);
 };
 
-// Publish this patch with every local saved Simulation revision. It closes the
-// gap before React schedules sync and protects later edits from older uploads.
-const pendingSimulationMutation = (id: string) => {
+let recordedSyncInputs: Pick<AppState, "simulationPresets" | "siteLibrary"> | null = null;
+
+// Publish this patch with every local saved Simulation revision. Remember the
+// exact published inputs so the later scheduling effect counts this edit once.
+const pendingSimulationMutation = (
+  id: string, simulationPresets: SimulationPreset[],
+  patch: Partial<Pick<AppState, "siteLibrary">> = {},
+) => {
+  const current = useAppStore.getState();
+  recordedSyncInputs = { simulationPresets,
+    siteLibrary: patch.siteLibrary ?? current.siteLibrary };
   markDirtySim(id);
   return { syncPending: true, pendingChangesCount: recordLocalMutation() };
 };
@@ -180,6 +188,7 @@ const resolveDescriptionUpdate = (
     : currentDescription;
 
 const resetSyncRevisions = (): void => {
+  recordedSyncInputs = null;
   localMutationRevision = 0;
   syncedMutationRevision = 0;
   lastSyncedPayloadDigest = null;
@@ -1530,6 +1539,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? accountLibraryPreparationTarget : get().currentUser?.id ?? null;
     if (previousTarget !== (user?.id ?? null)) {
       syncAccountGeneration += 1;
+      recordedSyncInputs = null;
       if (syncTimer !== null) window.clearTimeout(syncTimer);
       syncTimer = null;
       syncInFlight = false;
@@ -1548,6 +1558,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     accountLibraryPreparationPending = true;
     const applyAccountCache = (incoming: AccountLibraryCache) => {
       get().cancelTerrainLoad();
+      recordedSyncInputs = null;
       localMutationRevision = 0;
       syncedMutationRevision = 0;
       dirtySiteIds = new Set();
@@ -1945,7 +1956,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       const userIdAtSchedule = get().currentUser?.id;
       const isCurrentAccount = () =>
         syncAccountGeneration === generationAtSchedule && get().currentUser?.id === userIdAtSchedule;
-      const pendingChangesCount = recordMutation ? recordLocalMutation() : Math.max(0, localMutationRevision - syncedMutationRevision);
+      const current = get();
+      // Loading a workspace can copy the Library array without changing its entries.
+      const sameLibrary = recordedSyncInputs !== null &&
+        (recordedSyncInputs.siteLibrary === current.siteLibrary ||
+          (recordedSyncInputs.siteLibrary.length === current.siteLibrary.length &&
+            recordedSyncInputs.siteLibrary.every((entry, index) => entry === current.siteLibrary[index])));
+      const alreadyRecorded = recordedSyncInputs?.simulationPresets === current.simulationPresets && sameLibrary;
+      const pendingChangesCount = recordMutation && !alreadyRecorded
+        ? recordLocalMutation() : Math.max(0, localMutationRevision - syncedMutationRevision);
+      if (recordMutation) recordedSyncInputs = {
+        simulationPresets: current.simulationPresets, siteLibrary: current.siteLibrary,
+      };
       if (get().authState === "signed_out" || !get().currentUser?.id || !get().isOnline) {
         set({ syncPending: true, syncStatus: "error", pendingChangesCount,
           syncErrorMessage: get().isOnline ? "Not signed in." : null,
@@ -3100,7 +3122,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
-        ...pendingSimulationMutation(nextPreset.id),
+        ...pendingSimulationMutation(nextPreset.id, next, { siteLibrary: mergedLibrary }),
         simulationPresets: next,
         siteLibrary: mergedLibrary,
         sites: normalized.sites,
@@ -3169,7 +3191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
-        ...pendingSimulationMutation(nextPreset.id),
+        ...pendingSimulationMutation(nextPreset.id, next, { siteLibrary: mergedLibrary }),
         simulationPresets: next,
         ...(normalized.addedCount > 0 ? { siteLibrary: mergedLibrary } : {}),
       };
@@ -3233,7 +3255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
-      return { ...pendingSimulationMutation(nextPreset.id), simulationPresets: next };
+      return { ...pendingSimulationMutation(nextPreset.id, next), simulationPresets: next };
     });
     return get().simulationPresets[0]?.id ?? null;
   },
@@ -3291,7 +3313,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
       }
       return {
-        ...pendingSimulationMutation(nextPreset.id),
+        ...pendingSimulationMutation(nextPreset.id, next, { siteLibrary: mergedLibrary }),
         simulationPresets: next,
         siteLibrary: mergedLibrary,
         sites: normalized.sites,
@@ -3365,7 +3387,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
     }
     writeStorage(SIM_PRESETS_KEY, newPresets);
-    set({ ...pendingSimulationMutation(selectedScenarioId),
+    set({ ...pendingSimulationMutation(selectedScenarioId, newPresets, { siteLibrary: nextSiteLibrary }),
       simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
@@ -3606,7 +3628,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : preset,
       );
       writeStorage(SIM_PRESETS_KEY, next);
-      return { ...pendingSimulationMutation(presetId), simulationPresets: next };
+      return { ...pendingSimulationMutation(presetId, next), simulationPresets: next };
     });
   },
   updateSimulationPresetEntry: (presetId, patch) => {
@@ -3685,7 +3707,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ),
           }
         : {};
-      return { ...pendingSimulationMutation(presetId), simulationPresets: next, ...activeAppearance };
+      return { ...pendingSimulationMutation(presetId, next), simulationPresets: next, ...activeAppearance };
     });
   },
   applyDeletedSimulationTombstones: (presetIds) => {
@@ -3753,7 +3775,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         preset.id === presetId ? { ...preset, status: "active" as const, updatedAt: new Date().toISOString() } : preset,
       );
       writeStorage(SIM_PRESETS_KEY, next);
-      return { ...pendingSimulationMutation(presetId), simulationPresets: next };
+      return { ...pendingSimulationMutation(presetId, next), simulationPresets: next };
     });
     lastSyncedPayloadDigest = null;
     localStorage.removeItem(SYNC_DIGEST_KEY);

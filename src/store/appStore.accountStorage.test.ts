@@ -24,6 +24,7 @@ let failAccountCache: boolean;
 
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks(); vi.useFakeTimers();
+  cloud.fetch.mockReset(); cloud.push.mockReset();
   data = new Map(); backups = new Map(); failLegacyBackup = true; failCache = false; failMarker = false; failAccountCache = false; delayPut = undefined;
   const storage = {
     getItem: (key: string) => data.get(key) ?? null,
@@ -302,7 +303,9 @@ it.each(["snapshot", "metadata", "rename", "overwrite", "save"].flatMap((mutatio
     expect(submit).not.toHaveBeenCalled();
     let releasePush!: () => void;
     if (editDuringUpload) cloud.push.mockImplementationOnce(() => new Promise<void>((resolve) => { releasePush = resolve; }));
+    expect(app.getState().pendingChangesCount).toBe(1);
     app.getState().performCloudSyncPush();
+    expect(app.getState().pendingChangesCount).toBe(1);
     await vi.advanceTimersByTimeAsync(3000);
     if (editDuringUpload) {
       await vi.waitFor(() => expect(releasePush).toBeTypeOf("function"));
@@ -335,9 +338,39 @@ it.each(["copy", "blank", "saveNew", "restore"])("keeps %s revisions pending unt
     await state.restoreSimulationPreset(id!);
   }
   expect(id).toBeTruthy();
+  // The New Simulation/copy UI loads the result before AppShell schedules sync.
+  app.getState().loadSimulationPreset(id!);
   expect(isPathLeaderboardReady(app.getState())).toBe(false);
+  expect(app.getState().pendingChangesCount).toBe(1);
   app.getState().performCloudSyncPush();
+  expect(app.getState().pendingChangesCount).toBe(1);
   await vi.advanceTimersByTimeAsync(3000);
   await vi.waitFor(() => expect(isPathLeaderboardReady(app.getState())).toBe(true));
   expect(cloud.push.mock.lastCall?.[0].simulationPresets).toContainEqual(expect.objectContaining({ id }));
+});
+
+it("counts a distinct Library edit during upload without acknowledging it with the older Simulation upload", async () => {
+  const { isPathLeaderboardReady } = await import("../lib/pathLeaderboard");
+  const app = await syncedRetainedSimulation();
+  app.getState().updateSimulationPresetEntry("local-simulation", { description: "First edit" });
+  let releasePush!: () => void;
+  cloud.push.mockImplementationOnce(() => new Promise<void>((resolve) => { releasePush = resolve; }));
+  app.getState().performCloudSyncPush();
+  expect(app.getState().pendingChangesCount).toBe(1);
+  await vi.advanceTimersByTimeAsync(3000);
+  await vi.waitFor(() => expect(releasePush).toBeTypeOf("function"));
+  // Model a separate Library mutation observed by the AppShell scheduling effect.
+  app.setState({ siteLibrary: [{ ...draft, ownerUserId: "a", effectiveRole: "owner", name: "Distinct late edit" }] });
+  app.getState().performCloudSyncPush();
+  expect(app.getState().pendingChangesCount).toBe(2);
+  // Repeating scheduling for the same inputs must not count either mutation again.
+  app.getState().performCloudSyncPush();
+  expect(app.getState().pendingChangesCount).toBe(2);
+  releasePush();
+  await vi.waitFor(() => expect(app.getState().syncBusy).toBe(false));
+  expect(isPathLeaderboardReady(app.getState())).toBe(false);
+  expect(app.getState().pendingChangesCount).toBe(1);
+  await vi.advanceTimersByTimeAsync(3000);
+  await vi.waitFor(() => expect(isPathLeaderboardReady(app.getState())).toBe(true));
+  expect(cloud.push.mock.lastCall?.[0].siteLibrary).toContainEqual(expect.objectContaining({ name: "Distinct late edit" }));
 });
