@@ -1,6 +1,8 @@
 import type { SrtmTile } from "../types/radio";
 import { choosePreferredTerrainTile } from "./terrainTileRank";
 import { normalizeLongitude } from "./terrainTiles";
+import { createLruCache, type LruCache } from "./lruCache";
+import type { CoverageGridBounds } from "./coverage";
 
 const inTile = (tile: SrtmTile, lat: number, lon: number): boolean =>
   lat >= tile.latStart &&
@@ -8,7 +10,7 @@ const inTile = (tile: SrtmTile, lat: number, lon: number): boolean =>
   lon >= tile.lonStart &&
   lon <= tile.lonStart + 1;
 
-const sampleFromTile = (tile: SrtmTile, lat: number, lon: number): number => {
+const tileGridPosition = (tile: SrtmTile, lat: number, lon: number): { row: number; col: number } => {
   const width = tile.width ?? tile.size;
   const height = tile.height ?? tile.size;
   const latNorm = (lat - tile.latStart) / 1;
@@ -17,7 +19,12 @@ const sampleFromTile = (tile: SrtmTile, lat: number, lon: number): number => {
   const row = Math.max(0, Math.min(height - 1, Math.round((1 - latNorm) * (height - 1))));
   const col = Math.max(0, Math.min(width - 1, Math.round(lonNorm * (width - 1))));
 
-  return tile.elevations[row * width + col];
+  return { row, col };
+};
+
+const sampleFromTile = (tile: SrtmTile, lat: number, lon: number): number => {
+  const { row, col } = tileGridPosition(tile, lat, lon);
+  return tile.elevations[row * (tile.width ?? tile.size) + col];
 };
 
 const TILE_LOOKUP_CACHE = new WeakMap<ReadonlyArray<SrtmTile>, Map<string, SrtmTile>>();
@@ -130,4 +137,52 @@ export const sampleSrtmElevation = (
   const raw = sampleFromTile(selected.tile, lat, selected.lon);
   if (raw <= -32760) return null;
   return raw;
+};
+
+const AREA_COMPLETENESS_CACHE = new WeakMap<ReadonlyArray<SrtmTile>, LruCache<boolean>>();
+
+/** Prove every nearest-neighbour DEM cell in a rectangle is available.
+ * A failed proof is inconclusive: callers must retain exact path validation.
+ * Tile arrays/data are immutable snapshots, as required by tileLookupFor.
+ */
+export const isSrtmAreaComplete = (tiles: ReadonlyArray<SrtmTile>, bounds: CoverageGridBounds): boolean => {
+  // Keep dateline and malformed bounds on the existing dateline-safe path sampler.
+  if (!Object.values(bounds).every(Number.isFinite) || bounds.minLat > bounds.maxLat ||
+      bounds.minLon > bounds.maxLon || bounds.minLon <= -180 || bounds.maxLon >= 180 ||
+      bounds.maxLon - bounds.minLon > 180 || bounds.minLat <= -90 || bounds.maxLat >= 90) return false;
+  let cache = AREA_COMPLETENESS_CACHE.get(tiles);
+  if (!cache) {
+    cache = createLruCache<boolean>(2);
+    AREA_COMPLETENESS_CACHE.set(tiles, cache);
+  }
+  const key = JSON.stringify(bounds);
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  const lookup = tileLookupFor(tiles);
+  // Include a small margin for normalized longitude and path interpolation rounding.
+  const minLat = bounds.minLat - NEAR_INTEGER_EPSILON;
+  const maxLat = bounds.maxLat + NEAR_INTEGER_EPSILON;
+  const minLon = bounds.minLon - NEAR_INTEGER_EPSILON;
+  const maxLon = bounds.maxLon + NEAR_INTEGER_EPSILON;
+  let complete = true;
+  for (let latStart = Math.floor(minLat); latStart <= Math.floor(maxLat) && complete; latStart += 1) {
+    for (let lonStart = Math.floor(minLon); lonStart <= Math.floor(maxLon) && complete; lonStart += 1) {
+      const tile = lookup.get(tileKeyForStart(latStart, lonStart));
+      if (!tile || tile.latStart !== latStart || tile.lonStart !== lonStart) { complete = false; break; }
+      const width = tile.width ?? tile.size;
+      const height = tile.height ?? tile.size;
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
+          tile.elevations.length !== width * height) { complete = false; break; }
+      const first = tileGridPosition(tile, Math.min(maxLat, latStart + 1), Math.max(minLon, lonStart));
+      const last = tileGridPosition(tile, Math.max(minLat, latStart), Math.min(maxLon, lonStart + 1));
+      for (let row = first.row; row <= last.row && complete; row += 1) {
+        for (let col = first.col; col <= last.col; col += 1) {
+          const raw = tile.elevations[row * width + col];
+          if (!Number.isFinite(raw) || raw <= -32760) { complete = false; break; }
+        }
+      }
+    }
+  }
+  cache.set(key, complete);
+  return complete;
 };

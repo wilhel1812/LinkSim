@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.31.1] - Unreleased
+
+### Fixed
+- Avoid exhaustive per-pixel terrain-path validation for coverage totals when the loaded DEM proves the entire calculation area is complete. Preserve terrain checks when completeness cannot be proven. (#1270)
+
 ## [0.31.0] - Unreleased
 
 ### Added
