@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { fetchMe, updateMyProfile, type CloudUser, type CloudUserProfilePatch } from "../../../lib/cloudUser";
 import { getUiErrorMessage } from "../../../lib/uiError";
-import { useAppStore } from "../../../store/appStore";
 import { formatDate } from "../../../lib/locale";
 import { AutoSaveField } from "../AutoSaveField";
 import { AvatarDropZone } from "../AvatarDropZone";
@@ -29,8 +28,6 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSKEY_INFO = "Passkeys let you sign in with your fingerprint, face, PIN, or screen lock instead of a password. Adding, renaming, or removing one requires a recent sign-in.";
 
 export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = false }: ProfileSectionProps) {
-  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
-  const setAuthState = useAppStore((state) => state.setAuthState);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [emailPublicState, setEmailPublicState] = useState<AutoSaveState>("idle");
   const [emailPublicError, setEmailPublicError] = useState<string | null>(null);
@@ -103,8 +100,6 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
         const current = await fetchMe();
         if (cancelled) return;
         onMeUpdated(current);
-        setCurrentUser(current);
-        setAuthState("signed_in");
       } catch (error) {
         if (cancelled) return;
         setLoadError(getUiErrorMessage(error));
@@ -113,15 +108,9 @@ export function ProfileSection({ me, onMeUpdated, onSignOut, passkeysEnabled = f
     return () => {
       cancelled = true;
     };
-  }, [me, onMeUpdated, setAuthState, setCurrentUser]);
+  }, [me, onMeUpdated]);
 
-  const applyUpdate = useCallback(
-    (user: CloudUser, patch?: CloudUserProfilePatch) => {
-      onMeUpdated(user, patch);
-      setAuthState("signed_in");
-    },
-    [onMeUpdated, setAuthState],
-  );
+  const applyUpdate = onMeUpdated;
 
   const saveField = useCallback(
     async (patch: Parameters<typeof updateMyProfile>[0]) => {

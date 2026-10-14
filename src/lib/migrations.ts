@@ -1,3 +1,4 @@
+import { LIBRARY_RECOVERY_CACHE_NAME } from "./libraryRecoveryStorage";
 import { APP_VERSION } from "./buildInfo";
 import { clearTerrainLossCache } from "./coverage";
 
@@ -28,6 +29,8 @@ type MemoryRule = {
 type ClientStorageRule = LocalStorageRule | CacheStorageRule | MemoryRule;
 
 const CLIENT_STORAGE_RULES: ClientStorageRule[] = [
+  { scope: "cacheStorage", policy: "preserve", cacheName: LIBRARY_RECOVERY_CACHE_NAME },
+  { scope: "localStorage", policy: "preserve", key: "linksim-library-account-transition-v1" },
   { scope: "localStorage", policy: "preserve", key: "rmw-site-library-v1" },
   { scope: "localStorage", policy: "preserve", key: "rmw-sim-presets-v1" },
   { scope: "localStorage", policy: "resetOnVersionChange", key: "linksim-sync-signature-v1" },

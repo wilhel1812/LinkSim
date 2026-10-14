@@ -58,8 +58,8 @@ describe("appStore auth session state", () => {
     vi.restoreAllMocks();
   });
 
-  it("marks auth state signed_in when current user is set and signed_out when cleared", () => {
-    useAppStore.getState().setCurrentUser({
+  it("marks auth state signed_in when current user is set and signed_out when cleared", async () => {
+    await useAppStore.getState().setCurrentUser({
       id: "user-1",
       username: "User One",
       avatarUrl: "",
@@ -78,7 +78,7 @@ describe("appStore auth session state", () => {
     });
     expect(useAppStore.getState().authState).toBe("signed_in");
 
-    useAppStore.getState().setCurrentUser(null);
+    await useAppStore.getState().setCurrentUser(null);
     expect(useAppStore.getState().authState).toBe("signed_out");
   });
 });
@@ -223,9 +223,9 @@ describe("appStore auth guards", () => {
     });
   });
 
-  it("blocks updateSite when current user cannot edit linked Site Library entry", () => {
+  it("blocks updateSite when current user cannot edit linked Site Library entry", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -252,7 +252,7 @@ describe("appStore auth guards", () => {
 
   it("blocks Library deletion when the current user only has view access", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -284,7 +284,7 @@ describe("appStore auth guards", () => {
 
   it("does not auto-sync online elevations when adding a site", async () => {
     vi.mocked(fetchElevations).mockClear();
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -308,9 +308,9 @@ describe("appStore auth guards", () => {
     expect(fetchElevations).not.toHaveBeenCalled();
   });
 
-  it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", () => {
+  it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -335,8 +335,8 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("updates active simulation snapshot when deleting a site from simulation", () => {
-    useAppStore.getState().setCurrentUser({
+  it("updates active simulation snapshot when deleting a site from simulation", async () => {
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -366,8 +366,8 @@ describe("appStore auth guards", () => {
     expect(state.simulationPresets[0]?.snapshot.sites.some((site) => site.id === "site-1")).toBe(false);
   });
 
-  it("distinguishes omitted descriptions from explicit clears for Sites and Simulations", () => {
-    useAppStore.getState().setCurrentUser({
+  it("distinguishes omitted descriptions from explicit clears for Sites and Simulations", async () => {
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -418,8 +418,8 @@ describe("appStore auth guards", () => {
     expect(JSON.parse(storage.mock.getItem("rmw-sim-presets-v1") ?? "[]")[0]?.description).toBeUndefined();
   });
 
-  it("tracks a pointing target and detaches at the last orientation when the target is deleted", () => {
-    useAppStore.getState().setCurrentUser({
+  it("tracks a pointing target and detaches at the last orientation when the target is deleted", async () => {
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -471,8 +471,8 @@ describe("appStore auth guards", () => {
     expect(detached?.antennaAzimuthDeg).toBeCloseTo(270, 1);
   });
 
-  it("persists selected overlay radius option to active simulation snapshot", () => {
-    useAppStore.getState().setCurrentUser({
+  it("persists selected overlay radius option to active simulation snapshot", async () => {
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -499,9 +499,9 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().simulationPresets[0]?.snapshot.selectedOverlayRadiusOption).toBe("100");
   });
 
-  it("blocks deleteSite when current user cannot edit selected simulation", () => {
+  it("blocks deleteSite when current user cannot edit selected simulation", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -525,9 +525,9 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("blocks updateLink when current user cannot edit selected simulation", () => {
+  it("blocks updateLink when current user cannot edit selected simulation", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -550,7 +550,7 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("blocks insertSitesFromLibrary when current user cannot edit selected simulation", () => {
+  it("blocks insertSitesFromLibrary when current user cannot edit selected simulation", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     useAppStore.setState((state) => ({
       siteLibrary: [
@@ -573,7 +573,7 @@ describe("appStore auth guards", () => {
         },
       ],
     }));
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "user-2",
       username: "viewer",
       avatarUrl: "",
@@ -597,7 +597,7 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("copies a directional Library Site pattern when inserting it into a Simulation", () => {
+  it("copies a directional Library Site pattern when inserting it into a Simulation", async () => {
     let siteAtFirstRecompute: ReturnType<typeof useAppStore.getState>["sites"][number] | undefined;
     useCoverageStore.setState({
       recomputeCoverage: vi.fn(() => {
@@ -636,7 +636,7 @@ describe("appStore auth guards", () => {
         preset.id === "sim-1" ? { ...preset, effectiveRole: "owner" } : preset,
       ),
     }));
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",
@@ -800,11 +800,11 @@ describe("appStore blank simulation loading", () => {
 });
 
 describe("appStore unified Library state", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     storage.mock.clear();
     vi.restoreAllMocks();
     useAppStore.setState(useAppStore.getInitialState(), true);
-    useAppStore.getState().setCurrentUser({
+    await useAppStore.getState().setCurrentUser({
       id: "owner-1",
       username: "owner",
       avatarUrl: "",

@@ -66,7 +66,7 @@ const { mockState } = vi.hoisted(() => {
 });
 
 vi.mock("../../store/appStore", () => ({
-  useAppStore: (selector: (s: typeof mockState) => unknown) => selector(mockState),
+  useAppStore: Object.assign((selector: (s: typeof mockState) => unknown) => selector(mockState), { getState: () => mockState }),
 }));
 
 beforeEach(() => {
@@ -317,4 +317,38 @@ describe("SettingsPanel", () => {
 
     vi.unstubAllGlobals();
   });
+});
+
+
+it("does not mark sign-in successful when profile account preparation fails", async () => {
+  const current = { id: "a", username: "A", isAdmin: false, defaultFrequencyPresetId: "old-radio",
+    basemapPreferences: { version: 1, customSources: [] } } as unknown as CloudUser;
+  mockState.currentUser = current; mockState.authState = "signed_in";
+  const { fetchMe } = await import("../../lib/cloudUser");
+  vi.mocked(fetchMe).mockResolvedValue(current);
+  mockState.setCurrentUser.mockResolvedValue(false);
+  render(<SettingsPanel onSignedOut={vi.fn()} initialSection="preferences" onClose={vi.fn()} />);
+  await waitFor(() => expect(mockState.setCurrentUser).toHaveBeenCalled());
+  mockState.setAuthState.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Apply radio response" }));
+  await waitFor(() => expect(mockState.setCurrentUser).toHaveBeenCalledTimes(2));
+  await Promise.resolve();
+  expect(mockState.setAuthState).not.toHaveBeenCalled();
+});
+
+it("ignores a late profile response after the current account signs out", async () => {
+  const current = { id: "a", username: "A", isAdmin: false, defaultFrequencyPresetId: "old-radio",
+    basemapPreferences: { version: 1, customSources: [] } } as unknown as CloudUser;
+  mockState.currentUser = current; mockState.authState = "signed_in";
+  const { fetchMe } = await import("../../lib/cloudUser");
+  vi.mocked(fetchMe).mockResolvedValue(current);
+  mockState.setCurrentUser.mockResolvedValue(true);
+  render(<SettingsPanel onSignedOut={vi.fn()} initialSection="preferences" onClose={vi.fn()} />);
+  await waitFor(() => expect(mockState.setCurrentUser).toHaveBeenCalled());
+  mockState.currentUser = null; mockState.authState = "signed_out";
+  mockState.setCurrentUser.mockClear(); mockState.setAuthState.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Apply radio response" }));
+  await Promise.resolve();
+  expect(mockState.setCurrentUser).not.toHaveBeenCalled();
+  expect(mockState.setAuthState).not.toHaveBeenCalled();
 });

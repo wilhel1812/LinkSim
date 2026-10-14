@@ -6,25 +6,8 @@ type ActorPolicy = {
   isModerator: boolean;
 };
 
-export type PathLeaderboardCandidate = {
-  simulationId: string;
-  simulationUpdatedAt: string;
-  fromSiteId: string;
-  toSiteId: string;
-  linkId?: string | null;
-  distanceKm: number;
-  rxAfterEnvLossDbm: number;
-  rxMarginDb: number;
-  terrainObstructed: boolean;
-  terrainDataset: string;
-  terrainTileSignature: string;
-};
-
-export type PathLeaderboardSubmitResult = {
-  ok: boolean;
-  stored: boolean;
-  reason?: string;
-};
+import type { PathLeaderboardCandidate, PathLeaderboardSubmitResult } from "../../src/types/pathLeaderboard";
+export type { PathLeaderboardCandidate, PathLeaderboardSubmitResult } from "../../src/types/pathLeaderboard";
 
 export type StatsPathLeaderboardEntry = {
   id: string;

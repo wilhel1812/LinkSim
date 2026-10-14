@@ -92,8 +92,7 @@ const { mockStoreState } = vi.hoisted(() => {
 });
 
 vi.mock("../store/appStore", () => ({
-  useAppStore: (selector: (s: typeof mockStoreState) => unknown) =>
-    selector(mockStoreState),
+  useAppStore: Object.assign((selector: (s: typeof mockStoreState) => unknown) => selector(mockStoreState), { getState: () => mockStoreState }),
 }));
 
 // ---------------------------------------------------------------------------

@@ -75,7 +75,7 @@ describe("api/stats/path-leaderboard", () => {
     await expect(res.json()).resolves.toEqual({ ok: true, stored: true });
   });
 
-  it("returns 400 for rejected candidates", async () => {
+  it("returns 200 with a non-stored outcome for an expected rejected candidate", async () => {
     submitPathLeaderboardCandidateMock.mockResolvedValueOnce({ ok: false, stored: false, reason: "not_passing" });
     const req = new Request("https://example.test/api/stats/path-leaderboard", {
       method: "POST",
@@ -84,7 +84,24 @@ describe("api/stats/path-leaderboard", () => {
     });
 
     const res = await onRequestPost(mkCtx(req));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: false, stored: false, reason: "not_passing" });
   });
+});
+
+it("keeps malformed candidate validation as HTTP 400", async () => {
+  submitPathLeaderboardCandidateMock.mockResolvedValueOnce({ ok: false, stored: false, reason: "invalid_distance" });
+  const res = await onRequestPost(mkCtx(new Request("https://example.test/api/stats/path-leaderboard", {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+  })));
+  expect(res.status).toBe(400);
+});
+
+it("returns stale revision rejection as a normal non-stored result", async () => {
+  submitPathLeaderboardCandidateMock.mockResolvedValueOnce({ ok: false, stored: false, reason: "stale_simulation" });
+  const res = await onRequestPost(mkCtx(new Request("https://example.test/api/stats/path-leaderboard", {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+  })));
+  expect(res.status).toBe(200);
+  await expect(res.json()).resolves.toEqual({ ok: false, stored: false, reason: "stale_simulation" });
 });

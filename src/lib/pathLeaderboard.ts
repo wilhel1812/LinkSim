@@ -2,19 +2,8 @@ import { analyzeLink } from "./propagation";
 import { sampleSrtmElevation } from "./srtm";
 import type { Link, ProfilePoint, PropagationEnvironment, PropagationModel, Site, SrtmTile } from "../types/radio";
 
-export type PathLeaderboardCandidate = {
-  simulationId: string;
-  simulationUpdatedAt: string;
-  fromSiteId: string;
-  toSiteId: string;
-  linkId?: string | null;
-  distanceKm: number;
-  rxAfterEnvLossDbm: number;
-  rxMarginDb: number;
-  terrainObstructed: boolean;
-  terrainDataset: string;
-  terrainTileSignature: string;
-};
+import { isExpectedPathLeaderboardRejection, type PathLeaderboardCandidate } from "../types/pathLeaderboard";
+export type { PathLeaderboardCandidate } from "../types/pathLeaderboard";
 
 export type BuildPathLeaderboardCandidateInput = {
   simulationId: string;
@@ -39,8 +28,14 @@ export type BuildPathLeaderboardCandidateResult =
   | { ok: true; candidate: PathLeaderboardCandidate; signature: string }
   | { ok: false; reason: string };
 
+export const isPathLeaderboardReady = (state: {
+  currentUser: { id: string } | null; authState: string; isOnline: boolean;
+  libraryHydrated: boolean; syncPending: boolean; syncBusy: boolean; isInitializing: boolean; syncErrorMessage: string | null;
+}): boolean => Boolean(state.currentUser?.id) && state.authState === "signed_in" &&
+  state.libraryHydrated && state.isOnline && !state.syncPending && !state.syncBusy && !state.isInitializing && !state.syncErrorMessage;
+
 const FNV_OFFSET_BASIS = 2166136261;
-const SELECTION_LINK_ID = "__selection__";
+const SYNTHETIC_LINK_IDS = new Set(["__selection__", "__auto__"]);
 
 const updateFnvHash = (hash: number, input: string): number => {
   let next = hash;
@@ -122,7 +117,7 @@ export const buildPathLeaderboardCandidate = (
     simulationUpdatedAt,
     fromSiteId,
     toSiteId,
-    linkId: link.id === SELECTION_LINK_ID ? null : link.id,
+    linkId: SYNTHETIC_LINK_IDS.has(link.id) ? null : link.id,
     distanceKm: analysis.distanceKm,
     rxAfterEnvLossDbm,
     rxMarginDb,
@@ -141,10 +136,62 @@ export const buildPathLeaderboardCandidate = (
   return { ok: true, candidate, signature };
 };
 
-export const submitPathLeaderboardCandidate = async (candidate: PathLeaderboardCandidate): Promise<void> => {
-  await fetch("/api/stats/path-leaderboard", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(candidate),
-  });
+export type PathLeaderboardSubmissionOutcome =
+  | { status: "stored" }
+  | { status: "skipped"; reason: string }
+  | { status: "retryable" };
+
+export const submitPathLeaderboardCandidate = async (
+  candidate: PathLeaderboardCandidate,
+): Promise<PathLeaderboardSubmissionOutcome> => {
+  try {
+    const response = await fetch("/api/stats/path-leaderboard", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(candidate),
+    });
+    const body: unknown = await response.json();
+    if (!body || typeof body !== "object") return { status: "retryable" };
+    const result = body as Record<string, unknown>;
+    if (response.ok && result.ok === true && result.stored === true) return { status: "stored" };
+    if ((response.ok || response.status === 400) && result.stored === false &&
+        ((result.ok === false && isExpectedPathLeaderboardRejection(result.reason)) ||
+         (result.ok === true && result.reason === "private_simulation"))) {
+      return { status: "skipped", reason: result.reason as string };
+    }
+    return { status: "retryable" };
+  } catch {
+    return { status: "retryable" };
+  }
+};
+
+/** Deduplicate opportunistic submissions without marking failed requests successful.
+ * Retry only on a later existing input/online event; never create a retry timer.
+ */
+export const createPathLeaderboardSubmitter = (
+  submit = submitPathLeaderboardCandidate, now = Date.now,
+) => {
+  const attempts = new Map<string, { inFlight: boolean; terminal: boolean; count: number; retryAt: number }>();
+  return async (signature: string, candidate: PathLeaderboardCandidate): Promise<void> => {
+    let attempt = attempts.get(signature);
+    if (attempt && (attempt.inFlight || attempt.terminal || attempt.count >= 2 || now() < attempt.retryAt)) return;
+    if (!attempt) {
+      if (attempts.size >= 48) {
+        const evictable = [...attempts].find(([, entry]) => !entry.inFlight)?.[0];
+        if (!evictable) return;
+        attempts.delete(evictable);
+      }
+      attempt = { inFlight: false, terminal: false, count: 0, retryAt: 0 };
+      attempts.set(signature, attempt);
+    }
+    attempt.inFlight = true;
+    attempt.count += 1;
+    try {
+      const outcome = await submit(candidate);
+      attempt.terminal = outcome.status !== "retryable";
+    } catch {
+      // A transient failure can be retried, but only within the same bounded lifecycle.
+    } finally {
+      attempt.inFlight = false;
+      attempt.retryAt = now() + 5000;
+    }
+  };
 };
