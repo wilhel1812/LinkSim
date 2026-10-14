@@ -499,20 +499,20 @@ describe("appStore delta sync", () => {
       selectedScenarioId: "sim-admin",
     });
     storage.mock.setItem("rmw-last-simulation-ref-v1", "saved:sim-admin");
-    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
-    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
     expect(useAppStore.getState().siteLibrary).toEqual([]);
     expect(useAppStore.getState().sites).toEqual([]);
     expect(useAppStore.getState().selectedScenarioId).toBe("");
     expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBeNull();
 
     useAppStore.setState({ siteLibrary: [moderatorSite], sites: [moderatorSite], selectedScenarioId: "sim-moderator" });
-    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
     expect(useAppStore.getState().siteLibrary.map((site) => site.id)).toEqual(["site-admin"]);
     expect(useAppStore.getState().sites.map((site) => site.id)).toEqual(["site-admin"]);
     expect(useAppStore.getState().selectedScenarioId).toBe("sim-admin");
     expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBe("saved:sim-admin");
-    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
     expect(useAppStore.getState().siteLibrary.map((site) => site.id)).toEqual(["site-moderator"]);
     expect(storage.mock.getItem("linksim-library-legacy-backup-v1")).not.toBeNull();
     useAppStore.setState({ sites: [], links: [], systems: [], networks: [], selectedScenarioId: "" });
@@ -542,12 +542,12 @@ describe("appStore delta sync", () => {
       siteLibrary: [adminSite], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
       selectedScenarioId: "", syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
     });
-    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
     await useAppStore.getState().initializeCloudSync();
 
     const manualSync = useAppStore.getState().performManualCloudSync();
     await vi.waitFor(() => expect(releaseManualFetch).toBeDefined());
-    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
     releaseManualFetch?.(makeResponse({ siteLibrary: [adminSite], simulationPresets: [] }));
     await manualSync;
 
@@ -570,10 +570,10 @@ describe("appStore delta sync", () => {
       siteLibrary: [], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
       selectedScenarioId: "", syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
     });
-    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
     const startupSync = useAppStore.getState().initializeCloudSync();
     await vi.waitFor(() => expect(releaseFetch).toBeDefined());
-    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
     releaseFetch?.(makeResponse({ siteLibrary: [adminSite], simulationPresets: [] }));
     await startupSync;
 
@@ -600,14 +600,14 @@ describe("appStore delta sync", () => {
       siteLibrary: [], simulationPresets: [], sites: [], links: [], systems: [], networks: [],
       selectedScenarioId: "", syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
     });
-    useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
     await useAppStore.getState().initializeCloudSync();
     useAppStore.setState({ siteLibrary: [adminSite] });
     useAppStore.getState().performCloudSyncPush();
     await vi.advanceTimersByTimeAsync(2500);
     await vi.waitFor(() => expect(releasePush).toBeDefined());
 
-    useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
+    await useAppStore.getState().setCurrentUser({ ...mkUser(), isModerator: true });
     releasePush?.(makeResponse({ ok: true, conflicts: [] }));
     await vi.waitFor(() => expect(useAppStore.getState().syncBusy).toBe(false));
 

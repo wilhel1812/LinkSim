@@ -3,6 +3,8 @@
 ## [0.31.1] - Unreleased
 
 ### Fixed
+- Preserve Library recovery copies outside localStorage when its quota is exhausted, and pause sync until account storage preparation or interrupted recovery completes. (#1272)
+- Handle expected Path leaderboard rejections as non-recorded results, wait for Library sync, and bound retries of transient submission failures. (#1273)
 - Avoid exhaustive per-pixel terrain-path validation for coverage totals when the loaded DEM proves the entire calculation area is complete. Preserve terrain checks when completeness cannot be proven. (#1270)
 
 ## [0.31.0] - Unreleased
