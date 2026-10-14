@@ -71,6 +71,8 @@ export type AdaptiveOverlayOptions = {
   analysisCacheKey?: string;
   terrainCacheKey?: string;
   requireCompleteTerrain?: boolean;
+  /** A proof covering every source-to-grid path, not just evaluated adaptive cells. */
+  terrainAreaComplete?: boolean;
 };
 
 export type OverlayRasterDataUrl = {
@@ -221,7 +223,7 @@ const throwIfCancelled = (context?: OverlayTaskContext): void => {
   if (context?.shouldCancel?.()) throw new OverlayTaskCancelledError();
 };
 
-const runCooperativeLoop = async (
+export const runCooperativeLoop = async (
   total: number,
   runner: (index: number) => void,
   context?: OverlayTaskContext,
@@ -1143,7 +1145,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
     refinedBlocks = result.refinedBlocks;
     filledPixels = result.filledPixels;
   }
-  if (options?.requireCompleteTerrain) {
+  if (options?.requireCompleteTerrain && !options.terrainAreaComplete) {
     const requireSample = requireTerrainSample(({ lat, lon }) => terrainSampler(lat, lon));
     await runCooperativeLoop(width * height, (index) => {
       if (metricCache.validatedTerrain[index]) return;
@@ -1186,12 +1188,26 @@ export type CoverageAreaInput = {
   context?: OverlayTaskContext;
   adaptive?: boolean;
   terrainCacheKey?: string;
+  terrainCompleteness?: (bounds: TerrainBounds, context?: OverlayTaskContext) => boolean | Promise<boolean>;
 };
 
 /** Union semantic Pass/Fail cells; a passing clear path wins even over stronger blocked paths. */
 export const buildCoverageAreaAsync = async (input: CoverageAreaInput): Promise<CoverageAreaResult | null> => {
   const sites = [...new Map(input.sites.map((site) => [site.id, site])).values()];
   if (!sites.length) return null;
+  throwIfCancelled(input.context);
+  // Straight terrain paths lie inside the rectangle containing the grid and all sources.
+  // A conservative DEM proof lets adaptive fills avoid repeating millions of availability lookups.
+  const terrainBounds = { ...input.bounds };
+  for (const site of sites) {
+    terrainBounds.minLat = Math.min(terrainBounds.minLat, site.position.lat);
+    terrainBounds.maxLat = Math.max(terrainBounds.maxLat, site.position.lat);
+    terrainBounds.minLon = Math.min(terrainBounds.minLon, site.position.lon);
+    terrainBounds.maxLon = Math.max(terrainBounds.maxLon, site.position.lon);
+  }
+  const terrainAreaComplete = await input.terrainCompleteness?.(terrainBounds,
+    input.context ? { ...input.context, onProgress: undefined } : undefined) === true;
+  throwIfCancelled(input.context);
   const { width, height } = input.dimensions;
   const union = new Uint8Array(width * height);
   const analysisStats = { evaluatedPaths: 0, refinedBlocks: 0, filledPixels: 0, totalPixels: width * height };
@@ -1206,7 +1222,7 @@ export const buildCoverageAreaAsync = async (input: CoverageAreaInput): Promise<
       input.terrainSampler, input.dimensions, input.terrainSamples, input.pointMask,
       { ...input.context, phase: input.context?.phase ?? "coverage-area", signature: input.context?.signature ?? "coverage-area",
         onProgress: (progress) => input.context?.onProgress?.({ ...progress, percent: (siteIndex * 100 + progress.percent) / sites.length }) },
-      { adaptive: input.adaptive, terrainCacheKey: input.terrainCacheKey, requireCompleteTerrain: true },
+      { adaptive: input.adaptive, terrainCacheKey: input.terrainCacheKey, requireCompleteTerrain: true, terrainAreaComplete },
     );
     if (!raster?.passFailStates) return null;
     analysisStats.evaluatedPaths += raster.analysisStats?.evaluatedPaths ?? 0;
