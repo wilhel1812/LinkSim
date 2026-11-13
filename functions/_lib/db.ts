@@ -1990,6 +1990,7 @@ type ResourceRow = {
   name: string;
   visibility: DbVisibility;
   created_at: string | null;
+  updated_at: string | null;
   status?: "active" | "deleted";
 };
 
@@ -2213,7 +2214,8 @@ const upsertOwnedResource = async (
   kind: "site" | "simulation",
   actor: ActorPolicy,
   item: CloudResourceRecord,
-): Promise<{ ok: boolean; reason?: string }> => {
+  requireRevision: boolean,
+): Promise<{ ok: boolean; reason?: string; revision?: string }> => {
   const table = kind === "site" ? "sites" : "simulations";
   const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
 
@@ -2227,11 +2229,12 @@ const upsertOwnedResource = async (
     return { ok: false, reason: `too_many_grants_${kind}` };
   }
   const requestedSharedWith = sanitizeGrants(item.sharedWith);
-  const now = new Date().toISOString();
+  const { cloudRevision, ...record } = item;
+  const revisionConflict = { ok: false, reason: `${kind}_revision_conflict` };
 
   const existing = await env.DB
     .prepare(
-      `SELECT t.owner_user_id, t.payload_json, t.name, t.visibility, t.created_at${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
+      `SELECT t.owner_user_id, t.payload_json, t.name, t.visibility, t.created_at, t.updated_at${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
        FROM ${table} t
        LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
        WHERE t.id = ?`,
@@ -2239,6 +2242,7 @@ const upsertOwnedResource = async (
     .bind(actor.id, id)
     .first<ResourceRow & { actor_role?: string | null }>();
 
+  const existingRevision = existing?.updated_at ?? null;
   if (existing) {
     if (kind === "simulation" && existing.status === "deleted") {
       return { ok: false, reason: "simulation_deleted" };
@@ -2296,7 +2300,7 @@ const upsertOwnedResource = async (
       ? Array.from(new Set([...(previousSlug ? [previousSlug] : []), ...aliasSeed].filter((entry) => entry && entry !== simulationSlug)))
       : [];
   const nextRecord: CloudResourceRecord = {
-    ...item,
+    ...record,
     visibility,
     sharedWith,
     ...(kind === "simulation" ? { slug: simulationSlug, slugAliases } : {}),
@@ -2313,7 +2317,11 @@ const upsertOwnedResource = async (
     existing.name !== name ||
     existing.visibility !== visibilityDb;
 
-  if (!changed) return { ok: true };
+  if (!changed) return { ok: true, revision: existingRevision ?? undefined };
+  if (requireRevision && existing && cloudRevision !== existingRevision) {
+    return revisionConflict;
+  }
+  const now = new Date(Math.max(Date.now(), (Date.parse(existingRevision ?? "") || 0) + 1)).toISOString();
 
   if (existing) {
     const existingPayloadForGrants = JSON.parse(existing.payload_json) as CloudResourceRecord;
@@ -2363,7 +2371,8 @@ const upsertOwnedResource = async (
          last_edited_by_user_id = excluded.last_edited_by_user_id,
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
          created_at = COALESCE(${table}.created_at, excluded.created_at)
-       WHERE (
+       WHERE ${requireRevision ? `? = 0 AND ${table}.updated_at IS ? AND ${table}.payload_json IS ? AND` : ""}
+       (
          ${table}.owner_user_id = ?
          OR ? = 1
          OR EXISTS (
@@ -2399,6 +2408,7 @@ const upsertOwnedResource = async (
       ownerId,
       maxOwnerPublicRecords,
       ...(kind === "site" ? [id, id] : []),
+      ...(requireRevision ? [isCreate ? 1 : 0, existingRevision, existing?.payload_json ?? null] : []),
       actor.id,
       actor.isAdmin ? 1 : 0,
       actor.id,
@@ -2439,13 +2449,13 @@ const upsertOwnedResource = async (
     }
     const current = await env.DB
       .prepare(
-        `SELECT t.owner_user_id, t.visibility${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
+        `SELECT t.owner_user_id, t.visibility, t.updated_at, t.payload_json${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
          FROM ${table} t
          LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
          WHERE t.id = ? LIMIT 1`,
       )
       .bind(actor.id, id)
-      .first<{ owner_user_id: string; visibility: DbVisibility; status?: "active" | "deleted"; actor_role?: string | null }>();
+      .first<{ owner_user_id: string; visibility: DbVisibility; updated_at: string | null; payload_json: string; status?: "active" | "deleted"; actor_role?: string | null }>();
     if (kind === "simulation" && current?.status === "deleted") {
       return { ok: false, reason: "simulation_deleted" };
     }
@@ -2457,6 +2467,8 @@ const upsertOwnedResource = async (
     )) {
       return { ok: false, reason: `forbidden_${kind}` };
     }
+    if (requireRevision && (isCreate ? current : current?.updated_at !== existingRevision ||
+        current?.payload_json !== existing?.payload_json)) return revisionConflict;
     return { ok: false, reason: `${kind}_quota_exceeded` };
   }
 
@@ -2503,7 +2515,7 @@ const upsertOwnedResource = async (
     snapshot: nextRecord as Record<string, unknown>,
   });
 
-  return { ok: true };
+  return { ok: true, revision: now };
 };
 
 type QuotaResourceRow = {
@@ -2585,7 +2597,8 @@ export const upsertLibrarySnapshot = async (
   env: Env,
   actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
-): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[] }> => {
+  { requireRevision = false } = {},
+): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[]; simulationConflictIds?: string[]; revisions?: Array<{ kind: "site" | "simulation"; id: string; revision: string }> }> => {
   await ensureSchema(env);
   if (payload.siteLibrary.length + payload.simulationPresets.length > LIBRARY_BATCH_MAX_RECORDS) {
     throw new LibraryValidationError(`Library request may contain at most ${LIBRARY_BATCH_MAX_RECORDS} records.`);
@@ -2593,22 +2606,33 @@ export const upsertLibrarySnapshot = async (
   await preflightResourceQuotas(env, "site", actor, payload.siteLibrary);
   await preflightResourceQuotas(env, "simulation", actor, payload.simulationPresets);
   const conflicts: string[] = [];
+  const simulationConflictIds: string[] = [];
+  const revisions: Array<{ kind: "site" | "simulation"; id: string; revision: string }> = [];
   let upsertedSites = 0;
   let upsertedSimulations = 0;
 
   for (const site of payload.siteLibrary) {
-    const result = await upsertOwnedResource(env, "site", actor, site);
-    if (result.ok) upsertedSites += 1;
+    const result = await upsertOwnedResource(env, "site", actor, site, requireRevision);
+    if (result.ok) {
+      upsertedSites += 1;
+      if (result.revision) revisions.push({ kind: "site", id: site.id, revision: result.revision });
+    }
     else if (result.reason) conflicts.push(result.reason);
   }
 
   for (const simulation of payload.simulationPresets) {
-    const result = await upsertOwnedResource(env, "simulation", actor, simulation);
-    if (result.ok) upsertedSimulations += 1;
-    else if (result.reason) conflicts.push(result.reason);
+    const result = await upsertOwnedResource(env, "simulation", actor, simulation, requireRevision);
+    if (result.ok) {
+      upsertedSimulations += 1;
+      if (result.revision) revisions.push({ kind: "simulation", id: simulation.id, revision: result.revision });
+    }
+    else if (result.reason) {
+      conflicts.push(result.reason);
+      if (result.reason === "simulation_revision_conflict") simulationConflictIds.push(simulation.id);
+    }
   }
 
-  return { upsertedSites, upsertedSimulations, conflicts };
+  return { upsertedSites, upsertedSimulations, conflicts, ...(requireRevision ? { revisions, ...(simulationConflictIds.length ? { simulationConflictIds } : {}) } : {}) };
 };
 
 const canEditByRole = (role: string | null, visibility: Visibility, actorIsModerator: boolean): boolean => {
@@ -2959,6 +2983,7 @@ export const fetchLibraryForUser = async (
             || ownerAvatarUrl;
           return {
             ...parsed,
+            cloudRevision: row.updated_at,
             ownerUserId: row.owner_user_id,
             visibility: visibilityFromDbVisibility(row.visibility),
             createdByUserId,
