@@ -136,8 +136,8 @@ decompression, fetching, or rendering begins:
 
 - MeshMap JSON responses are limited to `5 MiB` and `20,000` top-level node
   records. Direct/custom node feeds use the same bounds.
-- The 868.no snapshot reader retains its `5 MiB`, `8 second` maximum, and
-  `1 second` post-burst idle limits, with at most `5,000` SSE records.
+- The 868.no Nodes API adapter limits the JSON response to `5 MiB`,
+  `8 seconds`, and `5,000` node records.
 - Normalized node caches retain at most `20,000` nodes per source and `25,000`
   nodes after sources are combined. Map markers retain the existing `1,000`
   in-view ceiling.
