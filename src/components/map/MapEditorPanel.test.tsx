@@ -1635,6 +1635,24 @@ describe("868.no temporary Site editor", () => {
     expect(useAppStore.getState().siteLibrary).toEqual([]);
   });
 
+  it("uses terrain for edited coordinates while preserving the reported elevation on open", () => {
+    useAppStore.setState({
+      srtmTiles: [{
+        key: "N60E010", latStart: 60, lonStart: 10, size: 2, arcSecondSpacing: 3,
+        elevations: new Int16Array([325, 325, 325, 325]),
+      }],
+    });
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "60.5" } });
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(325);
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      position: { lat: 60.5, lon: 10 }, groundElevationM: 325,
+    });
+  });
+
   it("saves the edited Site with source metadata and asks before making a duplicate", () => {
     useAppStore.setState({ currentUser });
     openLaunchedSiteEditor(false);

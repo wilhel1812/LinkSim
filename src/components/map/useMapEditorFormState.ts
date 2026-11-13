@@ -424,19 +424,21 @@ export function useMapEditorFormState() {
 
   // Auto-fill elevation from terrain when it loads (only if user hasn't manually set)
   useEffect(() => {
-    if (mapEditor?.kind !== "site" || isElevationUserSet || mapEditor.temporarySiteId) return;
+    if (mapEditor?.kind !== "site" || isElevationUserSet) return;
     const lat = validateLatitude(latDraft);
     const lon = validateLongitude(lonDraft);
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
-    const elevation = Number(sampleSrtmElevation(srtmTiles, lat.value, lon.value));
-    if (Number.isFinite(elevation)) {
+    const launchedSite = sites.find((site) => site.id === mapEditor.temporarySiteId);
+    if (launchedSite?.position.lat === lat.value && launchedSite.position.lon === lon.value) return;
+    const elevation = sampleSrtmElevation(srtmTiles, lat.value, lon.value);
+    if (elevation !== null && Number.isFinite(elevation)) {
       const roundedElevation = Math.round(elevation);
       setGroundDraft(roundedElevation);
       if (mapEditorSiteDraft) {
-        setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: roundedElevation });
+        setMapEditorSiteDraft({ ...mapEditorSiteDraft, groundElevationM: roundedElevation });
       }
     }
-  }, [srtmTiles, isElevationUserSet, latDraft, lonDraft, mapEditor?.kind]);
+  }, [srtmTiles, isElevationUserSet, latDraft, lonDraft, mapEditor?.kind, mapEditor?.temporarySiteId, sites]);
 
   // ─── Collaborator directory ───────────────────────────────────────────────────
   useEffect(() => {
