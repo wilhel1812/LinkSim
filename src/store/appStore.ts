@@ -728,7 +728,7 @@ type AppState = {
   ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
-  loadSimulationPreset: (presetId: string, cloudSites?: SiteLibraryEntry[]) => void;
+  loadSimulationPreset: (presetId: string) => void;
   clearSimulationWorkspace: (launch?: SiteLaunch) => void;
   siteLaunch: { siteId: string; source?: SiteLaunch["source"]; needsElevation: boolean } | null;
   workspaceNavigationEpoch: number;
@@ -1052,11 +1052,18 @@ const resolveSiteLibraryEntry = (
   return exactMatches.length === 1 ? exactMatches[0] : undefined;
 };
 
+// A cloud Simulation already has saved Site values in its snapshot. A separate
+// pending Library edit must not replace those values when opening the Simulation.
+const libraryForSimulationView = (library: SiteLibraryEntry[], presetId: string): SiteLibraryEntry[] =>
+  presetId && !dirtySimIds.has(presetId)
+    ? library.filter(({ id }) => !dirtySiteIds.has(id))
+    : library;
+
 const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
   if (!sites.length || !library.length) return sites.map((site) => withSiteRadioDefaults(site));
   const resolver = buildSiteLibraryResolver(library);
   return sites.map((site) => {
-    if (site.libraryEntryId && resolver.byId.has(site.libraryEntryId)) return withSiteRadioDefaults(site);
+    if (site.libraryEntryId) return withSiteRadioDefaults(site);
     const entry = resolveSiteLibraryEntry({ ...site, libraryEntryId: undefined }, resolver);
     if (entry) return withSiteRadioDefaults({ ...site, libraryEntryId: entry.id });
     return withSiteRadioDefaults(site);
@@ -1946,7 +1953,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         } : {}),
       });
       get().importLibraryData({ siteLibrary: cloud.siteLibrary }, "merge");
-      if (latest.selectedScenarioId === id) get().loadSimulationPreset(id, cloud.siteLibrary);
+      if (latest.selectedScenarioId === id) get().loadSimulationPreset(id);
       resolved = true;
       return name;
     } finally {
@@ -3255,7 +3262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
-  loadSimulationPreset: (presetId, cloudSites) => {
+  loadSimulationPreset: (presetId) => {
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
     if (!preset || preset.status === "deleted") return;
     get().cancelTerrainLoad();
@@ -3320,7 +3327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
-    const siteLibrary = cloudSites ?? get().siteLibrary;
+    const siteLibrary = libraryForSimulationView(get().siteLibrary, presetId);
     const recoveredSites = syncLibraryLinkedSiteValues(annotateSitesWithLibraryRefs(recovered.sites, siteLibrary), siteLibrary);
     const bounds = simulationAreaBoundsForSites(recoveredSites);
     const viewport = bounds ? boundsToViewport(bounds) : defaultScenario.viewport;
@@ -3721,7 +3728,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             return normalizeSiteLibrary([...byId.values()]);
           })();
 
-    const nextSimulationPresets =
+    const mergedSimulationPresets =
       mode === "replace"
         ? incomingPresets
         : (() => {
@@ -3737,10 +3744,31 @@ export const useAppStore = create<AppState>((set, get) => ({
             );
           })();
 
+    // Keep the cloud values in clean snapshots when the corresponding Library
+    // entry is being held locally as a draft. This also covers Site-only deltas.
+    const pendingCloudSites = source === "trusted-cloud"
+      ? incomingSites.filter(({ id }) => dirtySiteIds.has(id))
+      : [];
+    const pendingCloudSiteIds = new Set(pendingCloudSites.map(({ id }) => id));
+    const nextSimulationPresets = pendingCloudSites.length
+      ? mergedSimulationPresets.map((preset) => {
+          if (dirtySimIds.has(preset.id) || !preset.snapshot.sites.some(
+            (site) => site.libraryEntryId && pendingCloudSiteIds.has(site.libraryEntryId),
+          )) return preset;
+          return { ...preset, snapshot: { ...preset.snapshot,
+            sites: syncLibraryLinkedSiteValues(preset.snapshot.sites, pendingCloudSites),
+          } };
+        })
+      : mergedSimulationPresets;
+
     const preserveWorkspaceSites = source === "public-view-only" || Boolean(current.siteLaunch && !current.selectedScenarioId);
+    const workspaceLibrary = [
+      ...libraryForSimulationView(nextSiteLibrary, current.selectedScenarioId),
+      ...(current.selectedScenarioId && !dirtySimIds.has(current.selectedScenarioId) ? pendingCloudSites : []),
+    ];
     const syncedSites = preserveWorkspaceSites
       ? current.sites
-      : syncLibraryLinkedSiteValues(annotateSitesWithLibraryRefs(current.sites, nextSiteLibrary), nextSiteLibrary);
+      : syncLibraryLinkedSiteValues(annotateSitesWithLibraryRefs(current.sites, workspaceLibrary), workspaceLibrary);
 
     if (source !== "public-view-only") {
       writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);

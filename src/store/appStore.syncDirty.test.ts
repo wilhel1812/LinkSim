@@ -223,6 +223,16 @@ describe("appStore delta sync", () => {
     expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!).simulations)
       .toEqual([records.find(({ id }) => id !== original.id)?.id]);
 
+    second.getState().loadSimulationPreset(original.id);
+    expect(second.getState().sites[0].txPowerDbm).toBe(30);
+    vi.resetModules();
+    const reopened = (await import("./appStore")).useAppStore;
+    reopened.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await reopened.getState().initializeCloudSync({ restoreWorkspace: false });
+    reopened.getState().loadSimulationPreset(original.id);
+    expect(reopened.getState().sites[0].txPowerDbm).toBe(30);
+    expect(reopened.getState().siteLibrary[0].txPowerDbm).toBe(15);
+
   });
 
   it.each([false, true])("backs up removed pending Site and Simulation edits (local quota: %s)", async (quota) => {
