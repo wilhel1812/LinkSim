@@ -415,7 +415,8 @@ export function AppShell() {
 
   const nodeLaunch = useMemo(() => parse868NodeLaunch(window.location), []);
   const hasNodeLaunch = nodeLaunch !== undefined;
-  const initialNodeLaunchScenario = useRef(selectedScenarioId);
+  const workspaceNavigationEpoch = useAppStore((state) => state.workspaceNavigationEpoch);
+  const initialNodeLaunchEpoch = useRef(workspaceNavigationEpoch);
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
   const activeSimulation = useMemo(
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
@@ -636,7 +637,7 @@ export function AppShell() {
   }, [activeSimulation, currentUser, selectedLink, selectedSiteIds, shareDirectory, sites]);
 
   useEffect(() => {
-    if (hasNodeLaunch && (isNodeWorkspace || !activeSimulation || selectedScenarioId === initialNodeLaunchScenario.current)) return;
+    if (hasNodeLaunch && (isNodeWorkspace || !activeSimulation || workspaceNavigationEpoch === initialNodeLaunchEpoch.current)) return;
     if (
       !shouldRewritePathAfterDeepLinkApply({
         deepLinkApplied: deepLinkAppliedRef.current,
@@ -677,7 +678,7 @@ export function AppShell() {
     if (currentPath !== targetPath) {
       window.history.replaceState(null, "", targetPath);
     }
-  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasNodeLaunch, isNodeWorkspace, selectedScenarioId]);
+  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasNodeLaunch, isNodeWorkspace, workspaceNavigationEpoch]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1716,10 +1717,11 @@ export function AppShell() {
         reportFailure("Could not open the 868.no Site. Open a valid node link from the 868.no map.");
         return;
       }
-      const { selectedScenarioId: launchWorkspace, fitSitesEpoch: launchEpoch } = useAppStore.getState();
+      const { selectedScenarioId: launchWorkspace, workspaceNavigationEpoch: launchEpoch } = useAppStore.getState();
+      if (launchEpoch !== initialNodeLaunchEpoch.current) return;
       const canApplyLaunch = () => {
         const state = useAppStore.getState();
-        return state.selectedScenarioId === launchWorkspace && state.fitSitesEpoch === launchEpoch;
+        return state.selectedScenarioId === launchWorkspace && state.workspaceNavigationEpoch === launchEpoch;
       };
       void (async () => {
         try {
@@ -1735,7 +1737,6 @@ export function AppShell() {
             reportFailure("Could not open the 868.no Site. This node has no recent reported position.");
             return;
           }
-          initialNodeLaunchScenario.current = "";
           useAppStore.getState().clearSimulationWorkspace(node);
         } catch {
           if (canApplyLaunch()) reportFailure("Could not load the 868.no Site. Reload to try again.");

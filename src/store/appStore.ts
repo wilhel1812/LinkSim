@@ -680,6 +680,7 @@ type AppState = {
   loadSimulationPreset: (presetId: string) => void;
   clearSimulationWorkspace: (node?: MeshmapNode) => void;
   launchedNode: MeshmapNode | null;
+  workspaceNavigationEpoch: number;
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
     presetId: string,
@@ -1531,6 +1532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   authState: "checking",
   launchedNode: null,
+  workspaceNavigationEpoch: 0,
   libraryHydrated: false,
   isInitializing: false,
   setLocale: (locale) => set({ locale }),
@@ -2253,6 +2255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       selectedScenarioId: scenario.id,
       launchedNode: null,
+      workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       sites: libraryBacked.sites,
       links: applyDefaultsToScenarioLinks(migratedScenario.links, defaults),
       systems: scenario.systems,
@@ -3418,6 +3421,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         selectedScenarioId: preset.id,
         launchedNode: null,
+        workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
         sites: [],
         links: [],
         systems: snapshotSystems,
@@ -3482,6 +3486,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       selectedScenarioId: preset.id,
       launchedNode: null,
+      workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       sites: recoveredSites,
       links: recovered.links,
       systems: recovered.systems,
@@ -3554,6 +3559,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedScenarioId: "",
       sites: site ? [site] : [],
       launchedNode: node ?? null,
+      workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       links: [],
       systems: defaultScenario.systems,
       networks: [],
