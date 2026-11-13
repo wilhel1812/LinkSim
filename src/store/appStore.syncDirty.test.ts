@@ -242,6 +242,16 @@ describe("appStore delta sync", () => {
     reopened.getState().loadSimulationPreset(original.id);
     expect(reopened.getState().sites[0].txPowerDbm).toBe(30);
     expect(reopened.getState().siteLibrary[0].txPowerDbm).toBe(15);
+    reopened.getState().setEnvironmentLossDb(7);
+    reopened.getState().setEnvironmentLossDb(8);
+    const updated = reopened.getState().simulationPresets.find(({ id }) => id === original.id)!;
+    expect(updated.snapshot.environmentLossDb).toBe(8);
+    expect(updated.snapshot.sites[0].txPowerDbm).toBe(30);
+    expect(updated.snapshot.sites[0].libraryEntryId).toBe(site.id);
+    reopened.getState().loadSimulationPreset(original.id);
+    expect(reopened.getState().sites[0].txPowerDbm).toBe(30);
+    expect(reopened.getState().siteLibrary[0].txPowerDbm).toBe(15);
+
 
   });
 

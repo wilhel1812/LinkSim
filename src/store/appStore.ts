@@ -1056,7 +1056,7 @@ const resolveSiteLibraryEntry = (
 // A cloud Simulation already has saved Site values in its snapshot. A separate
 // pending Library edit must not replace those values when opening the Simulation.
 const libraryForSimulationView = (library: SiteLibraryEntry[], presetId: string): SiteLibraryEntry[] =>
-  presetId && !dirtySimIds.has(presetId)
+  presetId
     ? library.filter(({ id }) => !dirtySiteIds.has(id))
     : library;
 
@@ -1102,6 +1102,7 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
 const ensureSitesBackedByLibrary = (
   sites: Site[],
   library: SiteLibraryEntry[],
+  pendingDraftIds?: ReadonlySet<string>,
 ): { sites: Site[]; siteLibrary: SiteLibraryEntry[]; addedCount: number } => {
   if (!sites.length) return { sites, siteLibrary: library, addedCount: 0 };
   const nextLibrary = [...library];
@@ -1111,6 +1112,7 @@ const ensureSitesBackedByLibrary = (
     const normalizedSite = withSiteRadioDefaults(site);
     if (normalizedSite.libraryDetached) return normalizedSite;
     let entry = resolveSiteLibraryEntry(normalizedSite, resolver);
+    if (entry && pendingDraftIds?.has(entry.id)) return { ...normalizedSite, libraryEntryId: entry.id };
     if (!entry) {
       entry = {
         id: makeId("libsite"),
@@ -2946,7 +2948,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn(`[appStore] saveCurrentSimulationPreset: User ${user.id} cannot edit simulation ${presetName}`);
       return null;
     }
-    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary, dirtySiteIds);
     const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
         link,
@@ -3015,7 +3017,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!presetName) return null;
     const state = get();
     if (hasDuplicateSimulationName(state.simulationPresets, presetName)) return null;
-    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary, dirtySiteIds);
     const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
         link,
@@ -3129,7 +3131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn(`[appStore] overwriteSimulationPreset: User ${user.id} cannot edit simulation ${presetId}`);
       return;
     }
-    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary, dirtySiteIds);
     const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
         link,
@@ -3195,7 +3197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       return;
     }
-    const normalizedSites = ensureSitesBackedByLibrary(sites, get().siteLibrary);
+    const normalizedSites = ensureSitesBackedByLibrary(sites, get().siteLibrary, dirtySiteIds);
     const normalizedLinks = links.map((link) =>
       stripRedundantLinkRadioOverrides(
         link,
