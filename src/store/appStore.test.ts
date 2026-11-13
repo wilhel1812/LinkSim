@@ -1593,7 +1593,7 @@ describe("appStore blank simulation loading", () => {
 it("keeps the launched node and edits in memory while preserving the previous session", () => {
   const initial = useAppStore.getState();
   const stored = new Map(storage.data);
-  const node = { nodeId: "!02eb8e7c", longName: "Hill", lat: 60, lon: 10, altitudeM: 140 };
+  const node = { site: { name: "Hill", position: { lat: 60, lon: 10 }, groundElevationM: 140 } };
   try {
     useAppStore.setState({ currentUser: null });
     storage.mock.setItem("rmw-last-simulation-ref-v1", "saved:previous");
@@ -1603,13 +1603,13 @@ it("keeps the launched node and edits in memory while preserving the previous se
     expect(launched.sites).toHaveLength(1);
     const [site] = launched.sites;
     expect(launched.selectedSiteIds).toEqual([site.id]);
-    expect(launched.mapViewport?.center).toEqual({ lat: node.lat, lon: node.lon });
+    expect(launched.mapViewport?.center).toEqual(node.site.position);
     expect(site).toMatchObject({ name: "Hill", groundElevationM: 140, antennaHeightM: 2 });
     launched.updateSite(site.id, { position: { lat: 60.1, lon: 10 }, antennaHeightM: 4 });
     expect(useAppStore.getState().sites[0]).toMatchObject({ position: { lat: 60.1, lon: 10 }, antennaHeightM: 4 });
     expect(storage.data).toEqual(beforeLaunch);
     initial.clearSimulationWorkspace(node);
-    expect(useAppStore.getState().sites[0]).toEqual(site);
+    expect(useAppStore.getState().sites[0]).toEqual({ ...site, id: expect.any(String) });
   } finally {
     useAppStore.setState(initial);
     storage.mock.clear();

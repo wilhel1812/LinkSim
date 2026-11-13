@@ -1,5 +1,5 @@
-import { fetchMeshmapNodes, NODE_FEED_SOURCES } from "../lib/meshtasticMqtt";
-import { parse868NodeLaunch } from "../lib/nodeLaunch";
+import { sampleSrtmElevation } from "../lib/srtm";
+import { parseSiteLaunch } from "../lib/siteLaunch";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Globe, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
@@ -188,6 +188,10 @@ const copyToClipboard = async (textOrPromise: string | Promise<string>): Promise
 };
 
 export function AppShell() {
+  const launchElevationPending = useAppStore((state) => state.siteLaunch?.needsElevation ?? false);
+  const launchTerrain = useAppStore((state) => state.srtmTiles);
+  const editorTerrainBusy = useAppStore((state) => state.isEditorTerrainFetching);
+  const loadLaunchTerrain = useAppStore((state) => state.loadTerrainForCoordinate);
   const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
@@ -207,6 +211,26 @@ export function AppShell() {
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
+  const launchPosition = launchElevationPending && !selectedScenarioId ? sites[0]?.position : undefined;
+  const requestedLaunchPosition = useRef<typeof launchPosition>(undefined);
+  useEffect(() => {
+    if (!launchPosition) return;
+    const state = useAppStore.getState();
+    const launch = state.siteLaunch;
+    const site = state.sites.find(({ id }) => id === launch?.siteId);
+    if (!launch?.needsElevation || state.selectedScenarioId || site?.position !== launchPosition) return;
+    const { lat, lon } = launchPosition;
+    const elevation = sampleSrtmElevation(launchTerrain, lat, lon);
+    if (elevation !== null) {
+      state.updateSite(site.id, { groundElevationM: Math.round(elevation) });
+    } else if (!editorTerrainBusy && requestedLaunchPosition.current !== launchPosition) {
+      const timer = window.setTimeout(() => {
+        requestedLaunchPosition.current = launchPosition;
+        void loadLaunchTerrain(lat, lon).catch(() => undefined);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [launchPosition, launchTerrain, editorTerrainBusy, loadLaunchTerrain]);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const isSingleSiteSelection = selectedSiteIds.length === 1;
   const loadDemoScenario = useAppStore((state) => state.loadDemoScenario);
@@ -413,10 +437,10 @@ export function AppShell() {
   const isLocalRuntime = runtimeEnvironment === "local";
   const betterAuthPilotEnabled = isBetterAuthPilotEnabled();
 
-  const nodeLaunch = useMemo(() => parse868NodeLaunch(window.location), []);
-  const hasNodeLaunch = nodeLaunch !== undefined;
+  const siteLaunch = useMemo(() => parseSiteLaunch(window.location), []);
+  const hasSiteLaunch = siteLaunch !== undefined;
   const workspaceNavigationEpoch = useAppStore((state) => state.workspaceNavigationEpoch);
-  const initialNodeLaunchEpoch = useRef(workspaceNavigationEpoch);
+  const initialSiteLaunchEpoch = useRef(workspaceNavigationEpoch);
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
   const activeSimulation = useMemo(
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
@@ -534,9 +558,9 @@ export function AppShell() {
     [publishAppNotice],
   );
   const canSaveLaunchedSite = accessState === "granted" && Boolean(currentUser);
-  const isNodeWorkspace = useAppStore((state) => !state.selectedScenarioId && Boolean(state.launchedNode));
+  const isSiteLaunchWorkspace = useAppStore((state) => !state.selectedScenarioId && Boolean(state.siteLaunch));
   const canPersistWorkspace =
-    !isNodeWorkspace &&
+    !isSiteLaunchWorkspace &&
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
   const mobileNavigatorTabId = "mobile-workspace-tab-navigator";
@@ -637,9 +661,9 @@ export function AppShell() {
   }, [activeSimulation, currentUser, selectedLink, selectedSiteIds, shareDirectory, sites]);
 
   useEffect(() => {
-    if (hasNodeLaunch && (isNodeWorkspace || !activeSimulation || workspaceNavigationEpoch === initialNodeLaunchEpoch.current)) return;
+    if (hasSiteLaunch && (isSiteLaunchWorkspace || !activeSimulation || workspaceNavigationEpoch === initialSiteLaunchEpoch.current)) return;
     if (
-      !hasNodeLaunch && !shouldRewritePathAfterDeepLinkApply({
+      !hasSiteLaunch && !shouldRewritePathAfterDeepLinkApply({
         deepLinkApplied: deepLinkAppliedRef.current,
         deepLinkParseOk: deepLinkParse.ok,
         deepLinkApplyOutcome: deepLinkApplyOutcomeRef.current,
@@ -678,7 +702,7 @@ export function AppShell() {
     if (currentPath !== targetPath) {
       window.history.replaceState(null, "", targetPath);
     }
-  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasNodeLaunch, isNodeWorkspace, workspaceNavigationEpoch]);
+  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasSiteLaunch, isSiteLaunchWorkspace, workspaceNavigationEpoch]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1052,7 +1076,7 @@ export function AppShell() {
       if (reason === "initial") {
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
-          if (!seen && !deepLinkParse.ok && !hasNodeLaunch) {
+          if (!seen && !deepLinkParse.ok && !hasSiteLaunch) {
             setShowWelcomeModalRef.current(true);
           }
         } catch {
@@ -1069,7 +1093,7 @@ export function AppShell() {
       console.info("[AppShell] Access check recovered", { reason, userId: profile.id });
       setAccessState("granted");
     },
-    [clearAuthRetryTimer, deepLinkParse.ok, hasNodeLaunch, pushNotification, setAuthState, setCurrentUser],
+    [clearAuthRetryTimer, deepLinkParse.ok, hasSiteLaunch, pushNotification, setAuthState, setCurrentUser],
   );
 
   const handleLegacyMigrationContinueExistingProfile = useCallback(() => {
@@ -1104,14 +1128,14 @@ export function AppShell() {
       setAccessState("granted");
       try {
         const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
-        if (!seen && !deepLinkParse.ok && !hasNodeLaunch) {
+        if (!seen && !deepLinkParse.ok && !hasSiteLaunch) {
           setShowWelcomeModalRef.current(true);
         }
       } catch {
         // ignore storage errors
       }
     },
-    [deepLinkParse.ok, hasNodeLaunch, setAuthState, setCurrentUser],
+    [deepLinkParse.ok, hasSiteLaunch, setAuthState, setCurrentUser],
   );
 
   const runAccessCheck = useCallback(
@@ -1431,13 +1455,13 @@ export function AppShell() {
 
   useEffect(() => {
     if (accessState === "granted") {
-      void runMigrations().then(() => initializeCloudSync({ restoreWorkspace: !hasNodeLaunch }));
+      void runMigrations().then(() => initializeCloudSync({ restoreWorkspace: !hasSiteLaunch }));
     }
-  }, [accessState, initializeCloudSync, hasNodeLaunch]);
+  }, [accessState, initializeCloudSync, hasSiteLaunch]);
 
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
   useEffect(() => {
-    const isAnonNoDeepLink = !deepLinkParse.ok && !hasNodeLaunch && isAnonymousGuestReadonly;
+    const isAnonNoDeepLink = !deepLinkParse.ok && !hasSiteLaunch && isAnonymousGuestReadonly;
     if (!isAnonNoDeepLink) {
       anonymousNoticeEntryActiveRef.current = false;
       removeNotificationImmediately("demo-mode");
@@ -1457,7 +1481,7 @@ export function AppShell() {
         ? "You’re viewing a read-only demo. Sign in to create and save your own Simulations."
         : "You’re viewing a read-only guest workspace. Sign in to create and save your own Simulations.",
     );
-  }, [deepLinkParse.ok, hasNodeLaunch, isAnonymousGuestReadonly, loadDemoScenario, publishTransientNotice, removeNotificationImmediately, sites.length]);
+  }, [deepLinkParse.ok, hasSiteLaunch, isAnonymousGuestReadonly, loadDemoScenario, publishTransientNotice, removeNotificationImmediately, sites.length]);
 
   useEffect(() => {
     const timers: number[] = [];
@@ -1708,40 +1732,17 @@ export function AppShell() {
     ) {
       return;
     }
-    if (hasNodeLaunch) {
-      const reportFailure = (message: string) => publishAppNotice({
-        id: "868-node-launch", message, tone: "warning", persistent: true,
-      });
+    if (hasSiteLaunch) {
       deepLinkAppliedRef.current = true;
-      if (!nodeLaunch) {
-        reportFailure("Could not open the 868.no Site. Open a valid node link from the 868.no map.");
-        return;
+      if (useAppStore.getState().workspaceNavigationEpoch !== initialSiteLaunchEpoch.current) return;
+      if (siteLaunch) {
+        useAppStore.getState().clearSimulationWorkspace(siteLaunch);
+      } else {
+        publishAppNotice({
+          id: "site-launch", message: "Could not open the Site. Check the coordinates and Site settings in the link.",
+          tone: "warning", persistent: true,
+        });
       }
-      const { selectedScenarioId: launchWorkspace, workspaceNavigationEpoch: launchEpoch } = useAppStore.getState();
-      if (launchEpoch !== initialNodeLaunchEpoch.current) return;
-      const canApplyLaunch = () => {
-        const state = useAppStore.getState();
-        return state.selectedScenarioId === launchWorkspace && state.workspaceNavigationEpoch === launchEpoch;
-      };
-      void (async () => {
-        try {
-          const feed = await fetchMeshmapNodes({
-            sourceId: "868-no",
-            sourceUrl: NODE_FEED_SOURCES["868-no"].sourceUrl,
-            cacheTtlMs: 0,
-          });
-          if (!canApplyLaunch()) return;
-          if (feed.networkError) throw new Error();
-          const node = feed.nodes.find(({ nodeId }) => nodeId === nodeLaunch);
-          if (!node) {
-            reportFailure("Could not open the 868.no Site. This node has no recent reported position.");
-            return;
-          }
-          useAppStore.getState().clearSimulationWorkspace(node);
-        } catch {
-          if (canApplyLaunch()) reportFailure("Could not load the 868.no Site. Reload to try again.");
-        }
-      })();
       return;
     }
     if (!deepLinkParse.ok) {
@@ -2021,8 +2022,8 @@ export function AppShell() {
     accessState,
     currentUser,
     deepLinkParse,
-    hasNodeLaunch,
-    nodeLaunch,
+    hasSiteLaunch,
+    siteLaunch,
     importLibraryData,
     isInitializing,
     loadSimulationPreset,
@@ -2037,7 +2038,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (libraryAutoOpened) return;
-    if (hasNodeLaunch || workspaceState !== "no-simulation") return;
+    if (hasSiteLaunch || workspaceState !== "no-simulation") return;
     if (showWelcomeModal) return;
     if (accessState !== "granted" && accessState !== "readonly") return;
     if (!activeUserId) return;
@@ -2049,7 +2050,7 @@ export function AppShell() {
     }
     setLibraryAutoOpened(true);
     openLibrary("simulations");
-  }, [libraryAutoOpened, hasNodeLaunch, workspaceState, showWelcomeModal, accessState, activeUserId, openLibrary]);
+  }, [libraryAutoOpened, hasSiteLaunch, workspaceState, showWelcomeModal, accessState, activeUserId, openLibrary]);
 
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
@@ -2623,7 +2624,7 @@ export function AppShell() {
         id={isMobileViewport ? mobileInspectorPanelId : undefined}
         role={isMobileViewport ? "tabpanel" : undefined}
       >
-        {workspaceState === "no-simulation" && !hasNodeLaunch && !isReadOnlyShell ? (
+        {workspaceState === "no-simulation" && !hasSiteLaunch && !isReadOnlyShell ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>

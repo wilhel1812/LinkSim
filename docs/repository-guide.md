@@ -223,17 +223,6 @@ npm run refresh:staging:r2
 - Follow [docs/release-flow.md](./release-flow.md) for production promotion.
 - When changing auth/permissions, add or update tests in the same pass.
 
+## Creating a Site from a URL
 
-## Launching a Site from 868.no
-
-The selected-node action on 868.no can link to
-`https://linksim.link/?source=868-no&node=%21<eight-hex-digits>`. Offer the
-action for nodes with a reported position in the Nodes API's default 72-hour
-window. LinkSim looks up the position again on every page load.
-
-Use `https://staging.linksim.link/?source=868-no&node=%21<eight-hex-digits>`
-with a current node for acceptance. Check guest pin dragging, Site editing and
-coverage, then reload to verify that the reported position and default Site
-settings return. Check that a signed-in user can save the edited values to the
-Library and receives a prompt before creating a duplicate. Enable the
-production map action once the LinkSim route is deployed.
+See the [Site URL contract](site-url.md) for supported fields and integration examples.

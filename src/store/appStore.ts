@@ -1,3 +1,4 @@
+import type { SiteLaunch } from "../lib/siteLaunch";
 import { create } from "zustand";
 import { readLibraryRecoveryStorage, writeLibraryRecoveryStorage } from "../lib/libraryRecoveryStorage";
 import { clearTerrainLossCache } from "../lib/coverage";
@@ -306,6 +307,7 @@ type SiteLibraryEntry = {
   sourceMeta?: {
     sourceType: string;
     sourceUrl?: string;
+    sourceLabel?: string;
     nodeId?: string;
     shortName?: string;
     longName?: string;
@@ -678,8 +680,8 @@ type AppState = {
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
   loadSimulationPreset: (presetId: string) => void;
-  clearSimulationWorkspace: (node?: MeshmapNode) => void;
-  launchedNode: MeshmapNode | null;
+  clearSimulationWorkspace: (launch?: SiteLaunch) => void;
+  siteLaunch: { siteId: string; source?: SiteLaunch["source"]; needsElevation: boolean } | null;
   workspaceNavigationEpoch: number;
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
@@ -1400,7 +1402,7 @@ type AccountLibraryCache = {
 const captureAccountLibraryCache = (state: AppState): AccountLibraryCache => ({
   siteLibrary: state.siteLibrary,
   simulationPresets: state.simulationPresets,
-  workspace: state.launchedNode && !state.selectedScenarioId ? undefined : {
+  workspace: state.siteLaunch && !state.selectedScenarioId ? undefined : {
     snapshot: buildSimulationSnapshotFromState(state),
     selectedScenarioId: state.selectedScenarioId,
     selectedSiteIds: state.selectedSiteIds,
@@ -1531,7 +1533,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncStatusMessage: "",
   currentUser: null,
   authState: "checking",
-  launchedNode: null,
+  siteLaunch: null,
   workspaceNavigationEpoch: 0,
   libraryHydrated: false,
   isInitializing: false,
@@ -1572,7 +1574,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastSyncedPayloadDigest = incoming.syncDigest;
       const workspace = incoming.workspace;
       const snapshot = workspace?.snapshot;
-      const preserveLaunch = Boolean(get().launchedNode && !get().selectedScenarioId);
+      const preserveLaunch = Boolean(get().siteLaunch && !get().selectedScenarioId);
       set({
         siteLibrary: incoming.siteLibrary,
         simulationPresets: incoming.simulationPresets,
@@ -2254,7 +2256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({
       selectedScenarioId: scenario.id,
-      launchedNode: null,
+      siteLaunch: null,
       workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       sites: libraryBacked.sites,
       links: applyDefaultsToScenarioLinks(migratedScenario.links, defaults),
@@ -2996,7 +2998,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
       writeStorage(SITE_LIBRARY_KEY, next);
-      const nextSites = state.launchedNode && !state.selectedScenarioId
+      const nextSites = state.siteLaunch && !state.selectedScenarioId
         ? state.sites
         : resolveTrackedSiteOrientations(syncLibraryLinkedSiteValues(state.sites, next));
       const nextSitesById = new Map(nextSites.map((site) => [site.id, site]));
@@ -3420,7 +3422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const loadedAtIso = new Date().toISOString();
       set({
         selectedScenarioId: preset.id,
-        launchedNode: null,
+        siteLaunch: null,
         workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
         sites: [],
         links: [],
@@ -3485,7 +3487,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       : recovered.networks[0].id;
     set({
       selectedScenarioId: preset.id,
-      launchedNode: null,
+      siteLaunch: null,
       workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       sites: recoveredSites,
       links: recovered.links,
@@ -3531,14 +3533,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
   },
-  clearSimulationWorkspace: (node) => {
+  clearSimulationWorkspace: (launch) => {
     get().cancelTerrainLoad();
     const currentUser = get().currentUser;
     const defaults = resolveUserSimulationDefaults(
       currentUser?.simulationDefaultsPreference,
       currentUser?.defaultFrequencyPresetId,
     );
-    if (!node) {
+    if (!launch) {
       try {
         localStorage.removeItem(LAST_SESSION_KEY);
         localStorage.removeItem(LAST_SIMULATION_REF_KEY);
@@ -3546,19 +3548,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Best effort only.
       }
     }
-    const site = node ? withSiteRadioDefaults({
+    const site = launch ? withSiteRadioDefaults({
       ...STANDARD_SITE_RADIO,
-      id: `868-no:${node.nodeId}`,
-      name: node.longName ?? node.shortName ?? node.nodeId,
-      position: { lat: node.lat, lon: node.lon },
-      groundElevationM: node.altitudeM ?? 0,
+      groundElevationM: 0,
       antennaHeightM: 2,
+      ...launch.site,
+      id: makeId("site"),
     }) : null;
     clearTerrainLossCache();
     set({
       selectedScenarioId: "",
       sites: site ? [site] : [],
-      launchedNode: node ?? null,
+      siteLaunch: site && launch ? { siteId: site.id, source: launch.source, needsElevation: launch.site.groundElevationM === undefined } : null,
       workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
       links: [],
       systems: defaultScenario.systems,
@@ -3570,7 +3571,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       temporaryDirectionReversed: false,
       profileCursorIndex: 0,
       linkColorMode: DEFAULT_LINK_COLOR_MODE,
-      siteIconColors: {},
+      siteIconColors: site && launch?.iconColor ? { [site.id]: launch.iconColor } : {},
       selectedCoverageResolution: "24",
       selectedOverlayRadiusOption: defaultOptionForSelectionCount(site ? 1 : 0),
       selectedFrequencyPresetId: defaults.frequencyPresetId,
@@ -3875,7 +3876,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             );
           })();
 
-    const preserveWorkspaceSites = source === "public-view-only" || Boolean(current.launchedNode && !current.selectedScenarioId);
+    const preserveWorkspaceSites = source === "public-view-only" || Boolean(current.siteLaunch && !current.selectedScenarioId);
     const libraryBackedSites = preserveWorkspaceSites
       ? { sites: current.sites, siteLibrary: nextSiteLibrary, addedCount: 0 }
       : ensureSitesBackedByLibrary(
@@ -4002,9 +4003,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().updateCurrentSimulationSnapshot();
   },
   updateSite: (id, patch) => {
-    const { currentUser, sites, siteLibrary, selectedScenarioId, simulationPresets, launchedNode } = get();
-    if (!selectedScenarioId && launchedNode && id === `868-no:${launchedNode.nodeId}`) {
-      set({ sites: sites.map((site) => site.id === id ? withSiteRadioDefaults({ ...site, ...patch }) : site) });
+    const { currentUser, sites, siteLibrary, selectedScenarioId, simulationPresets, siteLaunch } = get();
+    if (!selectedScenarioId && siteLaunch && id === siteLaunch.siteId) {
+      const site = sites.find((candidate) => candidate.id === id);
+      if (!site) return;
+      const moved = patch.position && (patch.position.lat !== site.position.lat || patch.position.lon !== site.position.lon);
+      set({
+        sites: sites.map((candidate) => candidate.id === id ? withSiteRadioDefaults({ ...candidate, ...patch }) : candidate),
+        siteLaunch: {
+          ...siteLaunch,
+          needsElevation: patch.groundElevationM !== undefined ? false : Boolean(moved) || siteLaunch.needsElevation,
+        },
+      });
       useCoverageStore.getState().recomputeCoverage();
       return;
     }

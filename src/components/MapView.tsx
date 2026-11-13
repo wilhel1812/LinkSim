@@ -1,4 +1,4 @@
-import { matchesMqttSite } from "../lib/nodeLaunch";
+import { matchesMqttSite } from "../lib/mqttSiteMatch";
 import { NARROW_FAST_DEFAULT_PRESET as defaultRadioPreset } from "../lib/frequencyPresets.data";
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
@@ -716,8 +716,7 @@ export function MapView({
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const launchedNode = useAppStore((state) => state.selectedScenarioId ? null : state.launchedNode);
-  const launchedSiteId = launchedNode ? `868-no:${launchedNode.nodeId}` : null;
+  const launchedSiteId = useAppStore((state) => state.selectedScenarioId ? null : state.siteLaunch?.siteId ?? null);
   const updateSite = useAppStore((state) => state.updateSite);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
@@ -3080,11 +3079,7 @@ export function MapView({
     setIsDraggingSite(false);
     if (siteId === launchedSiteId) {
       const position = { lat: event.lngLat.lat, lon: event.lngLat.lng };
-      const elevation = sampleSrtmElevation(srtmTiles, position.lat, position.lon);
-      updateSite(siteId, {
-        position,
-        ...(Number.isFinite(elevation) ? { groundElevationM: Math.round(elevation as number) } : {}),
-      });
+      updateSite(siteId, { position });
       return;
     }
     if (!canPersist) {

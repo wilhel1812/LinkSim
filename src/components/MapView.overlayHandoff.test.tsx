@@ -950,7 +950,7 @@ it("moves the launched Site and requests coverage with the editor open", () => {
   const initial = useAppStore.getState();
   const recomputeCoverage = vi.fn();
   useCoverageStore.setState({ recomputeCoverage });
-  initial.clearSimulationWorkspace({ nodeId: "!02eb8e7c", longName: "Hill", lat: 60, lon: 10 });
+  initial.clearSimulationWorkspace({ site: { name: "Hill", position: { lat: 60, lon: 10 } } });
   const [launchedSite] = useAppStore.getState().sites;
   initial.openMapEditor({
     kind: "site", resourceId: null, temporarySiteId: launchedSite.id, isNew: false, label: "Hill",

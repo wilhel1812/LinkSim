@@ -1,4 +1,4 @@
-import { parse868NodeLaunch } from "../lib/nodeLaunch";
+import { parseSiteLaunch } from "../lib/siteLaunch";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
@@ -30,7 +30,7 @@ const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
-  parseDeepLinkFromLocation({ search, pathname }).ok || parse868NodeLaunch({ search, pathname }) !== undefined;
+  parseDeepLinkFromLocation({ search, pathname }).ok || parseSiteLaunch({ search, pathname }) !== undefined;
 
 type SidebarProps = {
   onOpenHelp?: () => void;
@@ -71,8 +71,7 @@ export function Sidebar({
   const buildLabel = buildLabelForChannel(buildChannel);
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
-  const launchedNode = useAppStore((state) => state.selectedScenarioId ? null : state.launchedNode);
-  const launchedSiteId = launchedNode ? `868-no:${launchedNode.nodeId}` : null;
+  const launchedSiteId = useAppStore((state) => state.selectedScenarioId ? null : state.siteLaunch?.siteId ?? null);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);

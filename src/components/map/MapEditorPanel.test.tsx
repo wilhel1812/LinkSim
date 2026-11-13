@@ -1610,7 +1610,7 @@ describe("MapEditorPanel", () => {
 });
 
 describe("868.no temporary Site editor", () => {
-  const node = { nodeId: "!02eb8e7c", lat: 60, lon: 10, longName: "Hill", altitudeM: 140, sourceUrl: "/node-sources/868-no" };
+  const node = { site: { name: "Hill", position: { lat: 60, lon: 10 }, groundElevationM: 140 }, source: { label: "868.no", url: "https://map.868.no/" } };
 
   const openLaunchedSiteEditor = (readOnly: boolean) => {
     const state = useAppStore.getState();
@@ -1653,6 +1653,26 @@ describe("868.no temporary Site editor", () => {
     });
   });
 
+  it("uses the latest draft coordinates and preserves a manual elevation when terrain arrives", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "61.2" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "62.2" } });
+    const tile = (latStart: number, elevation: number) => ({
+      key: `N${latStart}E010`, latStart, lonStart: 10, size: 2, arcSecondSpacing: 3 as const,
+      elevations: new Int16Array(4).fill(elevation),
+    });
+    act(() => useAppStore.setState({ srtmTiles: [tile(61, 325)] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+    fireEvent.change(screen.getByLabelText("Ground elev (m)"), { target: { value: "460" } });
+    act(() => useAppStore.setState({ srtmTiles: [tile(61, 325), tile(62, 550)] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(460);
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      position: { lat: 62.2, lon: 10 }, groundElevationM: 460,
+    });
+  });
+
   it("saves the edited Site with source metadata and asks before making a duplicate", () => {
     useAppStore.setState({ currentUser });
     openLaunchedSiteEditor(false);
@@ -1662,7 +1682,7 @@ describe("868.no temporary Site editor", () => {
     const [saved] = useAppStore.getState().siteLibrary;
     expect(saved).toMatchObject({
       name: "Adjusted Hill", visibility: "private", position: { lat: 60, lon: 10 },
-      sourceMeta: { sourceType: "mqtt-feed", nodeId: node.nodeId, sourceUrl: node.sourceUrl },
+      sourceMeta: { sourceType: "url", sourceLabel: "868.no", sourceUrl: "https://map.868.no/" },
     });
     expect(useAppStore.getState().sites).toHaveLength(1);
     expect(useAppStore.getState().sites[0].libraryEntryId).toBeUndefined();

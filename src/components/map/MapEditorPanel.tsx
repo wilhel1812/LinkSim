@@ -790,6 +790,16 @@ function SiteEditorCard({
         </ActionButton>
       </div>
 
+      {form.siteAttribution ? (
+        <div className="editor-meta-footer">
+          <span className="editor-meta-item">
+            <span className="editor-meta-label">Source</span>
+            {form.siteAttribution.url ? (
+              <a href={form.siteAttribution.url} target="_blank" rel="noopener noreferrer">{form.siteAttribution.label}</a>
+            ) : form.siteAttribution.label}
+          </span>
+        </div>
+      ) : null}
       {!isNew && form.siteMetadata ? (
         <EditorMetadataStrip
           metadata={form.siteMetadata}
