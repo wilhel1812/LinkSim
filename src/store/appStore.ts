@@ -750,6 +750,7 @@ type AppState = {
     bundle: { siteLibrary?: SiteLibraryEntry[]; simulationPresets?: SimulationPreset[] },
     mode: "merge" | "replace",
     source?: "trusted-cloud" | "public-view-only",
+    recovery?: { originalId: string; copy: SimulationPreset },
   ) => { siteCount: number; simulationCount: number };
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   requestSiteLibraryDraftAt: (
@@ -1907,8 +1908,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ syncBusy: true });
     let resolved = false;
     try {
-      const cloud = partitionTrustedCloudLibrary(await fetchCloudLibrary());
+      const response = await fetchCloudLibrary();
       if (!isCurrentAccount()) throw new Error("The signed-in account changed. Try again in the original account.");
+      const cloud = partitionTrustedCloudLibrary(response);
       const remote = cloud.simulationPresets.find((preset) => preset.id === id && preset.status !== "deleted");
       if (!remote) throw new Error("The cloud Simulation is unavailable. Your local edit is still pending.");
       const latest = get();
@@ -1928,31 +1930,18 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...site, libraryEntryId: undefined, libraryDetached: true,
         })),
       }, local.description);
-      const [restored] = normalizeSimulationPresets([{ ...remote, snapshot: { ...remote.snapshot,
-        sites: syncLibraryLinkedSiteValues(remote.snapshot.sites, cloud.siteLibrary),
-      } }]);
-      if (!restored) throw new Error("The cloud Simulation could not be loaded. Your local edit is still pending.");
-
-      // Queue the copy before replacing the original in the single Library write.
-      // Keep the original queued on disk until the replacement has been saved.
-      const pending = pendingLibrary();
-      if (!writeStorage(PENDING_LIBRARY_KEY, { ...pending, simulations: [...pending.simulations, copy.id] })) {
-        throw new Error("LinkSim could not queue the local copy. Free up browser storage and try again.");
-      }
-      const simulationPresets = [copy, ...latest.simulationPresets.map((preset) => preset.id === id ? restored : preset)];
-      if (!writeStorage(SIM_PRESETS_KEY, simulationPresets)) {
-        writeStorage(PENDING_LIBRARY_KEY, pending);
-        throw new Error("LinkSim could not save the local copy. Free up browser storage and try again.");
-      }
-      dirtySimIds.delete(id);
-      markDirtySim(copy.id);
+      get().importLibraryData(
+        { simulationPresets: [remote], siteLibrary: cloud.siteLibrary },
+        "merge",
+        "trusted-cloud",
+        { originalId: id, copy },
+      );
       const simulationConflictIds = latest.simulationConflictIds.filter((conflictId) => conflictId !== id);
-      set({ simulationPresets, simulationConflictIds, ...pendingLibraryState(),
+      set({ simulationConflictIds, ...pendingLibraryState(),
         ...(simulationConflictIds.length === 0 ? {
           syncStatus: "synced" as const, syncErrorMessage: null, syncStatusMessage: "Local copy saved. Cloud version reloaded.",
         } : {}),
       });
-      get().importLibraryData({ siteLibrary: cloud.siteLibrary }, "merge");
       if (latest.selectedScenarioId === id) get().loadSimulationPreset(id);
       resolved = true;
       return name;
@@ -3667,7 +3656,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     get().importLibraryData({ simulationPresets: [restored] }, "merge");
   },
-  importLibraryData: (bundle, mode, source = "trusted-cloud") => {
+  importLibraryData: (bundle, mode, source = "trusted-cloud", recovery) => {
     const partitioned = partitionLibraryPayload({
       siteLibrary: bundle.siteLibrary,
       simulationPresets: bundle.simulationPresets,
@@ -3679,6 +3668,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     let incomingSites = normalizeSiteLibrary(partitioned.siteLibrary as SiteLibraryEntry[]);
     let incomingPresets = normalizeSimulationPresets(partitioned.simulationPresets as SimulationPreset[]);
     const current = get();
+    if (recovery && !incomingPresets.some(({ id }) => id === recovery.originalId)) {
+      throw new Error("The cloud Simulation could not be loaded. Your local edit is still pending.");
+    }
     if (source === "public-view-only") {
       const protectedRole = (entry: { effectiveRole?: string }): boolean => entry.effectiveRole !== "viewer";
       const currentSitesById = new Map(current.siteLibrary.map((entry) => [entry.id, entry]));
@@ -3735,10 +3727,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             const byId = new Map<string, SimulationPreset>();
             for (const preset of current.simulationPresets) byId.set(preset.id, preset);
             for (const preset of incomingPresets) {
-              if ((source !== "trusted-cloud" || !dirtySimIds.has(preset.id)) && !preserveForeignCache(byId.get(preset.id), preset) && !isOlderCloudRecord(byId.get(preset.id), preset)) {
-                byId.set(preset.id, preset);
+              if (preset.id === recovery?.originalId || ((source !== "trusted-cloud" || !dirtySimIds.has(preset.id)) && !preserveForeignCache(byId.get(preset.id), preset) && !isOlderCloudRecord(byId.get(preset.id), preset))) {
+                const imported = preset.id === recovery?.originalId
+                  ? { ...preset, snapshot: { ...preset.snapshot,
+                    sites: syncLibraryLinkedSiteValues(preset.snapshot.sites, incomingSites),
+                  } }
+                  : preset;
+                byId.set(preset.id, imported);
               }
             }
+            if (recovery) byId.set(recovery.copy.id, recovery.copy);
             return normalizeSimulationPresets(Array.from(byId.values())).sort((a, b) =>
               a.updatedAt < b.updatedAt ? 1 : -1,
             );
@@ -3752,7 +3750,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const pendingCloudSiteIds = new Set(pendingCloudSites.map(({ id }) => id));
     const nextSimulationPresets = pendingCloudSites.length
       ? mergedSimulationPresets.map((preset) => {
-          if (dirtySimIds.has(preset.id) || !preset.snapshot.sites.some(
+          if ((dirtySimIds.has(preset.id) && preset.id !== recovery?.originalId) || !preset.snapshot.sites.some(
             (site) => site.libraryEntryId && pendingCloudSiteIds.has(site.libraryEntryId),
           )) return preset;
           return { ...preset, snapshot: { ...preset.snapshot,
@@ -3771,8 +3769,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       : syncLibraryLinkedSiteValues(annotateSitesWithLibraryRefs(current.sites, workspaceLibrary), workspaceLibrary);
 
     if (source !== "public-view-only") {
+      const pending = recovery && pendingLibrary();
+      if (recovery && pending && !writeStorage(PENDING_LIBRARY_KEY, {
+        ...pending, simulations: [...pending.simulations, recovery.copy.id],
+      })) throw new Error("LinkSim could not queue the local copy. Free up browser storage and try again.");
+
+      const saved = writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
+      if (recovery && pending) {
+        if (!saved) {
+          writeStorage(PENDING_LIBRARY_KEY, pending);
+          throw new Error("LinkSim could not save the local copy. Free up browser storage and try again.");
+        }
+        dirtySimIds.delete(recovery.originalId);
+        markDirtySim(recovery.copy.id);
+      }
       writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
-      writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
     }
     set({
       siteLibrary: nextSiteLibrary,
@@ -3780,7 +3791,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sites: syncedSites,
     });
     const nextActive = nextSimulationPresets.find(({ id }) => id === current.selectedScenarioId);
-    if (source === "trusted-cloud" && previousActive && nextActive?.cloudRevision &&
+    if (!recovery && source === "trusted-cloud" && previousActive && nextActive?.cloudRevision &&
         previousActive.cloudRevision !== nextActive.cloudRevision) {
       get().loadSimulationPreset(nextActive.id);
     } else {

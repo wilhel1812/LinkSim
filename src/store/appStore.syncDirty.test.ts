@@ -208,6 +208,16 @@ describe("appStore delta sync", () => {
     expect(second.getState().simulationPresets[0].description).toBe("Offline on B");
     expect(second.getState().simulationConflictIds).toEqual([original.id]);
 
+    const setItem = storage.mock.setItem;
+    const failSave = vi.spyOn(storage.mock, "setItem").mockImplementation((key, value) => {
+      if (key === "rmw-sim-presets-v1") throw new Error("Storage quota exceeded");
+      setItem(key, value);
+    });
+    await expect(second.getState().saveConflictCopyAndReload(original.id)).rejects.toThrow("could not save the local copy");
+    failSave.mockRestore();
+    expect(second.getState().simulationPresets[0].description).toBe("Offline on B");
+    expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!).simulations).toEqual([original.id]);
+
     await second.getState().saveConflictCopyAndReload(original.id);
     const records = second.getState().simulationPresets;
     expect(records.find(({ id }) => id === original.id)?.description).toBe("Saved on A");
