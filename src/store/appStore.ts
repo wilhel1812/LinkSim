@@ -500,6 +500,7 @@ type AppState = {
       insertIntoSimulation?: boolean;
       awaitMapClick?: boolean;
     };
+    temporarySiteId?: string;
     simulationSeed?: {
       name?: string;
       description?: string;
@@ -547,7 +548,7 @@ type AppState = {
   authState: AuthSessionState;
   libraryHydrated: boolean;
   isInitializing: boolean;
-  initializeCloudSync: () => Promise<void>;
+  initializeCloudSync: (options?: { restoreWorkspace?: boolean }) => Promise<void>;
   performCloudSyncPush: (recordMutation?: boolean) => void;
   performManualCloudSync: () => Promise<void>;
   setLocale: (locale: LocaleCode) => void;
@@ -677,7 +678,8 @@ type AppState = {
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
   loadSimulationPreset: (presetId: string) => void;
-  clearSimulationWorkspace: () => void;
+  clearSimulationWorkspace: (node?: MeshmapNode) => void;
+  launchedNode: MeshmapNode | null;
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
     presetId: string,
@@ -1397,7 +1399,7 @@ type AccountLibraryCache = {
 const captureAccountLibraryCache = (state: AppState): AccountLibraryCache => ({
   siteLibrary: state.siteLibrary,
   simulationPresets: state.simulationPresets,
-  workspace: {
+  workspace: state.launchedNode && !state.selectedScenarioId ? undefined : {
     snapshot: buildSimulationSnapshotFromState(state),
     selectedScenarioId: state.selectedScenarioId,
     selectedSiteIds: state.selectedSiteIds,
@@ -1528,6 +1530,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncStatusMessage: "",
   currentUser: null,
   authState: "checking",
+  launchedNode: null,
   libraryHydrated: false,
   isInitializing: false,
   setLocale: (locale) => set({ locale }),
@@ -1567,32 +1570,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastSyncedPayloadDigest = incoming.syncDigest;
       const workspace = incoming.workspace;
       const snapshot = workspace?.snapshot;
+      const preserveLaunch = Boolean(get().launchedNode && !get().selectedScenarioId);
       set({
         siteLibrary: incoming.siteLibrary,
         simulationPresets: incoming.simulationPresets,
-        sites: snapshot?.sites ?? [],
-        links: snapshot?.links ?? [],
-        systems: snapshot?.systems ?? defaultScenario.systems,
-        networks: snapshot?.networks ?? [],
-        selectedScenarioId: workspace?.selectedScenarioId ?? "",
-        selectedSiteId: snapshot?.selectedSiteId ?? "",
-        selectedSiteIds: workspace?.selectedSiteIds ?? [],
-        selectedLinkId: snapshot?.selectedLinkId ?? "",
-        selectedNetworkId: snapshot?.selectedNetworkId ?? "",
-        selectedCoverageResolution: snapshot?.selectedCoverageResolution ?? "24",
-        selectedOverlayRadiusOption: snapshot?.selectedOverlayRadiusOption ?? defaultOptionForSelectionCount(0),
-        propagationModel: snapshot?.propagationModel ?? "ITM",
-        selectedFrequencyPresetId: snapshot?.selectedFrequencyPresetId ?? defaultScenario.defaultFrequencyPresetId,
-        rxSensitivityTargetDbm: snapshot?.rxSensitivityTargetDbm ?? initialScenarioDefaults.rxSensitivityTargetDbm,
-        environmentLossDb: snapshot?.environmentLossDb ?? initialScenarioDefaults.environmentLossDb,
-        propagationEnvironment: snapshot?.propagationEnvironment ?? initialScenarioDefaults.propagationEnvironment,
-        autoPropagationEnvironment: snapshot?.autoPropagationEnvironment ?? initialScenarioDefaults.autoPropagationEnvironment,
-        terrainDataset: snapshot?.terrainDataset ?? "copernicus30",
-        simulationDefaultsOverrideEnabled: snapshot?.simulationDefaultsOverrideEnabled ?? false,
-        simulationDefaultsOverride: snapshot?.simulationDefaultsOverride ?? null,
-        linkColorMode: snapshot?.linkColorMode ?? DEFAULT_LINK_COLOR_MODE,
-        siteIconColors: snapshot?.siteIconColors ?? {},
-        mapViewport: workspace?.mapViewport,
+        ...(!preserveLaunch ? {
+          sites: snapshot?.sites ?? [],
+          links: snapshot?.links ?? [],
+          systems: snapshot?.systems ?? defaultScenario.systems,
+          networks: snapshot?.networks ?? [],
+          selectedScenarioId: workspace?.selectedScenarioId ?? "",
+          selectedSiteId: snapshot?.selectedSiteId ?? "",
+          selectedSiteIds: workspace?.selectedSiteIds ?? [],
+          selectedLinkId: snapshot?.selectedLinkId ?? "",
+          selectedNetworkId: snapshot?.selectedNetworkId ?? "",
+          selectedCoverageResolution: snapshot?.selectedCoverageResolution ?? "24",
+          selectedOverlayRadiusOption: snapshot?.selectedOverlayRadiusOption ?? defaultOptionForSelectionCount(0),
+          propagationModel: snapshot?.propagationModel ?? "ITM",
+          selectedFrequencyPresetId: snapshot?.selectedFrequencyPresetId ?? defaultScenario.defaultFrequencyPresetId,
+          rxSensitivityTargetDbm: snapshot?.rxSensitivityTargetDbm ?? initialScenarioDefaults.rxSensitivityTargetDbm,
+          environmentLossDb: snapshot?.environmentLossDb ?? initialScenarioDefaults.environmentLossDb,
+          propagationEnvironment: snapshot?.propagationEnvironment ?? initialScenarioDefaults.propagationEnvironment,
+          autoPropagationEnvironment: snapshot?.autoPropagationEnvironment ?? initialScenarioDefaults.autoPropagationEnvironment,
+          terrainDataset: snapshot?.terrainDataset ?? "copernicus30",
+          simulationDefaultsOverrideEnabled: snapshot?.simulationDefaultsOverrideEnabled ?? false,
+          simulationDefaultsOverride: snapshot?.simulationDefaultsOverride ?? null,
+          linkColorMode: snapshot?.linkColorMode ?? DEFAULT_LINK_COLOR_MODE,
+          siteIconColors: snapshot?.siteIconColors ?? {},
+          mapViewport: workspace?.mapViewport,
+        } : {}),
         syncPending: incoming.syncPending,
         pendingChangesCount: incoming.pendingChangesCount,
         syncStatus: incoming.syncPending ? "error" : "synced",
@@ -1682,13 +1688,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsOnline: (value) => set({ isOnline: value }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
-  initializeCloudSync: async () => {
+  initializeCloudSync: async ({ restoreWorkspace = true } = {}) => {
     if (!await waitForAccountLibraryPreparation()) return;
     const generationAtStart = syncAccountGeneration;
     const userIdAtStart = get().currentUser?.id;
     const isCurrentAccount = () =>
       syncAccountGeneration === generationAtStart && get().currentUser?.id === userIdAtStart;
-    const applyStartupSelection = !get().libraryHydrated;
+    const applyStartupSelection = restoreWorkspace && !get().libraryHydrated;
     console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing...", isInitializing: true });
     try {
@@ -2246,6 +2252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({
       selectedScenarioId: scenario.id,
+      launchedNode: null,
       sites: libraryBacked.sites,
       links: applyDefaultsToScenarioLinks(migratedScenario.links, defaults),
       systems: scenario.systems,
@@ -2986,7 +2993,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
       writeStorage(SITE_LIBRARY_KEY, next);
-      const nextSites = resolveTrackedSiteOrientations(syncLibraryLinkedSiteValues(state.sites, next));
+      const nextSites = state.launchedNode && !state.selectedScenarioId
+        ? state.sites
+        : resolveTrackedSiteOrientations(syncLibraryLinkedSiteValues(state.sites, next));
       const nextSitesById = new Map(nextSites.map((site) => [site.id, site]));
       const nextLinks = state.links.map((link) =>
         stripRedundantLinkRadioOverrides(
@@ -3408,6 +3417,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const loadedAtIso = new Date().toISOString();
       set({
         selectedScenarioId: preset.id,
+        launchedNode: null,
         sites: [],
         links: [],
         systems: snapshotSystems,
@@ -3471,6 +3481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       : recovered.networks[0].id;
     set({
       selectedScenarioId: preset.id,
+      launchedNode: null,
       sites: recoveredSites,
       links: recovered.links,
       systems: recovered.systems,
@@ -3515,28 +3526,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
   },
-  clearSimulationWorkspace: () => {
+  clearSimulationWorkspace: (node) => {
     get().cancelTerrainLoad();
     const currentUser = get().currentUser;
     const defaults = resolveUserSimulationDefaults(
       currentUser?.simulationDefaultsPreference,
       currentUser?.defaultFrequencyPresetId,
     );
-    try {
-      localStorage.removeItem(LAST_SESSION_KEY);
-      localStorage.removeItem(LAST_SIMULATION_REF_KEY);
-    } catch {
-      // Best effort only.
+    if (!node) {
+      try {
+        localStorage.removeItem(LAST_SESSION_KEY);
+        localStorage.removeItem(LAST_SIMULATION_REF_KEY);
+      } catch {
+        // Best effort only.
+      }
     }
+    const site = node ? withSiteRadioDefaults({
+      ...STANDARD_SITE_RADIO,
+      id: `868-no:${node.nodeId}`,
+      name: node.longName ?? node.shortName ?? node.nodeId,
+      position: { lat: node.lat, lon: node.lon },
+      groundElevationM: node.altitudeM ?? 0,
+      antennaHeightM: 2,
+    }) : null;
     clearTerrainLossCache();
     set({
       selectedScenarioId: "",
-      sites: [],
+      sites: site ? [site] : [],
+      launchedNode: node ?? null,
       links: [],
       systems: defaultScenario.systems,
       networks: [],
-      selectedSiteId: "",
-      selectedSiteIds: [],
+      selectedSiteId: site?.id ?? "",
+      selectedSiteIds: site ? [site.id] : [],
       selectedLinkId: "",
       selectedNetworkId: "",
       temporaryDirectionReversed: false,
@@ -3544,7 +3566,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       linkColorMode: DEFAULT_LINK_COLOR_MODE,
       siteIconColors: {},
       selectedCoverageResolution: "24",
-      selectedOverlayRadiusOption: defaultOptionForSelectionCount(0),
+      selectedOverlayRadiusOption: defaultOptionForSelectionCount(site ? 1 : 0),
       selectedFrequencyPresetId: defaults.frequencyPresetId,
       rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
       environmentLossDb: defaults.environmentLossDb,
@@ -3574,8 +3596,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       endpointPickTarget: null,
       mapEditor: null,
       mapEditorSiteDraft: null,
-      mapOverlayMode: defaultOverlayModeForSelectionCount(0),
-      mapViewport: defaultScenario.viewport,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(site ? 1 : 0),
+      mapViewport: site ? { center: site.position, zoom: 12 } : defaultScenario.viewport,
       fitSitesEpoch: get().fitSitesEpoch + 1,
     });
     useCoverageStore.setState({
@@ -3590,6 +3612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       completedCoverageRunToken: "",
       calculationCycleSource: null,
     });
+    if (site) useCoverageStore.getState().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {
     const { currentUser } = get();
@@ -3846,13 +3869,14 @@ export const useAppStore = create<AppState>((set, get) => ({
             );
           })();
 
-    const libraryBackedSites = source === "public-view-only"
+    const preserveWorkspaceSites = source === "public-view-only" || Boolean(current.launchedNode && !current.selectedScenarioId);
+    const libraryBackedSites = preserveWorkspaceSites
       ? { sites: current.sites, siteLibrary: nextSiteLibrary, addedCount: 0 }
       : ensureSitesBackedByLibrary(
           annotateSitesWithLibraryRefs(current.sites, nextSiteLibrary),
           nextSiteLibrary,
         );
-    const syncedSites = source === "public-view-only"
+    const syncedSites = preserveWorkspaceSites
       ? current.sites
       : syncLibraryLinkedSiteValues(libraryBackedSites.sites, libraryBackedSites.siteLibrary);
 
@@ -3972,7 +3996,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().updateCurrentSimulationSnapshot();
   },
   updateSite: (id, patch) => {
-    const { currentUser, sites, siteLibrary, selectedScenarioId, simulationPresets } = get();
+    const { currentUser, sites, siteLibrary, selectedScenarioId, simulationPresets, launchedNode } = get();
+    if (!selectedScenarioId && launchedNode && id === `868-no:${launchedNode.nodeId}`) {
+      set({ sites: sites.map((site) => site.id === id ? withSiteRadioDefaults({ ...site, ...patch }) : site) });
+      useCoverageStore.getState().recomputeCoverage();
+      return;
+    }
     const user = requireAuth(currentUser, "updateSite");
     if (!user) return;
     if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {

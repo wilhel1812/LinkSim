@@ -1,3 +1,4 @@
+import { parse868NodeLaunch } from "../lib/nodeLaunch";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
@@ -29,7 +30,7 @@ const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
-  parseDeepLinkFromLocation({ search, pathname }).ok;
+  parseDeepLinkFromLocation({ search, pathname }).ok || parse868NodeLaunch({ search, pathname }) !== undefined;
 
 type SidebarProps = {
   onOpenHelp?: () => void;

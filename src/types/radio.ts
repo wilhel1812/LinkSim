@@ -6,6 +6,7 @@ export type Coordinates = {
 export type Site = {
   id: string;
   name: string;
+  description?: string;
   position: Coordinates;
   groundElevationM: number;
   antennaHeightM: number;

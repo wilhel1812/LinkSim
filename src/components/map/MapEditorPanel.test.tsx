@@ -1608,3 +1608,53 @@ describe("MapEditorPanel", () => {
     expect(useAppStore.getState().mapEditor).toBeNull();
   });
 });
+
+describe("868.no temporary Site editor", () => {
+  const node = { nodeId: "!02eb8e7c", lat: 60, lon: 10, longName: "Hill", altitudeM: 140, sourceUrl: "/node-sources/868-no" };
+
+  const openLaunchedSiteEditor = (readOnly: boolean) => {
+    const state = useAppStore.getState();
+    const [site] = state.sites;
+    state.openMapEditor({ kind: "site", resourceId: null, temporarySiteId: site.id, label: site.name, isNew: false, readOnly, anchorRect });
+  };
+
+  beforeEach(() => {
+    storage.mock.clear();
+    useAppStore.setState(useAppStore.getInitialState(), true);
+    useAppStore.setState({ currentUser: null, siteLibrary: [] });
+    useAppStore.getState().clearSimulationWorkspace(node);
+  });
+
+  it("applies guest edits to the same Site and offers no Library save", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    expect(screen.queryByRole("button", { name: "Save to Library" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Adjusted Hill" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({ name: "Adjusted Hill", groundElevationM: 140 });
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+  });
+
+  it("saves the edited Site with source metadata and asks before making a duplicate", () => {
+    useAppStore.setState({ currentUser });
+    openLaunchedSiteEditor(false);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Adjusted Hill" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+    const [saved] = useAppStore.getState().siteLibrary;
+    expect(saved).toMatchObject({
+      name: "Adjusted Hill", visibility: "private", position: { lat: 60, lon: 10 },
+      sourceMeta: { sourceType: "mqtt-feed", nodeId: node.nodeId, sourceUrl: node.sourceUrl },
+    });
+    expect(useAppStore.getState().sites).toHaveLength(1);
+    expect(useAppStore.getState().sites[0].libraryEntryId).toBeUndefined();
+    act(() => openLaunchedSiteEditor(false));
+    fireEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+    expect(useAppStore.getState().siteLibrary).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Create Copy" }));
+    expect(useAppStore.getState().siteLibrary).toHaveLength(2);
+    act(() => useAppStore.getState().clearSimulationWorkspace(node));
+    expect(useAppStore.getState().sites[0].name).toBe("Hill");
+    expect(useAppStore.getState().siteLibrary).toContainEqual(saved);
+  });
+});
