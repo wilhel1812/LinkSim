@@ -386,6 +386,10 @@ export function useMapEditorFormState() {
     if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
     setLatDraft((current) => (current === mapEditorSiteDraft.lat ? current : mapEditorSiteDraft.lat));
     setLonDraft((current) => (current === mapEditorSiteDraft.lon ? current : mapEditorSiteDraft.lon));
+    const manualPosition = manualElevationPosition.current;
+    if (manualPosition && (manualPosition.lat !== mapEditorSiteDraft.lat || manualPosition.lon !== mapEditorSiteDraft.lon)) {
+      manualElevationPosition.current = null;
+    }
     if (typeof mapEditorSiteDraft.groundElevationM === "number") {
       const nextGround = mapEditorSiteDraft.groundElevationM;
       setGroundDraft((current) => (current === nextGround ? current : nextGround));
@@ -1104,6 +1108,7 @@ export function useMapEditorFormState() {
     );
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
     if (mapEditor?.temporarySiteId && (lat.value !== mapEditorSiteDraft?.lat || lon.value !== mapEditorSiteDraft?.lon)) {
+      manualElevationPosition.current = null;
       setIsElevationUserSet(false);
     }
     setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: nextGround });

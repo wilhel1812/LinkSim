@@ -1673,6 +1673,20 @@ describe("868.no temporary Site editor", () => {
     });
   });
 
+  it("restores the live elevation after editing away from and back to its coordinates", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Ground elev (m)"), { target: { value: "460" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "61.2" } });
+    act(() => useAppStore.setState({ srtmTiles: [{
+      key: "N61E010", latStart: 61, lonStart: 10, size: 2, arcSecondSpacing: 3,
+      elevations: new Int16Array(4).fill(325),
+    }] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(325);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "60" } });
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+  });
+
   it("saves the edited Site with source metadata and asks before making a duplicate", () => {
     useAppStore.setState({ currentUser });
     openLaunchedSiteEditor(false);
