@@ -410,6 +410,37 @@ const applyCloudRemovals = async (
   }
 };
 
+const recordSimulationConflicts = (error: unknown): void => {
+  if (!(error instanceof Error) || !("simulationIds" in error) || !Array.isArray(error.simulationIds)) return;
+  const ids = error.simulationIds.filter((id): id is string => typeof id === "string" && dirtySimIds.has(id));
+  if (!ids.length) return;
+  useAppStore.setState((state) => ({
+    simulationConflictIds: [...new Set([...state.simulationConflictIds, ...ids])],
+  }));
+};
+
+const newPrivateSimulationCopy = (
+  user: CloudUser, name: string, snapshot: SimulationPreset["snapshot"], description?: string,
+): SimulationPreset => ({
+  id: makeId("sim"),
+  name,
+  description,
+  slug: slugifyValue(name),
+  slugAliases: [],
+  visibility: "private",
+  sharedWith: [],
+  ownerUserId: user.id,
+  effectiveRole: "owner",
+  createdByUserId: user.id,
+  createdByName: user.username,
+  createdByAvatarUrl: user.avatarUrl ?? "",
+  lastEditedByUserId: user.id,
+  lastEditedByName: user.username,
+  lastEditedByAvatarUrl: user.avatarUrl ?? "",
+  updatedAt: new Date().toISOString(),
+  snapshot,
+});
+
 const buildDeltaSyncPayload = (state: AppState): SyncPayload => ({
   siteLibrary: state.siteLibrary.filter((site) => dirtySiteIds.has(site.id) && canEditLibraryItem(site, state.currentUser)),
   simulationPresets: state.simulationPresets.filter((sim) =>
@@ -436,7 +467,8 @@ const acknowledgeLibraryWrites = (payload: SyncPayload, receipts?: LibraryWriteR
   writeStorage(SIM_PRESETS_KEY, simulationPresets);
   persistPendingLibrary();
   const pendingChangesCount = dirtySiteIds.size + dirtySimIds.size;
-  useAppStore.setState({ siteLibrary, simulationPresets, pendingChangesCount, syncPending: pendingChangesCount > 0 });
+  useAppStore.setState({ siteLibrary, simulationPresets, pendingChangesCount, syncPending: pendingChangesCount > 0,
+    simulationConflictIds: state.simulationConflictIds.filter((id) => dirtySimIds.has(id)) });
 };
 
 type AppState = {
@@ -567,6 +599,8 @@ type AppState = {
   initializeCloudSync: (options?: { restoreWorkspace?: boolean }) => Promise<void>;
   performCloudSyncPush: () => void;
   saveSimulationToCloud: (id: string) => Promise<void>;
+  simulationConflictIds: string[];
+  saveConflictCopyAndReload: (id: string) => Promise<string>;
   performManualCloudSync: () => Promise<void>;
   setLocale: (locale: LocaleCode) => void;
   setSyncStatus: (status: "syncing" | "synced" | "error") => void;
@@ -694,7 +728,7 @@ type AppState = {
   ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
-  loadSimulationPreset: (presetId: string) => void;
+  loadSimulationPreset: (presetId: string, cloudSites?: SiteLibraryEntry[]) => void;
   clearSimulationWorkspace: (launch?: SiteLaunch) => void;
   siteLaunch: { siteId: string; source?: SiteLaunch["source"]; needsElevation: boolean } | null;
   workspaceNavigationEpoch: number;
@@ -1009,9 +1043,10 @@ const buildSiteLibraryResolver = (library: SiteLibraryEntry[]): SiteLibraryResol
 };
 
 const resolveSiteLibraryEntry = (
-  site: Pick<Site, "name" | "position" | "libraryEntryId">,
+  site: Pick<Site, "name" | "position" | "libraryEntryId" | "libraryDetached">,
   resolver: SiteLibraryResolver,
 ): SiteLibraryEntry | undefined => {
+  if (site.libraryDetached) return undefined;
   if (site.libraryEntryId) return resolver.byId.get(site.libraryEntryId);
   const exactMatches = resolver.byFingerprint.get(siteNamePosKey(site)) ?? [];
   return exactMatches.length === 1 ? exactMatches[0] : undefined;
@@ -1066,6 +1101,7 @@ const ensureSitesBackedByLibrary = (
   let addedCount = 0;
   const normalizedSites = sites.map((site) => {
     const normalizedSite = withSiteRadioDefaults(site);
+    if (normalizedSite.libraryDetached) return normalizedSite;
     let entry = resolveSiteLibraryEntry(normalizedSite, resolver);
     if (!entry) {
       entry = {
@@ -1540,6 +1576,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   discoveryLibraryVisible: false,
   discoveryMqttVisible: false,
   mapDiscoveryMqttNodes: [],
+  simulationConflictIds: [],
   syncStatus: "synced",
   syncPending: localMutationRevision > 0,
   pendingChangesCount: localMutationRevision,
@@ -1567,7 +1604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (syncTimer !== null) window.clearTimeout(syncTimer);
       syncTimer = null;
       syncInFlight = false;
-      set({ libraryHydrated: false, syncBusy: false, isInitializing: false });
+      set({ libraryHydrated: false, syncBusy: false, isInitializing: false, simulationConflictIds: [] });
     }
     accountLibraryPreparationTarget = user?.id ?? null;
     if (!user) {
@@ -1800,6 +1837,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           lastSyncedAt: new Date().toISOString(), syncErrorMessage: null, syncStatusMessage: "Changes saved" });
       } catch (error) {
         if (!isCurrentAccount()) return;
+        recordSimulationConflicts(error);
         const message = getUiErrorMessage(error);
         if (isAuthRelatedErrorMessage(message)) set({ currentUser: null, authState: "signed_out" });
         set({ syncPending: true, syncStatus: "error", syncErrorMessage: message, syncStatusMessage: `Save failed: ${message}` });
@@ -1833,10 +1871,89 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (generation !== syncAccountGeneration) throw new Error("The signed-in account changed. Try sharing again.");
       if (!receivedReceipts) acknowledgeLibraryWrites(payload);
       completed = true;
+    } catch (error) {
+      if (generation === syncAccountGeneration) recordSimulationConflicts(error);
+      throw error;
     } finally {
       if (generation === syncAccountGeneration) {
         syncInFlight = false;
         if (completed) get().performCloudSyncPush();
+      }
+    }
+  },
+  saveConflictCopyAndReload: async (id) => {
+    if (!await waitForAccountLibraryPreparation()) throw new Error("Library storage is unavailable. Try again.");
+    const state = get();
+    const user = requireAuth(state.currentUser, "saveConflictCopyAndReload");
+    const local = state.simulationPresets.find((preset) => preset.id === id);
+    if (!user || !local || !dirtySimIds.has(id) || !state.simulationConflictIds.includes(id)) {
+      throw new Error("This Simulation no longer has a pending conflict.");
+    }
+    if (syncInFlight || state.isInitializing || !state.isOnline) {
+      throw new Error("Wait for sync to finish and check your connection, then try again.");
+    }
+    if (syncTimer !== null) window.clearTimeout(syncTimer);
+    syncTimer = null;
+    const generation = syncAccountGeneration;
+    const isCurrentAccount = () => generation === syncAccountGeneration && get().currentUser?.id === user.id;
+    syncInFlight = true;
+    set({ syncBusy: true });
+    let resolved = false;
+    try {
+      const cloud = partitionTrustedCloudLibrary(await fetchCloudLibrary());
+      if (!isCurrentAccount()) throw new Error("The signed-in account changed. Try again in the original account.");
+      const remote = cloud.simulationPresets.find((preset) => preset.id === id && preset.status !== "deleted");
+      if (!remote) throw new Error("The cloud Simulation is unavailable. Your local edit is still pending.");
+      const latest = get();
+      const current = latest.simulationPresets.find((preset) => preset.id === id);
+      if (JSON.stringify(current) !== JSON.stringify(local)) {
+        throw new Error("The local Simulation changed while loading. Try again to save the latest edit.");
+      }
+
+      const stem = local.name.slice(0, 140).trim();
+      let name = `${stem} (local copy)`;
+      for (let index = 2; hasDuplicateSimulationName([...latest.simulationPresets, ...cloud.simulationPresets], name); index++) {
+        name = `${stem} (local copy ${index})`;
+      }
+      const copy = newPrivateSimulationCopy(user, name, {
+        ...local.snapshot,
+        sites: syncLibraryLinkedSiteValues(local.snapshot.sites, latest.siteLibrary).map((site) => ({
+          ...site, libraryEntryId: undefined, libraryDetached: true,
+        })),
+      }, local.description);
+      const [restored] = normalizeSimulationPresets([{ ...remote, snapshot: { ...remote.snapshot,
+        sites: syncLibraryLinkedSiteValues(remote.snapshot.sites, cloud.siteLibrary),
+      } }]);
+      if (!restored) throw new Error("The cloud Simulation could not be loaded. Your local edit is still pending.");
+
+      // Queue the copy before replacing the original in the single Library write.
+      // Keep the original queued on disk until the replacement has been saved.
+      const pending = pendingLibrary();
+      if (!writeStorage(PENDING_LIBRARY_KEY, { ...pending, simulations: [...pending.simulations, copy.id] })) {
+        throw new Error("LinkSim could not queue the local copy. Free up browser storage and try again.");
+      }
+      const simulationPresets = [copy, ...latest.simulationPresets.map((preset) => preset.id === id ? restored : preset)];
+      if (!writeStorage(SIM_PRESETS_KEY, simulationPresets)) {
+        writeStorage(PENDING_LIBRARY_KEY, pending);
+        throw new Error("LinkSim could not save the local copy. Free up browser storage and try again.");
+      }
+      dirtySimIds.delete(id);
+      markDirtySim(copy.id);
+      const simulationConflictIds = latest.simulationConflictIds.filter((conflictId) => conflictId !== id);
+      set({ simulationPresets, simulationConflictIds, ...pendingLibraryState(),
+        ...(simulationConflictIds.length === 0 ? {
+          syncStatus: "synced" as const, syncErrorMessage: null, syncStatusMessage: "Local copy saved. Cloud version reloaded.",
+        } : {}),
+      });
+      get().importLibraryData({ siteLibrary: cloud.siteLibrary }, "merge");
+      if (latest.selectedScenarioId === id) get().loadSimulationPreset(id, cloud.siteLibrary);
+      resolved = true;
+      return name;
+    } finally {
+      if (isCurrentAccount()) {
+        syncInFlight = false;
+        set({ syncBusy: false });
+        if (resolved) get().performCloudSyncPush();
       }
     }
   },
@@ -1930,6 +2047,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncStatusMessage: recovered ? removedEditsMessage : `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations` });
     } catch (error) {
       if (!isCurrentAccount()) return;
+      recordSimulationConflicts(error);
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       if (isAuthRelatedErrorMessage(message)) {
@@ -2929,25 +3047,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         normalized.addedCount > 0
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
-      const nextPreset: SimulationPreset = {
-        id: makeId("sim"),
-        name: presetName,
-        ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
-        slug: slugifyValue(presetName),
-        slugAliases: [],
-        visibility: "private",
-        sharedWith: [],
-        updatedAt: new Date().toISOString(),
-        snapshot,
-        ownerUserId: user.id,
-        createdByUserId: user.id,
-        createdByName: user.username,
-        createdByAvatarUrl: user.avatarUrl ?? "",
-        lastEditedByUserId: user.id,
-        lastEditedByName: user.username,
-        lastEditedByAvatarUrl: user.avatarUrl ?? "",
-        effectiveRole: "owner",
-      };
+      const nextPreset = newPrivateSimulationCopy(user, presetName, snapshot, options?.description?.trim() || undefined);
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
       if (normalized.addedCount > 0) {
@@ -3155,7 +3255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
-  loadSimulationPreset: (presetId) => {
+  loadSimulationPreset: (presetId, cloudSites) => {
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
     if (!preset || preset.status === "deleted") return;
     get().cancelTerrainLoad();
@@ -3220,7 +3320,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
-    const siteLibrary = get().siteLibrary;
+    const siteLibrary = cloudSites ?? get().siteLibrary;
     const recoveredSites = syncLibraryLinkedSiteValues(annotateSitesWithLibraryRefs(recovered.sites, siteLibrary), siteLibrary);
     const bounds = simulationAreaBoundsForSites(recoveredSites);
     const viewport = bounds ? boundsToViewport(bounds) : defaultScenario.viewport;
@@ -3495,6 +3595,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { simulationPresets: next };
     });
     deletedIds.forEach((id) => dirtySimIds.delete(id));
+    set((current) => ({ simulationConflictIds: current.simulationConflictIds.filter((id) => !deletedIds.has(id)) }));
     persistPendingLibrary();
     if (deletingActiveSimulation) get().clearSimulationWorkspace();
   },
@@ -3527,6 +3628,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await deleteCloudSimulation(presetId);
     dirtySimIds.delete(presetId);
     persistPendingLibrary();
+    set((current) => ({ simulationConflictIds: current.simulationConflictIds.filter((id) => id !== presetId) }));
     set((state) => {
       const next = user.isAdmin
         ? state.simulationPresets.map((preset) =>

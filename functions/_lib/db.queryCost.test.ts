@@ -395,6 +395,7 @@ it("rejects a concurrent Simulation replacement at the database write", async ()
     simulationPresets: [{ id: "sim-000", name: "Older", cloudRevision: base, snapshot: { sites: [] } }],
   }, { requireRevision: true });
   expect(result.conflicts).toEqual(["simulation_revision_conflict"]);
+  expect(result.simulationConflictIds).toEqual(["sim-000"]);
   expect(db.db.prepare("SELECT payload_json FROM simulations WHERE id = 'sim-000'").get()?.payload_json)
     .toBe(JSON.stringify({ snapshot: { sites: [{ id: "new-site" }] } }));
 });

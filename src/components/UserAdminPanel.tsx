@@ -110,6 +110,11 @@ export function UserAdminPanel({
   const isOnline = useAppStore((state) => state.isOnline);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
+  const simulationConflictIds = useAppStore((state) => state.simulationConflictIds);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const syncBusy = useAppStore((state) => state.syncBusy);
+  const saveConflictCopyAndReload = useAppStore((state) => state.saveConflictCopyAndReload);
+  const [conflictActionFeedback, setConflictActionFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
@@ -1137,10 +1142,36 @@ export function UserAdminPanel({
                   </>
                 )}
               </div>
+              {simulationConflictIds?.length ? (
+                <div>
+                  <p className="field-help">These Simulations changed in the cloud. Save your edits as a private copy to reload the cloud version.</p>
+                  {simulationPresets.filter(({ id }) => simulationConflictIds.includes(id)).map(({ id, name }) => (
+                    <div className="chip-group" key={id}>
+                      <span>{name}</span>
+                      <ActionButton
+                        type="button"
+                        aria-label={`Save a copy of ${name} and reload its cloud version`}
+                        disabled={!isOnline || syncBusy}
+                        onClick={() => {
+                          setConflictActionFeedback(null);
+                          void saveConflictCopyAndReload(id).then((copyName) => {
+                            setConflictActionFeedback({ text: `Saved “${copyName}” on this device and reloaded the cloud version.`, error: false });
+                          }).catch((error) => setConflictActionFeedback({ text: getUiErrorMessage(error), error: true }));
+                        }}
+                      >
+                        Save a copy and reload
+                      </ActionButton>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {conflictActionFeedback && (
+                <p className="field-help" role={conflictActionFeedback.error ? "alert" : "status"}>{conflictActionFeedback.text}</p>
+              )}
               <div className="chip-group">
                 {syncStatus !== "syncing" ? (
                   <ActionButton
-                    disabled={!isOnline}
+                    disabled={!isOnline || syncBusy}
                     onClick={() => {
                       void performManualCloudSync();
                     }}

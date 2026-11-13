@@ -2598,7 +2598,7 @@ export const upsertLibrarySnapshot = async (
   actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
   { requireRevision = false } = {},
-): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[]; revisions?: Array<{ kind: "site" | "simulation"; id: string; revision: string }> }> => {
+): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[]; simulationConflictIds?: string[]; revisions?: Array<{ kind: "site" | "simulation"; id: string; revision: string }> }> => {
   await ensureSchema(env);
   if (payload.siteLibrary.length + payload.simulationPresets.length > LIBRARY_BATCH_MAX_RECORDS) {
     throw new LibraryValidationError(`Library request may contain at most ${LIBRARY_BATCH_MAX_RECORDS} records.`);
@@ -2606,6 +2606,7 @@ export const upsertLibrarySnapshot = async (
   await preflightResourceQuotas(env, "site", actor, payload.siteLibrary);
   await preflightResourceQuotas(env, "simulation", actor, payload.simulationPresets);
   const conflicts: string[] = [];
+  const simulationConflictIds: string[] = [];
   const revisions: Array<{ kind: "site" | "simulation"; id: string; revision: string }> = [];
   let upsertedSites = 0;
   let upsertedSimulations = 0;
@@ -2625,10 +2626,13 @@ export const upsertLibrarySnapshot = async (
       upsertedSimulations += 1;
       if (result.revision) revisions.push({ kind: "simulation", id: simulation.id, revision: result.revision });
     }
-    else if (result.reason) conflicts.push(result.reason);
+    else if (result.reason) {
+      conflicts.push(result.reason);
+      if (result.reason === "simulation_revision_conflict") simulationConflictIds.push(simulation.id);
+    }
   }
 
-  return { upsertedSites, upsertedSimulations, conflicts, ...(requireRevision ? { revisions } : {}) };
+  return { upsertedSites, upsertedSimulations, conflicts, ...(requireRevision ? { revisions, ...(simulationConflictIds.length ? { simulationConflictIds } : {}) } : {}) };
 };
 
 const canEditByRole = (role: string | null, visibility: Visibility, actorIsModerator: boolean): boolean => {

@@ -158,15 +158,20 @@ describe("appStore delta sync", () => {
   it("keeps an offline Simulation edit and its original base revision across reload", async () => {
     const base = "2026-08-16T10:00:00.000Z";
     const original = { ...cloneJson(baselinePayload.simulationPresets[0]), cloudRevision: base };
+    const site = { id: "linked", name: "Hill", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: base, cloudRevision: base, position: { lat: 60, lon: 11 },
+      groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 };
+    original.snapshot.sites = [{ ...site, id: "hill-in-simulation", libraryEntryId: site.id }];
     const latest = { ...original, cloudRevision: "2026-08-16T10:01:00.000Z", description: "Saved on A" };
     const bodies: Array<{ simulationPresets: Array<{ cloudRevision: string; description: string }> }> = [];
     let remote = original;
+    let remoteSite = site;
     vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "PUT") {
         bodies.push(JSON.parse(String(init.body)));
-        return makeResponse({ ok: true, conflicts: ["simulation_revision_conflict"], revisions: [] });
+        return makeResponse({ ok: true, conflicts: ["simulation_revision_conflict"], simulationConflictIds: [original.id], revisions: [] });
       }
-      return makeResponse({ ...baselinePayload, simulationPresets: [remote] });
+      return makeResponse({ ...baselinePayload, simulationPresets: [remote], siteLibrary: [remoteSite] });
     }));
     storage.mock.setItem("linksim-migration-default-private-v2", "1");
     vi.resetModules();
@@ -175,6 +180,8 @@ describe("appStore delta sync", () => {
     await first.getState().initializeCloudSync();
     first.setState({ isOnline: false });
     first.getState().updateSimulationPresetEntry(original.id, { description: "Offline on B" });
+    first.getState().updateSiteLibraryEntry(site.id, { txPowerDbm: 15 });
+    remoteSite = { ...site, txPowerDbm: 30, cloudRevision: latest.cloudRevision };
     remote = latest;
     vi.resetModules();
     const second = (await import("./appStore")).useAppStore;
@@ -194,6 +201,28 @@ describe("appStore delta sync", () => {
     expect(second.getState().simulationPresets[0].description).toBe("Offline on B");
     expect(second.getState().syncPending).toBe(true);
     expect(second.getState().syncStatus).toBe("error");
+    expect(second.getState().simulationConflictIds).toEqual([original.id]);
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("Offline"));
+    await expect(second.getState().saveConflictCopyAndReload(original.id)).rejects.toThrow("Offline");
+    expect(second.getState().simulationPresets).toHaveLength(1);
+    expect(second.getState().simulationPresets[0].description).toBe("Offline on B");
+    expect(second.getState().simulationConflictIds).toEqual([original.id]);
+
+    await second.getState().saveConflictCopyAndReload(original.id);
+    const records = second.getState().simulationPresets;
+    expect(records.find(({ id }) => id === original.id)?.description).toBe("Saved on A");
+    expect(records.find(({ id }) => id !== original.id)).toMatchObject({
+      name: "Simulation One (local copy)", description: "Offline on B", visibility: "private", sharedWith: [],
+    });
+    const copy = records.find(({ id }) => id !== original.id)!;
+    expect(second.getState().sites[0].txPowerDbm).toBe(30);
+    second.getState().loadSimulationPreset(copy.id);
+    expect(second.getState().sites[0]).toMatchObject({ txPowerDbm: 15, libraryDetached: true });
+    expect(second.getState().siteLibrary[0].txPowerDbm).toBe(15);
+    expect(second.getState().simulationConflictIds).toEqual([]);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!).simulations)
+      .toEqual([records.find(({ id }) => id !== original.id)?.id]);
+
   });
 
   it.each([false, true])("backs up removed pending Site and Simulation edits (local quota: %s)", async (quota) => {
