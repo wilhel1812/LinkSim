@@ -1,3 +1,4 @@
+import { matchesMqttSite } from "../../lib/nodeLaunch";
 import { useEffect, useState } from "react";
 import { DEFAULT_DIRECTIONAL_ANTENNA, orientationBetweenPoints } from "../../lib/antennaPattern";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../../lib/siteGainFields";
@@ -83,6 +84,7 @@ export function useMapEditorFormState() {
 
   // ─── Shared status ───────────────────────────────────────────────────────────
   const [status, setStatus] = useState("");
+  const [confirmTemporaryCopy, setConfirmTemporaryCopy] = useState(false);
 
   // ─── Site / Simulation shared drafts ─────────────────────────────────────────
   const [nameDraft, setNameDraft] = useState("");
@@ -157,6 +159,7 @@ export function useMapEditorFormState() {
   useEffect(() => {
     if (!mapEditor) return;
     setStatus("");
+    setConfirmTemporaryCopy(false);
     setIsElevationUserSet(false);
 
     if (mapEditor.kind === "site") {
@@ -204,7 +207,7 @@ export function useMapEditorFormState() {
         } : null);
       } else {
         // Edit site
-        const entry = siteLibrary.find((e) => e.id === mapEditor.resourceId);
+        const entry = mapEditor.temporarySiteId ? activeSimulationSite : siteLibrary.find((e) => e.id === mapEditor.resourceId);
         const entryLat = entry?.position.lat ?? 0;
         const entryLon = entry?.position.lon ?? 0;
         const entryGround = entry?.groundElevationM ?? 0;
@@ -235,8 +238,8 @@ export function useMapEditorFormState() {
         if (activeSimulationSite?.antennaTargetDetachedReason === "target-deleted") {
           setStatus("The pointing target was deleted. The antenna kept its last orientation and is now manual.");
         }
-        setAccessVisibility(toAccessVisibility(entry?.visibility) as AccessVisibility);
-        const grants = (entry?.sharedWith ?? []).filter((g) => g.userId !== entry?.ownerUserId);
+        setAccessVisibility(toAccessVisibility(currentSiteEntry?.visibility) as AccessVisibility);
+        const grants = (currentSiteEntry?.sharedWith ?? []).filter((g) => g.userId !== currentSiteEntry?.ownerUserId);
         setCollaboratorUserIds(grants.map((g) => g.userId));
         setCollaboratorRoles(
           Object.fromEntries(
@@ -347,7 +350,7 @@ export function useMapEditorFormState() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew]);
+  }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew, mapEditor?.temporarySiteId]);
 
   useEffect(() => {
     if (mapEditor?.kind !== "simulation") {
@@ -421,7 +424,7 @@ export function useMapEditorFormState() {
 
   // Auto-fill elevation from terrain when it loads (only if user hasn't manually set)
   useEffect(() => {
-    if (mapEditor?.kind !== "site" || isElevationUserSet) return;
+    if (mapEditor?.kind !== "site" || isElevationUserSet || mapEditor.temporarySiteId) return;
     const lat = validateLatitude(latDraft);
     const lon = validateLongitude(lonDraft);
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
@@ -472,10 +475,13 @@ export function useMapEditorFormState() {
   const activeSimulationPreset = selectedScenarioId
     ? simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null
     : null;
-  const activeSimulationSite =
-    mapEditor?.kind === "site" && mapEditor.resourceId
+  const temporarySite = mapEditor?.temporarySiteId && !selectedScenarioId
+    ? sites.find((site) => site.id === mapEditor.temporarySiteId)
+    : undefined;
+  const activeSimulationSite = temporarySite ??
+    (mapEditor?.kind === "site" && mapEditor.resourceId
       ? sites.find((site) => site.id === mapEditor.resourceId || site.libraryEntryId === mapEditor.resourceId) ?? null
-      : null;
+      : null);
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
@@ -719,7 +725,7 @@ export function useMapEditorFormState() {
   }, [antennaTargetSiteId, antennaMode, latDraft, lonDraft, groundDraft, antennaDraft, sites]);
 
   // ─── Save handlers ─────────────────────────────────────────────────────────────
-  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
+  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean; saveTemporaryToLibrary?: boolean }): boolean => {
     const trimmedName = nameDraft.trim();
     if (!trimmedName) {
       setStatus("Name is required.");
@@ -773,7 +779,45 @@ export function useMapEditorFormState() {
       const saveLat = latValidation.value;
       const saveLon = lonValidation.value;
       const saveGround = mapEditorSiteDraft?.groundElevationM ?? groundDraft;
-      if (mapEditor?.isNew) {
+      if (temporarySite) {
+        const node = useAppStore.getState().launchedNode;
+        if (!node) return false;
+        if (options?.saveTemporaryToLibrary) {
+          if (mapEditor?.readOnly || !currentUser?.id) return false;
+          const duplicate = siteLibrary.find((entry) =>
+            matchesMqttSite(entry, node.nodeId, { lat: saveLat, lon: saveLon }),
+          );
+          if (duplicate && !confirmTemporaryCopy) {
+            setStatus(`This node is already in the Library as "${duplicate.name}". Choose Create Copy to save these settings as a separate Site.`);
+            setConfirmTemporaryCopy(true);
+            return false;
+          }
+        }
+        updateSite(temporarySite.id, {
+          name: trimmedName,
+          description: descriptionDraft.trim(),
+          position: { lat: saveLat, lon: saveLon },
+          groundElevationM: saveGround,
+          antennaHeightM: antennaDraft,
+          txPowerDbm: txPowerDraft,
+          txGainDbi: txGainDraft,
+          rxGainDbi: rxGainDraft,
+          cableLossDb: cableLossDraft,
+          antennaMode,
+          antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+          antennaTiltDeg: antennaTiltDraft,
+          antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+          antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
+          antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
+          iconKey: iconDraft === "auto" ? undefined : iconDraft,
+        });
+        if (!options?.saveTemporaryToLibrary) {
+          closeMapEditor();
+          return true;
+        }
+      }
+      if (mapEditor?.isNew || temporarySite) {
+        const node = temporarySite ? useAppStore.getState().launchedNode : null;
         const createdId = addSiteLibraryEntry(
           trimmedName,
           saveLat,
@@ -784,7 +828,10 @@ export function useMapEditorFormState() {
           txGainDraft,
           rxGainDraft,
           cableLossDraft,
-          siteSourceMeta,
+          node ? {
+            sourceType: "mqtt-feed", sourceUrl: node.sourceUrl, nodeId: node.nodeId,
+            longName: node.longName, shortName: node.shortName, hwModel: node.hwModel, role: node.role,
+          } : siteSourceMeta,
           normalizedVisibility,
           descriptionDraft.trim() || undefined,
           iconDraft === "auto" ? undefined : iconDraft,
@@ -804,7 +851,7 @@ export function useMapEditorFormState() {
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
-        if (options?.insertIntoSimulation ?? insertSiteAfterSave) {
+        if (!temporarySite && (options?.insertIntoSimulation ?? insertSiteAfterSave)) {
           insertSiteFromLibrary(createdId);
         }
       } else if (mapEditor?.resourceId) {
@@ -1089,6 +1136,8 @@ export function useMapEditorFormState() {
     handleGainChange,
     handleSeparateGainToggle,
     handleSaveSite,
+    temporarySite,
+    confirmTemporaryCopy,
     // simulation
     simulationFrequencyPresetId,
     setSimulationFrequencyPresetId,
@@ -1132,14 +1181,15 @@ export function useMapEditorFormState() {
     sites,
     activeSimulationSiteId: activeSimulationSite?.id ?? null,
     activeSiteIconColor: activeSimulationSite ? activeSiteIconColors[activeSimulationSite.id] ?? null : null,
-    canEditActiveSimulation,
+    canEditActiveSimulation: Boolean(temporarySite) || canEditActiveSimulation,
     setActiveSiteIconColor: (value: string | null) => {
-      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulation) return;
+      if (!activeSimulationSite || (!temporarySite && (!selectedScenarioId || !canEditActiveSimulation))) return;
       const next = { ...activeSiteIconColors };
       const color = normalizeSimulationColor(value);
       if (color) next[activeSimulationSite.id] = color;
       else delete next[activeSimulationSite.id];
-      updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
+      if (temporarySite) useAppStore.setState({ siteIconColors: next });
+      else updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
     },
   };
 }

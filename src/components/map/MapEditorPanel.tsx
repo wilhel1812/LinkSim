@@ -270,7 +270,7 @@ function SiteEditorCard({
   canDelete: boolean;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
-  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
+  const isReadOnly = !form.temporarySite && (Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew));
   const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const iconPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -440,7 +440,7 @@ function SiteEditorCard({
           />
         </label>
 
-        <AccessSettingsEditor
+        {(!form.temporarySite || !mapEditor?.readOnly) && <AccessSettingsEditor
           collaborators={form.collaborators}
           directory={form.collaboratorDirectory}
           directoryBusy={form.collaboratorDirectoryBusy}
@@ -454,7 +454,7 @@ function SiteEditorCard({
           onVisibilityChange={form.setAccessVisibility}
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
-        />
+        />}
 
         <label className="field-grid">
           <span>Latitude</span>
@@ -752,7 +752,16 @@ function SiteEditorCard({
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        {!isReadOnly && isNew && mapEditor?.origin?.kind === "library" ? (
+        {form.temporarySite ? (
+          <>
+            <ActionButton onClick={() => form.handleSaveSite()} type="button">Apply Site Settings</ActionButton>
+            {form.currentUser?.id && !mapEditor?.readOnly ? (
+              <ActionButton onClick={() => form.handleSaveSite({ saveTemporaryToLibrary: true })} type="button">
+                {form.confirmTemporaryCopy ? "Create Copy" : "Save to Library"}
+              </ActionButton>
+            ) : null}
+          </>
+        ) : !isReadOnly && isNew && mapEditor?.origin?.kind === "library" ? (
           <>
             <ActionButton onClick={() => form.handleSaveSite({ insertIntoSimulation: false })} type="button">
               Save to Library
