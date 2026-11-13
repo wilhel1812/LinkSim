@@ -3336,7 +3336,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateCurrentSimulationSnapshot: () => {
     const { currentUser, selectedScenarioId, simulationPresets, sites, links, systems, networks } = get();
-    const user = requireAuth(currentUser, "updateCurrentSimulationSnapshot");
+    const user = currentUser;
     if (!user) return;
     if (!selectedScenarioId) return;
     const presetIndex = simulationPresets.findIndex((p) => p.id === selectedScenarioId);
