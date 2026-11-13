@@ -347,3 +347,13 @@ describe("Sidebar read-only simulation site actions", () => {
     );
   });
 });
+
+it("opens the launched Site for editing from the Navigator", async () => {
+  useAppStore.setState(useAppStore.getInitialState(), true);
+  useAppStore.getState().clearSimulationWorkspace({ nodeId: "!02eb8e7c", longName: "Hill", lat: 60, lon: 10 });
+  render(<Sidebar readOnly hideLibraryBrowsing />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit site: Hill" }));
+  expect(useAppStore.getState().mapEditor).toMatchObject({
+    kind: "site", resourceId: null, temporarySiteId: "868-no:!02eb8e7c", readOnly: true,
+  });
+});
