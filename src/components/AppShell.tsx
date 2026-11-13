@@ -639,7 +639,7 @@ export function AppShell() {
   useEffect(() => {
     if (hasNodeLaunch && (isNodeWorkspace || !activeSimulation || workspaceNavigationEpoch === initialNodeLaunchEpoch.current)) return;
     if (
-      !shouldRewritePathAfterDeepLinkApply({
+      !hasNodeLaunch && !shouldRewritePathAfterDeepLinkApply({
         deepLinkApplied: deepLinkAppliedRef.current,
         deepLinkParseOk: deepLinkParse.ok,
         deepLinkApplyOutcome: deepLinkApplyOutcomeRef.current,
