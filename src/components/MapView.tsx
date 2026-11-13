@@ -1,3 +1,4 @@
+import { matchesMqttSite } from "../lib/mqttSiteMatch";
 import { NARROW_FAST_DEFAULT_PRESET as defaultRadioPreset } from "../lib/frequencyPresets.data";
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
@@ -448,6 +449,7 @@ type MapViewProps = {
   showMultiSelectToggle?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
+  canSaveLaunchedSite?: boolean;
   onToggleMapExpanded: () => void;
   /** Left-side element in the inspector toolbar (e.g. panel toggle button). */
   inspectorPanelToggle?: ReactNode;
@@ -682,6 +684,7 @@ export function MapView({
   showMultiSelectToggle = false,
   readOnly = false,
   canPersist = true,
+  canSaveLaunchedSite = false,
   onToggleMapExpanded,
   inspectorPanelToggle,
   inspectorActions,
@@ -713,6 +716,7 @@ export function MapView({
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
+  const launchedSiteId = useAppStore((state) => state.selectedScenarioId ? null : state.siteLaunch?.siteId ?? null);
   const updateSite = useAppStore((state) => state.updateSite);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
@@ -3031,6 +3035,7 @@ export function MapView({
   };
 
   const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
+    if (siteId === launchedSiteId) return;
     if (!canPersist) {
       setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
       return;
@@ -3072,6 +3077,11 @@ export function MapView({
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
     setIsDraggingSite(false);
+    if (siteId === launchedSiteId) {
+      const position = { lat: event.lngLat.lat, lon: event.lngLat.lng };
+      updateSite(siteId, { position });
+      return;
+    }
     if (!canPersist) {
       setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
       return;
@@ -3121,7 +3131,16 @@ export function MapView({
   };
 
   const onEditorSiteDraftDragEnd = (event: MarkerDragEvent) => {
-    setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+    const { lat, lng } = event.lngLat;
+    if (launchedSiteId && mapEditor?.temporarySiteId === launchedSiteId) {
+      onSiteDragEnd(launchedSiteId, event);
+      const site = useAppStore.getState().sites.find(({ id }) => id === launchedSiteId);
+      if (mapEditorSiteDraft && site) {
+        setMapEditorSiteDraft({ ...mapEditorSiteDraft, lat, lon: lng, groundElevationM: site.groundElevationM });
+      }
+      return;
+    }
+    setEditorSiteDraftFromMap(lat, lng);
   };
 
   const beginPendingNewSiteDraft = (lat: number, lon: number) => {
@@ -3226,13 +3245,7 @@ export function MapView({
       setSiteDraftStatus("Read-only mode: cannot save MQTT nodes.");
       return;
     }
-    const existing = siteLibrary.find((entry) => {
-      const meta = entry.sourceMeta;
-      if (meta?.sourceType === "mqtt-feed" && meta.nodeId === node.nodeId) return true;
-      const latClose = Math.abs(entry.position.lat - node.lat) < 0.00001;
-      const lonClose = Math.abs(entry.position.lon - node.lon) < 0.00001;
-      return latClose && lonClose;
-    });
+    const existing = siteLibrary.find((entry) => matchesMqttSite(entry, node.nodeId, node));
     if (existing) {
       setMqttDuplicatePrompt({
         node,
@@ -3506,8 +3519,9 @@ export function MapView({
     fromSiteId: selectedFromSite?.id ?? null,
     toSiteId: selectedToSite?.id ?? null,
   });
+  const inspectorLaunchedSite = selectedSite && selectedSite.id === launchedSiteId ? selectedSite : null;
   const hasInspectorActions = Boolean(
-    inspectorPrimaryLibraryEntryId || canAddSelectedDiscoverySite || canRemoveSelectedSite || canSaveSelectedLink,
+    inspectorLaunchedSite || inspectorPrimaryLibraryEntryId || canAddSelectedDiscoverySite || canRemoveSelectedSite || canSaveSelectedLink,
   );
   const inspectorLines: string[] = [];
   if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
@@ -3523,7 +3537,7 @@ export function MapView({
     );
   }
   if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
-  if (selectedSite && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+  if (selectedSite && !canPersist && !inspectorLaunchedSite) inspectorLines.push(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
   if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
       mqttTooDenseInView
@@ -3717,9 +3731,22 @@ export function MapView({
               {inspectorPrimary ? <p className="map-inspector-primary">{inspectorPrimary}</p> : null}
               {hasInspectorActions ? (
                 <div className="chip-group">
-                  {inspectorPrimaryLibraryEntryId ? (
+                  {inspectorPrimaryLibraryEntryId || inspectorLaunchedSite ? (
                     <ActionButton
                       onClick={(event) => {
+                        if (inspectorLaunchedSite && !inspectorPrimaryLibraryEntryId) {
+                          openMapEditor({
+                            kind: "site",
+                            resourceId: null,
+                            temporarySiteId: inspectorLaunchedSite.id,
+                            isNew: false,
+                            label: inspectorLaunchedSite.name,
+                            readOnly: !canSaveLaunchedSite,
+                            anchorRect: event.currentTarget.getBoundingClientRect(),
+                          });
+                          return;
+                        }
+                        if (!inspectorPrimaryLibraryEntryId) return;
                         const entry = siteLibrary.find((candidate) => candidate.id === inspectorPrimaryLibraryEntryId);
                         if (!entry) {
                           requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId);
@@ -4470,8 +4497,8 @@ export function MapView({
           const isEditedSiteInSimulation =
             mapEditor?.kind === "site" &&
             !mapEditor.isNew &&
-            mapEditor.resourceId !== null &&
-            site.libraryEntryId === mapEditor.resourceId &&
+            (mapEditor.temporarySiteId === site.id ||
+              (mapEditor.resourceId !== null && site.libraryEntryId === mapEditor.resourceId)) &&
             mapEditorSiteDraft !== null;
           const isSelected = isEditedSiteInSimulation || (!armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id));
           const pendingMove = pendingSiteMoves[site.id];
@@ -4490,7 +4517,7 @@ export function MapView({
           return (
             <Marker
               anchor="bottom"
-              draggable={canPersist}
+              draggable={canPersist || site.id === launchedSiteId}
               key={site.id}
               latitude={markerPosition.lat}
               longitude={markerPosition.lon}
@@ -4612,7 +4639,7 @@ export function MapView({
 
         {mapEditor?.kind === "site" &&
         mapEditorSiteDraft &&
-        (mapEditor.isNew || !sites.some((site) => site.libraryEntryId === mapEditor.resourceId)) ? (
+        (mapEditor.isNew || !sites.some((site) => site.id === mapEditor.temporarySiteId || site.libraryEntryId === mapEditor.resourceId)) ? (
           <Marker
             anchor="bottom"
             draggable={canPersist}

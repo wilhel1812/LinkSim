@@ -222,3 +222,7 @@ npm run refresh:staging:r2
 - Keep the working tree clean before release operations. Build metadata under `.tmp/` is generated and untracked.
 - Follow [docs/release-flow.md](./release-flow.md) for production promotion.
 - When changing auth/permissions, add or update tests in the same pass.
+
+## Creating a Site from a URL
+
+See the [Site URL contract](site-url.md) for supported fields and integration examples.

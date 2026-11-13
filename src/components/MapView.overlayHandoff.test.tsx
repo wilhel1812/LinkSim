@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Link, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
@@ -121,7 +121,16 @@ vi.mock("react-map-gl/maplibre", async () => {
       }
       return null;
     },
-    Marker: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    Marker: ({ children, draggable, onDragEnd }: {
+      children?: React.ReactNode;
+      draggable?: boolean;
+      onDragEnd?: (event: { lngLat: { lat: number; lng: number } }) => void;
+    }) => (
+      <div>
+        {children}
+        {draggable && <button onClick={() => onDragEnd?.({ lngLat: { lat: 60.4, lng: 10.8 } })}>Drop pin</button>}
+      </div>
+    ),
     Source: ({
       children,
       id,
@@ -934,4 +943,29 @@ describe("MapView overlay handoff", () => {
     act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
   });
+});
+
+
+it("moves the launched Site and requests coverage with the editor open", () => {
+  const initial = useAppStore.getState();
+  const recomputeCoverage = vi.fn();
+  useCoverageStore.setState({ recomputeCoverage });
+  initial.clearSimulationWorkspace({ site: { name: "Hill", position: { lat: 60, lon: 10 } } });
+  const [launchedSite] = useAppStore.getState().sites;
+  initial.openMapEditor({
+    kind: "site", resourceId: null, temporarySiteId: launchedSite.id, isNew: false, label: "Hill",
+    anchorRect: { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 },
+  });
+  initial.setMapEditorSiteDraft({ lat: 60, lon: 10, groundElevationM: 100 });
+  const view = render(<MapView canPersist={false} isMapExpanded={false} onToggleMapExpanded={() => undefined} />);
+  try {
+    recomputeCoverage.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Drop pin" }));
+    expect(useAppStore.getState().sites[0].position).toEqual({ lat: 60.4, lon: 10.8 });
+    expect(useAppStore.getState().mapEditorSiteDraft).toMatchObject({ lat: 60.4, lon: 10.8 });
+    expect(recomputeCoverage).toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    useAppStore.setState(initial);
+  }
 });
