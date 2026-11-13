@@ -164,7 +164,7 @@ describe("appStore delta sync", () => {
     vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "PUT") {
         bodies.push(JSON.parse(String(init.body)));
-        return makeResponse({ ok: true, conflicts: ["simulation_revision_conflict"] });
+        return makeResponse({ ok: true, conflicts: ["simulation_revision_conflict"], revisions: [] });
       }
       return makeResponse({ ...baselinePayload, simulationPresets: [remote] });
     }));
@@ -179,9 +179,15 @@ describe("appStore delta sync", () => {
     vi.resetModules();
     const second = (await import("./appStore")).useAppStore;
     second.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    const unsubscribe = second.subscribe((state, previous) => {
+      if (state.siteLibrary !== previous.siteLibrary || state.simulationPresets !== previous.simulationPresets) {
+        queueMicrotask(() => second.getState().performCloudSyncPush());
+      }
+    });
     await second.getState().initializeCloudSync({ restoreWorkspace: false });
     second.getState().loadSimulationPreset(original.id);
-    await vi.advanceTimersByTimeAsync(2500);
+    await vi.advanceTimersByTimeAsync(7500);
+    unsubscribe();
     expect(bodies).toEqual([expect.objectContaining({
       simulationPresets: [expect.objectContaining({ cloudRevision: base, description: "Offline on B" })],
     })]);
@@ -241,6 +247,22 @@ describe("appStore delta sync", () => {
         vi.stubGlobal("caches", undefined);
       }
     }
+  });
+
+  it("clears pending sync when the only edited Site is deleted", async () => {
+    const site = {
+      id: "site-to-delete", name: "Original", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({ ok: true })));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true, siteLibrary: [site] });
+    useAppStore.getState().updateSiteLibraryEntry(site.id, { name: "Pending edit" });
+    expect(useAppStore.getState().syncPending).toBe(true);
+    await useAppStore.getState().deleteSiteLibraryEntry(site.id);
+    expect(useAppStore.getState().syncPending).toBe(false);
+    expect(useAppStore.getState().pendingChangesCount).toBe(0);
   });
 
   it("uploads a linked Library Site changed in the workspace map", async () => {

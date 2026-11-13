@@ -417,6 +417,7 @@ const buildDeltaSyncPayload = (state: AppState): SyncPayload => ({
 });
 
 const acknowledgeLibraryWrites = (payload: SyncPayload, receipts?: LibraryWriteReceipt[]): void => {
+  if (receipts?.length === 0) return;
   const state = useAppStore.getState();
   const siteReceipts = new Map((receipts ?? []).filter(({ kind }) => kind === "site").map(({ id, revision }) => [id, revision]));
   const simReceipts = new Map((receipts ?? []).filter(({ kind }) => kind === "simulation").map(({ id, revision }) => [id, revision]));
@@ -2812,6 +2813,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dirtySiteIds.delete(entryId);
       persistPendingLibrary();
       affectedSimulationIds.forEach(markDirtySim);
+      set(pendingLibraryState());
     }
 
     if (dirtySimIds.size === 0) {
