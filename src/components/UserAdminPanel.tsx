@@ -1089,7 +1089,7 @@ export function UserAdminPanel({
                 ) : null}
               </div>
               <div className="sync-status-display">
-                {syncPending ? (
+                {syncPending && syncStatus !== "error" ? (
                   <>
                     <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" title="Sync pending" /></span>
                     <div>

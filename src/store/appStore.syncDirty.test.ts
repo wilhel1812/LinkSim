@@ -123,6 +123,7 @@ const cloneJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 describe("appStore delta sync", () => {
   beforeEach(() => {
     storage.mock.clear();
+    vi.resetModules();
     vi.restoreAllMocks();
     vi.useFakeTimers();
     window.setTimeout = setTimeout;
@@ -131,6 +132,144 @@ describe("appStore delta sync", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("loads a newer delta Simulation without uploading the merged Library", async () => {
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify(baselinePayload.simulationPresets));
+    storage.mock.setItem("linksim-last-fetched-at-v1", "2026-08-16T10:00:00.000Z");
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    vi.resetModules();
+    const latest = { ...cloneJson(baselinePayload.simulationPresets[0]), description: "Saved on A" };
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      makeResponse(init?.method === "PUT" ? { ok: true, conflicts: [] } : {
+        ...baselinePayload, simulationPresets: [latest], isDelta: true,
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await useAppStore.getState().initializeCloudSync({ restoreWorkspace: false });
+    useAppStore.getState().loadSimulationPreset(latest.id);
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(useAppStore.getState().simulationPresets[0].description).toBe("Saved on A");
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+  });
+
+  it("keeps an offline Simulation edit and its original base revision across reload", async () => {
+    const base = "2026-08-16T10:00:00.000Z";
+    const original = { ...cloneJson(baselinePayload.simulationPresets[0]), cloudRevision: base };
+    const latest = { ...original, cloudRevision: "2026-08-16T10:01:00.000Z", description: "Saved on A" };
+    const bodies: Array<{ simulationPresets: Array<{ cloudRevision: string; description: string }> }> = [];
+    let remote = original;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        bodies.push(JSON.parse(String(init.body)));
+        return makeResponse({ ok: true, conflicts: ["simulation_revision_conflict"] });
+      }
+      return makeResponse({ ...baselinePayload, simulationPresets: [remote] });
+    }));
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    vi.resetModules();
+    const first = (await import("./appStore")).useAppStore;
+    first.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await first.getState().initializeCloudSync();
+    first.setState({ isOnline: false });
+    first.getState().updateSimulationPresetEntry(original.id, { description: "Offline on B" });
+    remote = latest;
+    vi.resetModules();
+    const second = (await import("./appStore")).useAppStore;
+    second.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await second.getState().initializeCloudSync({ restoreWorkspace: false });
+    second.getState().loadSimulationPreset(original.id);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(bodies).toEqual([expect.objectContaining({
+      simulationPresets: [expect.objectContaining({ cloudRevision: base, description: "Offline on B" })],
+    })]);
+    expect(second.getState().simulationPresets[0].description).toBe("Offline on B");
+    expect(second.getState().syncPending).toBe(true);
+    expect(second.getState().syncStatus).toBe("error");
+  });
+
+  it.each([false, true])("backs up removed pending Site and Simulation edits (local quota: %s)", async (quota) => {
+    const original = cloneJson(baselinePayload.simulationPresets[0]);
+    const site = {
+      id: "edited-site", name: "Original Site", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: false,
+      siteLibrary: [site], simulationPresets: [original] });
+    useAppStore.getState().updateSiteLibraryEntry(site.id, { name: "Pending Site" });
+    useAppStore.getState().updateSimulationPresetEntry(original.id, { description: "Pending Simulation" });
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({
+      siteLibrary: [], simulationPresets: [], deletedSiteIds: [site.id], deletedSimulationIds: [original.id],
+    })));
+    const recoveryKey = "linksim-library-removed-edits-v1:owner-1";
+    let cached: Response | undefined;
+    let editedDuringBackup = false;
+    const setItem = storage.mock.setItem;
+    if (quota) {
+      vi.spyOn(storage.mock, "setItem").mockImplementation((key, value) => {
+        if (key === recoveryKey && value.includes("Pending Simulation")) throw new Error("Quota exceeded");
+        setItem(key, value);
+      });
+      vi.stubGlobal("caches", { open: async () => ({
+        put: async (_request: Request, response: Response) => {
+          cached = response;
+          if (!editedDuringBackup) {
+            editedDuringBackup = true;
+            useAppStore.getState().updateSimulationPresetEntry(original.id, { description: "Pending Simulation revised" });
+          }
+        },
+        match: async () => cached?.clone(),
+      }) });
+    }
+    try {
+      await useAppStore.getState().initializeCloudSync();
+      expect(useAppStore.getState().siteLibrary).toEqual([]);
+      expect(useAppStore.getState().simulationPresets).toEqual([]);
+      const { readLibraryRecoveryStorage } = await import("../lib/libraryRecoveryStorage");
+      if (quota) expect(cached).toBeDefined();
+      expect(await readLibraryRecoveryStorage(recoveryKey)).toEqual({
+        siteLibrary: [expect.objectContaining({ name: "Pending Site" })],
+        simulationPresets: [expect.objectContaining({ description: quota ? "Pending Simulation revised" : "Pending Simulation" })],
+      });
+    } finally {
+      if (quota) {
+        vi.restoreAllMocks();
+        vi.stubGlobal("caches", undefined);
+      }
+    }
+  });
+
+  it("uploads a linked Library Site changed in the workspace map", async () => {
+    const site = {
+      id: "linked-library", name: "Original Site", ownerUserId: "owner-1", effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    };
+    const original = cloneJson(baselinePayload.simulationPresets[0]);
+    original.snapshot.sites = [{ ...site, id: "workspace-site", libraryEntryId: site.id }];
+    const uploads: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        uploads.push(JSON.parse(String(init.body)));
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      return makeResponse({ siteLibrary: [site], simulationPresets: [original] });
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.getState().loadSimulationPreset(original.id);
+    useAppStore.getState().updateSite("workspace-site", { name: "Map edit" });
+    useAppStore.getState().performCloudSyncPush();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(uploads).toEqual([expect.objectContaining({
+      siteLibrary: [expect.objectContaining({ id: site.id, name: "Map edit" })],
+      simulationPresets: [expect.objectContaining({ id: original.id })],
+    })]);
   });
 
   it("quarantines a malformed cloud Simulation before detaching deleted Site references", async () => {
@@ -235,6 +374,7 @@ describe("appStore delta sync", () => {
     });
     await useAppStore.getState().initializeCloudSync();
     useAppStore.setState({ siteLibrary: [deletedSite], simulationPresets: [localSimulation] });
+    useAppStore.getState().updateSimulationPresetEntry(localSimulation.id, { name: localSimulation.name });
 
     await useAppStore.getState().performManualCloudSync();
 
@@ -447,10 +587,7 @@ describe("appStore delta sync", () => {
     await useAppStore.getState().performManualCloudSync();
 
     expect(useAppStore.getState().syncErrorMessage).toBeNull();
-    expect(pushedBodies.flatMap((body) => body.siteLibrary.map((site) => site.id)).sort()).toEqual([
-      "site-collaborator", "site-own",
-    ]);
-    expect(pushedBodies.flatMap((body) => body.simulationPresets.map((simulation) => simulation.id))).toEqual(["sim-1"]);
+    expect(pushedBodies).toEqual([]);
     expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-foreign")?.name).toBe("Unsynced admin edit");
     expect(useAppStore.getState().simulationPresets.find((simulation) => simulation.id === "sim-foreign")?.name)
       .toBe("Unsynced admin Simulation edit");
@@ -603,6 +740,7 @@ describe("appStore delta sync", () => {
     await useAppStore.getState().setCurrentUser({ ...mkUser(), id: "admin-2", isAdmin: true });
     await useAppStore.getState().initializeCloudSync();
     useAppStore.setState({ siteLibrary: [adminSite] });
+    useAppStore.getState().updateSiteLibraryEntry(adminSite.id, { name: "Pending edit" });
     useAppStore.getState().performCloudSyncPush();
     await vi.advanceTimersByTimeAsync(2500);
     await vi.waitFor(() => expect(releasePush).toBeDefined());
@@ -659,8 +797,7 @@ describe("appStore delta sync", () => {
 
     await useAppStore.getState().performManualCloudSync();
 
-    expect(pushedBodies).toHaveLength(1);
-    expect(pushedBodies[0]?.siteLibrary).toEqual([]);
+    expect(pushedBodies).toEqual([]);
     expect(useAppStore.getState().siteLibrary.some((site) => site.id === "site-deleted")).toBe(false);
   });
 

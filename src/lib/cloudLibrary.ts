@@ -11,9 +11,12 @@ export type CloudLibraryPayload = {
   syncCutoff?: string;
 };
 
+export type LibraryWriteReceipt = { kind: "site" | "simulation"; id: string; revision: string };
+
 type CloudPushResult = {
   ok?: boolean;
   conflicts?: string[];
+  revisions?: LibraryWriteReceipt[];
 };
 
 type TaggedLibraryRecord = { kind: "site" | "simulation"; value: unknown };
@@ -225,7 +228,10 @@ export const fetchPublicSimulationLibrary = async (params: {
   };
 };
 
-export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
+export const pushCloudLibrary = async (
+  payload: CloudLibraryPayload,
+  onSaved?: (receipts: LibraryWriteReceipt[]) => void,
+): Promise<void> => {
   const records = [
     ...payload.siteLibrary.map((value) => ({ kind: "site" as const, value })),
     ...payload.simulationPresets.map((value) => ({ kind: "simulation" as const, value })),
@@ -236,8 +242,12 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
       method: "PUT",
       body: JSON.stringify(batch),
     });
+    if (Array.isArray(result.revisions)) onSaved?.(result.revisions);
     const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
     if (!conflicts.length) continue;
+    if (conflicts.some((reason) => reason === "simulation_revision_conflict" || reason === "site_revision_conflict")) {
+      throw new Error("A Site or Simulation changed on another device. Your edits are still on this device. Export or save a copy before resolving the conflict.");
+    }
     if (conflicts.includes("simulation_name_taken")) {
       const simulationNames = listSimulationNames(payload);
       const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
