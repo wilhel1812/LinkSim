@@ -415,6 +415,7 @@ export function AppShell() {
 
   const nodeLaunch = useMemo(() => parse868NodeLaunch(window.location), []);
   const hasNodeLaunch = nodeLaunch !== undefined;
+  const initialNodeLaunchScenario = useRef(selectedScenarioId);
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
   const activeSimulation = useMemo(
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
@@ -531,6 +532,7 @@ export function AppShell() {
     },
     [publishAppNotice],
   );
+  const canSaveLaunchedSite = accessState === "granted" && Boolean(currentUser);
   const isNodeWorkspace = useAppStore((state) => !state.selectedScenarioId && Boolean(state.launchedNode));
   const canPersistWorkspace =
     !isNodeWorkspace &&
@@ -634,7 +636,7 @@ export function AppShell() {
   }, [activeSimulation, currentUser, selectedLink, selectedSiteIds, shareDirectory, sites]);
 
   useEffect(() => {
-    if (hasNodeLaunch) return;
+    if (hasNodeLaunch && (isNodeWorkspace || !activeSimulation || selectedScenarioId === initialNodeLaunchScenario.current)) return;
     if (
       !shouldRewritePathAfterDeepLinkApply({
         deepLinkApplied: deepLinkAppliedRef.current,
@@ -675,7 +677,7 @@ export function AppShell() {
     if (currentPath !== targetPath) {
       window.history.replaceState(null, "", targetPath);
     }
-  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasNodeLaunch]);
+  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok, hasNodeLaunch, isNodeWorkspace, selectedScenarioId]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1714,6 +1716,11 @@ export function AppShell() {
         reportFailure("Could not open the 868.no Site. Open a valid node link from the 868.no map.");
         return;
       }
+      const { selectedScenarioId: launchWorkspace, fitSitesEpoch: launchEpoch } = useAppStore.getState();
+      const canApplyLaunch = () => {
+        const state = useAppStore.getState();
+        return state.selectedScenarioId === launchWorkspace && state.fitSitesEpoch === launchEpoch;
+      };
       void (async () => {
         try {
           const feed = await fetchMeshmapNodes({
@@ -1721,15 +1728,17 @@ export function AppShell() {
             sourceUrl: NODE_FEED_SOURCES["868-no"].sourceUrl,
             cacheTtlMs: 0,
           });
+          if (!canApplyLaunch()) return;
           if (feed.networkError) throw new Error();
           const node = feed.nodes.find(({ nodeId }) => nodeId === nodeLaunch);
           if (!node) {
             reportFailure("Could not open the 868.no Site. This node has no recent reported position.");
             return;
           }
+          initialNodeLaunchScenario.current = "";
           useAppStore.getState().clearSimulationWorkspace(node);
         } catch {
-          reportFailure("Could not load the 868.no Site. Reload to try again.");
+          if (canApplyLaunch()) reportFailure("Could not load the 868.no Site. Reload to try again.");
         }
       })();
       return;
@@ -2579,6 +2588,7 @@ export function AppShell() {
             onSignInTriggerReady={handleSignInTriggerReady}
             showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
             readOnly={!canPersistWorkspace}
+            canSaveLaunchedSite={canSaveLaunchedSite}
             renderedBasemapAttribution={renderedBasemapAttribution}
             panelToggleControl={
               isMobileViewport ? (
@@ -2654,7 +2664,7 @@ export function AppShell() {
           }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
-          canSaveLaunchedSite={accessState === "granted" && Boolean(currentUser)}
+          canSaveLaunchedSite={canSaveLaunchedSite}
           inspectorPanelToggle={
             !isMobileViewport ? (
               <MapControlButton
@@ -2802,6 +2812,7 @@ export function AppShell() {
                 onSignInTriggerReady={handleSignInTriggerReady}
                 showSignInForAccessPilot={betterAuthPilotEnabled && authSource === "access"}
                 readOnly={!canPersistWorkspace}
+                canSaveLaunchedSite={canSaveLaunchedSite}
                 renderedBasemapAttribution={renderedBasemapAttribution}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
