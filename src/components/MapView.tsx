@@ -3439,16 +3439,21 @@ export function MapView({
     }
     fitToNodes();
   };
+  const deferredFitRef = useRef(false);
+  const [fitResizeEpoch, setFitResizeEpoch] = useState(0);
   useEffect(() => {
+    deferredFitRef.current = false;
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
     if (!bounds) return;
-    fitMapToBounds(mapRef, bounds, {
+    const fitted = fitMapToBounds(mapRef, bounds, {
       padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
       maxZoom: 14,
     });
-    setInteractionViewState(null);
+    deferredFitRef.current = !fitted;
+    if (fitted) setInteractionViewState(null);
   }, [
+    fitResizeEpoch,
     fitControlActive,
     fitSitesEpoch,
     isMapLoaded,
@@ -4337,6 +4342,9 @@ export function MapView({
         mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
         transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
+        onResize={() => {
+          if (deferredFitRef.current) setFitResizeEpoch((epoch) => epoch + 1);
+        }}
         onError={(event) => {
           if (!shouldAdvanceBasemapFallbackForError(event)) return;
           if (basemapFallbackStage === "local") return;
