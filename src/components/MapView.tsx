@@ -3136,7 +3136,16 @@ export function MapView({
   };
 
   const onEditorSiteDraftDragEnd = (event: MarkerDragEvent) => {
-    setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+    const { lat, lng } = event.lngLat;
+    if (launchedSiteId && mapEditor?.temporarySiteId === launchedSiteId) {
+      onSiteDragEnd(launchedSiteId, event);
+      const site = useAppStore.getState().sites.find(({ id }) => id === launchedSiteId);
+      if (mapEditorSiteDraft && site) {
+        setMapEditorSiteDraft({ ...mapEditorSiteDraft, lat, lon: lng, groundElevationM: site.groundElevationM });
+      }
+      return;
+    }
+    setEditorSiteDraftFromMap(lat, lng);
   };
 
   const beginPendingNewSiteDraft = (lat: number, lon: number) => {
