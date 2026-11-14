@@ -1,4 +1,4 @@
-import type { StyleSpecification } from "maplibre-gl";
+import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { THEMES } from "../themes";
 import type { UiColorTheme } from "../themes/types";
 import {
@@ -439,6 +439,26 @@ export const getOpenFreeMapFallbackStyle = (
   theme: BasemapTheme,
   colorTheme: UiColorTheme = "blue",
 ): string | StyleSpecification => resolveBasemapSelection(DEFAULT_BASEMAP_STYLE_ID, theme, colorTheme).style;
+
+export const resolveOpenFreeMapCircleSprite = (
+  map: Pick<MapLibreMap, "addImage"> & {
+    getStyle: () => Pick<StyleSpecification, "sprite">;
+    getImage: (id: string) => {
+      data: Parameters<MapLibreMap["addImage"]>[1];
+      pixelRatio: number;
+      sdf: boolean;
+    } | undefined;
+  },
+  style: string | StyleSpecification,
+  id: string,
+): void => {
+  if (id !== "circle-11" || (style !== openFreeMapStyle("fiord") && style !== openFreeMapStyle("dark"))) return;
+  const sprite = map.getStyle().sprite;
+  if (typeof sprite !== "string" || !sprite.startsWith("https://tiles.openfreemap.org/sprites/")) return;
+  const image = map.getImage("circle_11");
+  if (!image) return;
+  map.addImage(id, image.data, { pixelRatio: image.pixelRatio, sdf: image.sdf });
+};
 
 export const getLocalFallbackStyle = (theme: BasemapTheme, colorTheme: UiColorTheme = "blue"): StyleSpecification => ({
   version: 8,

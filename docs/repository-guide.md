@@ -136,8 +136,8 @@ decompression, fetching, or rendering begins:
 
 - MeshMap JSON responses are limited to `5 MiB` and `20,000` top-level node
   records. Direct/custom node feeds use the same bounds.
-- The 868.no snapshot reader retains its `5 MiB`, `8 second` maximum, and
-  `1 second` post-burst idle limits, with at most `5,000` SSE records.
+- The 868.no Nodes API adapter limits the JSON response to `5 MiB`,
+  `8 seconds`, and `5,000` node records.
 - Normalized node caches retain at most `20,000` nodes per source and `25,000`
   nodes after sources are combined. Map markers retain the existing `1,000`
   in-view ceiling.
@@ -222,3 +222,7 @@ npm run refresh:staging:r2
 - Keep the working tree clean before release operations. Build metadata under `.tmp/` is generated and untracked.
 - Follow [docs/release-flow.md](./release-flow.md) for production promotion.
 - When changing auth/permissions, add or update tests in the same pass.
+
+## Creating a Site from a URL
+
+See the [Site URL contract](site-url.md) for supported fields and integration examples.

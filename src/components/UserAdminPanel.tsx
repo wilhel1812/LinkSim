@@ -110,6 +110,17 @@ export function UserAdminPanel({
   const isOnline = useAppStore((state) => state.isOnline);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
+  const simulationConflictIds = useAppStore((state) => state.simulationConflictIds);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const siteConflictIds = useAppStore((state) => state.siteConflictIds);
+  const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const conflicts = [
+    ...(simulationPresets ?? []).filter(({ id }) => simulationConflictIds?.includes(id)).map(({ id, name }) => ({ id, name, kind: "simulation" as const })),
+    ...(siteLibrary ?? []).filter(({ id }) => siteConflictIds?.includes(id)).map(({ id, name }) => ({ id, name, kind: "site" as const })),
+  ];
+  const syncBusy = useAppStore((state) => state.syncBusy);
+  const saveConflictCopyAndReload = useAppStore((state) => state.saveConflictCopyAndReload);
+  const [conflictActionFeedback, setConflictActionFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
@@ -1089,7 +1100,7 @@ export function UserAdminPanel({
                 ) : null}
               </div>
               <div className="sync-status-display">
-                {syncPending ? (
+                {syncPending && syncStatus !== "error" ? (
                   <>
                     <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" title="Sync pending" /></span>
                     <div>
@@ -1137,10 +1148,36 @@ export function UserAdminPanel({
                   </>
                 )}
               </div>
+              {conflicts.length ? (
+                <div>
+                  <p className="field-help">These Library records changed in the cloud. Save your edits as a private copy to reload the cloud version.</p>
+                  {conflicts.map(({ id, name, kind }) => (
+                    <div className="chip-group" key={`${kind}:${id}`}>
+                      <span>{name}</span>
+                      <ActionButton
+                        type="button"
+                        aria-label={`Save a copy of ${name} and reload its cloud version`}
+                        disabled={!isOnline || syncBusy}
+                        onClick={() => {
+                          setConflictActionFeedback(null);
+                          void (kind === "site" ? saveConflictCopyAndReload(id, kind) : saveConflictCopyAndReload(id)).then((copyName) => {
+                            setConflictActionFeedback({ text: `Saved “${copyName}” on this device and reloaded the cloud version.`, error: false });
+                          }).catch((error) => setConflictActionFeedback({ text: getUiErrorMessage(error), error: true }));
+                        }}
+                      >
+                        Save a copy and reload
+                      </ActionButton>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {conflictActionFeedback && (
+                <p className="field-help" role={conflictActionFeedback.error ? "alert" : "status"}>{conflictActionFeedback.text}</p>
+              )}
               <div className="chip-group">
                 {syncStatus !== "syncing" ? (
                   <ActionButton
-                    disabled={!isOnline}
+                    disabled={!isOnline || syncBusy}
                     onClick={() => {
                       void performManualCloudSync();
                     }}

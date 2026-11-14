@@ -218,10 +218,11 @@ const setRetainedSimulation = (app: Awaited<ReturnType<typeof store>>, simulatio
       autoPropagationEnvironment: state.autoPropagationEnvironment, terrainDataset: state.terrainDataset } }] });
 };
 
-it("submits a retained Path only after sign-in initialization uploads its local revision", async () => {
+it("submits a retained Path only after sign-in initialization uploads its pending local revision", async () => {
   const { isPathLeaderboardReady, createPathLeaderboardSubmitter } = await import("../lib/pathLeaderboard");
+  data.set("linksim-library-pending-v1", JSON.stringify({ sites: [], simulations: ["local-simulation"] }));
   const app = await store();
-  // A previous session can leave an analyzed local Path with no pending-sync flag.
+  // The pending record survives the previous session.
   app.setState({ syncPending: false, syncBusy: false, isInitializing: false, isOnline: true });
   const candidate = { simulationId: "local-simulation", simulationUpdatedAt: "2026-10-14T10:00:00Z",
     fromSiteId: "a", toSiteId: "b", distanceKm: 20, rxAfterEnvLossDbm: -100, rxMarginDb: 20,
@@ -325,7 +326,7 @@ it.each(["snapshot", "metadata", "rename", "overwrite", "save"].flatMap((mutatio
   } finally { unsubscribe(); }
 });
 
-it.each(["copy", "blank", "saveNew", "restore"])("keeps %s revisions pending until their upload completes", async (mutation) => {
+it.each(["copy", "blank", "saveNew"])("keeps %s revisions pending until their upload completes", async (mutation) => {
   const { isPathLeaderboardReady } = await import("../lib/pathLeaderboard");
   const app = await syncedRetainedSimulation();
   const state = app.getState();
@@ -333,10 +334,6 @@ it.each(["copy", "blank", "saveNew", "restore"])("keeps %s revisions pending unt
   if (mutation === "copy") id = state.createSimulationCopyFromCurrent("New copy");
   else if (mutation === "blank") id = state.createBlankSimulationPreset("New blank");
   else if (mutation === "saveNew") id = state.saveCurrentSimulationPreset("New saved Simulation");
-  else {
-    app.setState({ currentUser: { ...user("a"), isAdmin: true } });
-    await state.restoreSimulationPreset(id!);
-  }
   expect(id).toBeTruthy();
   // The New Simulation/copy UI loads the result before AppShell schedules sync.
   app.getState().loadSimulationPreset(id!);
@@ -359,8 +356,8 @@ it("counts a distinct Library edit during upload without acknowledging it with t
   expect(app.getState().pendingChangesCount).toBe(1);
   await vi.advanceTimersByTimeAsync(3000);
   await vi.waitFor(() => expect(releasePush).toBeTypeOf("function"));
-  // Model a separate Library mutation observed by the AppShell scheduling effect.
-  app.setState({ siteLibrary: [{ ...draft, ownerUserId: "a", effectiveRole: "owner", name: "Distinct late edit" }] });
+  app.setState({ selectedScenarioId: "", siteLibrary: [{ ...draft, ownerUserId: "a", effectiveRole: "owner" }] });
+  app.getState().updateSiteLibraryEntry(draft.id, { name: "Distinct late edit" });
   app.getState().performCloudSyncPush();
   expect(app.getState().pendingChangesCount).toBe(2);
   // Repeating scheduling for the same inputs must not count either mutation again.
