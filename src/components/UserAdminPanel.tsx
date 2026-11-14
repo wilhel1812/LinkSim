@@ -112,6 +112,12 @@ export function UserAdminPanel({
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const simulationConflictIds = useAppStore((state) => state.simulationConflictIds);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const siteConflictIds = useAppStore((state) => state.siteConflictIds);
+  const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const conflicts = [
+    ...(simulationPresets ?? []).filter(({ id }) => simulationConflictIds?.includes(id)).map(({ id, name }) => ({ id, name, kind: "simulation" as const })),
+    ...(siteLibrary ?? []).filter(({ id }) => siteConflictIds?.includes(id)).map(({ id, name }) => ({ id, name, kind: "site" as const })),
+  ];
   const syncBusy = useAppStore((state) => state.syncBusy);
   const saveConflictCopyAndReload = useAppStore((state) => state.saveConflictCopyAndReload);
   const [conflictActionFeedback, setConflictActionFeedback] = useState<{ text: string; error: boolean } | null>(null);
@@ -1142,11 +1148,11 @@ export function UserAdminPanel({
                   </>
                 )}
               </div>
-              {simulationConflictIds?.length ? (
+              {conflicts.length ? (
                 <div>
-                  <p className="field-help">These Simulations changed in the cloud. Save your edits as a private copy to reload the cloud version.</p>
-                  {simulationPresets.filter(({ id }) => simulationConflictIds.includes(id)).map(({ id, name }) => (
-                    <div className="chip-group" key={id}>
+                  <p className="field-help">These Library records changed in the cloud. Save your edits as a private copy to reload the cloud version.</p>
+                  {conflicts.map(({ id, name, kind }) => (
+                    <div className="chip-group" key={`${kind}:${id}`}>
                       <span>{name}</span>
                       <ActionButton
                         type="button"
@@ -1154,7 +1160,7 @@ export function UserAdminPanel({
                         disabled={!isOnline || syncBusy}
                         onClick={() => {
                           setConflictActionFeedback(null);
-                          void saveConflictCopyAndReload(id).then((copyName) => {
+                          void (kind === "site" ? saveConflictCopyAndReload(id, kind) : saveConflictCopyAndReload(id)).then((copyName) => {
                             setConflictActionFeedback({ text: `Saved “${copyName}” on this device and reloaded the cloud version.`, error: false });
                           }).catch((error) => setConflictActionFeedback({ text: getUiErrorMessage(error), error: true }));
                         }}

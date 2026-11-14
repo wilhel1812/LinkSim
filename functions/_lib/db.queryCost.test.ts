@@ -399,3 +399,19 @@ it("rejects a concurrent Simulation replacement at the database write", async ()
   expect(db.db.prepare("SELECT payload_json FROM simulations WHERE id = 'sim-000'").get()?.payload_json)
     .toBe(JSON.stringify({ snapshot: { sites: [{ id: "new-site" }] } }));
 });
+
+it("identifies the Site rejected by the Library revision check", async () => {
+  const db = fixture(0, 0);
+  const env = { DB: db } as never;
+  const actor = { id: "owner", isAdmin: false, isModerator: false };
+  const site = { id: "site-1", name: "Hill", position: { lat: 60, lon: 11 } };
+  await upsertLibrarySnapshot(env, actor, { siteLibrary: [site], simulationPresets: [] });
+  const result = await upsertLibrarySnapshot(env, actor, {
+    siteLibrary: [{ ...site, name: "Stale", cloudRevision: "2026-01-01T00:00:00.000Z" }],
+    simulationPresets: [],
+  }, { requireRevision: true });
+  expect(result.conflicts).toEqual(["site_revision_conflict"]);
+  expect(result.siteConflictIds).toEqual([site.id]);
+  expect(db.db.prepare("SELECT name FROM sites WHERE id = 'site-1'").get()?.name).toBe("Hill");
+  db.db.close();
+});

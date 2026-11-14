@@ -84,6 +84,8 @@ const { mockStoreState } = vi.hoisted(() => {
     lastSyncedAt: null,
     syncErrorMessage: null,
     performManualCloudSync: vi.fn(),
+    siteConflictIds: [] as string[],
+    siteLibrary: [] as Array<{ id: string; name: string }>,
     simulationConflictIds: [] as string[],
     simulationPresets: [] as Array<{id: string; name: string}>,
     syncBusy: false,
@@ -103,6 +105,8 @@ vi.mock("../store/appStore", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockStoreState.siteConflictIds = [];
+  mockStoreState.siteLibrary = [];
   mockStoreState.simulationConflictIds = [];
   mockStoreState.simulationPresets = [];
   vi.mocked(fetchUsers).mockResolvedValue([]);
@@ -146,6 +150,15 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save a copy of Hill Path and reload its cloud version" }));
     expect(mockStoreState.saveConflictCopyAndReload).toHaveBeenCalledExactlyOnceWith("edited");
     expect(await screen.findByText(/Saved “Hill Path \(local copy\)” on this device/)).toBeInTheDocument();
+  });
+
+  it("offers the same recovery action for a Site-only conflict", async () => {
+    mockStoreState.siteConflictIds = ["hill"];
+    mockStoreState.siteLibrary = [{ id: "hill", name: "Hill Site" }];
+    render(<UserAdminPanel />);
+    await userEvent.click(screen.getByRole("button", { name: /synced|sync|up to date/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save a copy of Hill Site and reload its cloud version" }));
+    expect(mockStoreState.saveConflictCopyAndReload).toHaveBeenCalledExactlyOnceWith("hill", "site");
   });
 
   it("exposes a Stats link from the signed-in account actions", async () => {

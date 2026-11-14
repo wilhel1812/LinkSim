@@ -155,6 +155,69 @@ describe("appStore delta sync", () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
   });
 
+  it("recovers a stale Library Site as a private copy and restores the cloud Site", async () => {
+    const base = "2026-08-16T10:00:00.000Z";
+    const site = { id: "hill", name: "Hill", ownerUserId: "owner-1", effectiveRole: "owner",
+      createdAt: base, cloudRevision: base, position: { lat: 60, lon: 11 },
+      groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 };
+    const other = { ...site, id: "other", name: "Other Site" };
+    let remote = site;
+    let rejectSite = true;
+    const uploads: Array<{ siteLibrary: Array<{ id: string; txPowerDbm: number }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "PUT") return makeResponse({ ...baselinePayload, siteLibrary: [remote, other] });
+      const payload = JSON.parse(String(init.body));
+      uploads.push(payload);
+      return makeResponse(rejectSite
+        ? { ok: true, conflicts: ["site_revision_conflict"], siteConflictIds: [site.id], revisions: [] }
+        : { ok: true, conflicts: [], revisions: payload.siteLibrary.map(({ id }: { id: string }) =>
+            ({ id, kind: "site", revision: "2026-08-16T10:02:00.000Z" })) });
+    }));
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    vi.resetModules();
+    const { useAppStore: store } = await import("./appStore");
+    store.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await store.getState().initializeCloudSync();
+    store.getState().updateSiteLibraryEntry(site.id, { txPowerDbm: 15 });
+    remote = { ...site, txPowerDbm: 30, cloudRevision: "2026-08-16T10:01:00.000Z" };
+    await store.getState().performManualCloudSync();
+    expect(store.getState().siteConflictIds).toEqual([site.id]);
+    store.getState().updateSiteLibraryEntry(other.id, { txPowerDbm: 25 });
+    const setItem = storage.mock.setItem;
+    const failSave = vi.spyOn(storage.mock, "setItem").mockImplementation((key, value) => {
+      if (key === "rmw-site-library-v1") throw new Error("Storage quota exceeded");
+      setItem(key, value);
+    });
+    await expect(store.getState().saveConflictCopyAndReload(site.id, "site")).rejects.toThrow("could not save the local copy");
+    failSave.mockRestore();
+    expect(store.getState().siteLibrary.find(({ id }) => id === site.id)?.txPowerDbm).toBe(15);
+    expect(store.getState().siteConflictIds).toEqual([site.id]);
+    const failQueue = vi.spyOn(storage.mock, "setItem").mockImplementation((key, value) => {
+      if (key === "linksim-library-pending-v1" && !JSON.parse(value).sites.includes(site.id)) {
+        throw new Error("Storage quota exceeded");
+      }
+      setItem(key, value);
+    });
+    await expect(store.getState().saveConflictCopyAndReload(site.id, "site")).rejects.toThrow("could not finish saving");
+    failQueue.mockRestore();
+    expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!).sites).toEqual([site.id, other.id]);
+    expect(JSON.parse(storage.mock.getItem("rmw-site-library-v1")!)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: site.id, txPowerDbm: 15 }),
+    ]));
+    rejectSite = false;
+    await store.getState().saveConflictCopyAndReload(site.id, "site");
+    expect(store.getState().siteLibrary.find(({ id }) => id === site.id)?.txPowerDbm).toBe(30);
+    const copy = store.getState().siteLibrary.find(({ id }) => id !== site.id && id !== other.id);
+    expect(copy).toMatchObject({ name: "Hill (local copy)", txPowerDbm: 15, visibility: "private", sharedWith: [] });
+    expect(copy?.cloudRevision).toBeFalsy();
+    expect(store.getState().siteConflictIds).toEqual([]);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!).sites).toEqual([other.id, copy?.id]);
+    await vi.advanceTimersByTimeAsync(7500);
+    expect(uploads.at(-1)?.siteLibrary.map(({ id }) => id)).toEqual(expect.arrayContaining([other.id, copy?.id]));
+    expect(uploads.at(-1)?.siteLibrary.map(({ id }) => id)).not.toContain(site.id);
+    expect(store.getState().syncPending).toBe(false);
+  });
+
   it("keeps an offline Simulation edit and its original base revision across reload", async () => {
     const base = "2026-08-16T10:00:00.000Z";
     const original = { ...cloneJson(baselinePayload.simulationPresets[0]), cloudRevision: base };
