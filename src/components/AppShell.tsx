@@ -3,7 +3,7 @@ import { parseSiteLaunch } from "../lib/siteLaunch";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Globe, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, updateMyProfile } from "../lib/cloudUser";
-import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
+import { fetchCloudLibrary, fetchPublicSimulationLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
@@ -726,7 +726,7 @@ export function AppShell() {
       return;
     }
     void performCloudSyncPush();
-  }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
+  }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets]);
 
   useEffect(() => {
     const onOnline = () => {
@@ -2109,10 +2109,7 @@ export function AppShell() {
       const latestSimulation = latest.simulationPresets.find((preset) => preset.id === activeSimulation.id);
       if (!latestSimulation) throw new Error("Simulation missing after local update.");
 
-      await pushCloudLibrary({
-        simulationPresets: [latestSimulation],
-        siteLibrary: [],
-      });
+      await latest.saveSimulationToCloud(latestSimulation.id);
 
       resolveUpgradeLink(currentShareLink);
       await upgradeClipboardDone;
@@ -2166,7 +2163,7 @@ export function AppShell() {
       const latest = useAppStore.getState();
       const latestSimulation = latest.simulationPresets.find((p) => p.id === activeSimulation.id);
       if (!latestSimulation) throw new Error("Simulation missing after local update.");
-      await pushCloudLibrary({ simulationPresets: [latestSimulation], siteLibrary: [] });
+      await latest.saveSimulationToCloud(latestSimulation.id);
       resolveLink(currentShareLink);
       await clipboardDone;
       setShareSpecificStatus("Collaborators saved. Link copied — share it with the users you added.");

@@ -24,6 +24,7 @@ export type Site = {
   antennaTargetDetachedReason?: "target-deleted";
   iconKey?: import("../lib/siteIcons").SiteIconKey;
   libraryEntryId?: string;
+  libraryDetached?: boolean;
 };
 
 export type Link = {
