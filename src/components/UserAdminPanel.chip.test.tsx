@@ -84,6 +84,10 @@ const { mockStoreState } = vi.hoisted(() => {
     lastSyncedAt: null,
     syncErrorMessage: null,
     performManualCloudSync: vi.fn(),
+    simulationConflictIds: [] as string[],
+    simulationPresets: [] as Array<{id: string; name: string}>,
+    syncBusy: false,
+    saveConflictCopyAndReload: vi.fn(async (_id: string) => "Hill Path (local copy)"),
     holidayWindowState: { reverted: [], dismissed: [] },
     revertHolidayThemeForWindow: vi.fn(),
     dismissHolidayThemeNotice: vi.fn(),
@@ -99,6 +103,8 @@ vi.mock("../store/appStore", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockStoreState.simulationConflictIds = [];
+  mockStoreState.simulationPresets = [];
   vi.mocked(fetchUsers).mockResolvedValue([]);
   vi.mocked(fetchUserDirectory).mockResolvedValue({
     users: [],
@@ -128,6 +134,18 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     expect(buttons.length).toBeGreaterThanOrEqual(2);
     await userEvent.click(buttons[1]); // settings icon is second
     expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("names the conflicted Simulation and sends its ID to the recovery action", async () => {
+    mockStoreState.simulationConflictIds = ["edited"];
+    mockStoreState.simulationPresets = [{ id: "edited", name: "Hill Path" }, { id: "other", name: "Other Simulation" }];
+    render(<UserAdminPanel />);
+    await userEvent.click(screen.getByRole("button", { name: /synced|sync|up to date/i }));
+    expect(await screen.findByText("Hill Path")).toBeInTheDocument();
+    expect(screen.queryByText("Other Simulation")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save a copy of Hill Path and reload its cloud version" }));
+    expect(mockStoreState.saveConflictCopyAndReload).toHaveBeenCalledExactlyOnceWith("edited");
+    expect(await screen.findByText(/Saved “Hill Path \(local copy\)” on this device/)).toBeInTheDocument();
   });
 
   it("exposes a Stats link from the signed-in account actions", async () => {

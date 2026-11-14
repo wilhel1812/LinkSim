@@ -48,6 +48,7 @@ import {
   getStylesForCategory,
   nextBasemapFallbackStage,
   resolveBasemapSelection,
+  resolveOpenFreeMapCircleSprite,
   shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   type BasemapCategory,
@@ -3391,6 +3392,9 @@ export function MapView({
     () => categoryStyles.filter((s) => s.regional),
     [categoryStyles],
   );
+  const renderedBasemapStyle = basemapFallbackStage === "selected"
+    ? resolvedBasemap.style
+    : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle;
   const providerMaxZoom = useMemo(() => {
     if (basemapFallbackStage !== "selected") return basemapFallbackStage === "local" ? 24 : 22;
     if (resolvedBasemap.maxZoom !== 22) return resolvedBasemap.maxZoom;
@@ -4339,7 +4343,10 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
+        mapStyle={renderedBasemapStyle}
+        onStyleData={({ target }) => {
+          target.setMissingStyleImageResolver((id) => resolveOpenFreeMapCircleSprite(target, renderedBasemapStyle, id));
+        }}
         transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
         onResize={() => {
