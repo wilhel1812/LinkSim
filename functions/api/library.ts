@@ -170,9 +170,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, data }) =
         isModerator: Boolean((me as { isModerator?: boolean }).isModerator),
       },
       {
-      siteLibrary,
-      simulationPresets,
+        siteLibrary,
+        simulationPresets,
       },
+      { requireRevision: true },
     );
 
     return withCors(
