@@ -48,6 +48,7 @@ import {
   getStylesForCategory,
   nextBasemapFallbackStage,
   resolveBasemapSelection,
+  resolveOpenFreeMapCircleSprite,
   shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   type BasemapCategory,
@@ -3391,6 +3392,9 @@ export function MapView({
     () => categoryStyles.filter((s) => s.regional),
     [categoryStyles],
   );
+  const renderedBasemapStyle = basemapFallbackStage === "selected"
+    ? resolvedBasemap.style
+    : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle;
   const providerMaxZoom = useMemo(() => {
     if (basemapFallbackStage !== "selected") return basemapFallbackStage === "local" ? 24 : 22;
     if (resolvedBasemap.maxZoom !== 22) return resolvedBasemap.maxZoom;
@@ -3439,16 +3443,21 @@ export function MapView({
     }
     fitToNodes();
   };
+  const deferredFitRef = useRef(false);
+  const [fitResizeEpoch, setFitResizeEpoch] = useState(0);
   useEffect(() => {
+    deferredFitRef.current = false;
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
     if (!bounds) return;
-    fitMapToBounds(mapRef, bounds, {
+    const fitted = fitMapToBounds(mapRef, bounds, {
       padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
       maxZoom: 14,
     });
-    setInteractionViewState(null);
+    deferredFitRef.current = !fitted;
+    if (fitted) setInteractionViewState(null);
   }, [
+    fitResizeEpoch,
     fitControlActive,
     fitSitesEpoch,
     isMapLoaded,
@@ -4334,9 +4343,15 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={basemapFallbackStage === "selected" ? resolvedBasemap.style : basemapFallbackStage === "openfreemap" ? openFreeMapFallbackStyle : localFallbackStyle}
+        mapStyle={renderedBasemapStyle}
+        onStyleData={({ target }) => {
+          target.setMissingStyleImageResolver((id) => resolveOpenFreeMapCircleSprite(target, renderedBasemapStyle, id));
+        }}
         transformRequest={transformMapRequest}
         onLoad={() => setIsMapLoaded(true)}
+        onResize={() => {
+          if (deferredFitRef.current) setFitResizeEpoch((epoch) => epoch + 1);
+        }}
         onError={(event) => {
           if (!shouldAdvanceBasemapFallbackForError(event)) return;
           if (basemapFallbackStage === "local") return;
