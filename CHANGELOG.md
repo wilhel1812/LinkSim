@@ -10,6 +10,7 @@
 - Update the Vite development dependency to 7.3.7. (#1289)
 
 ### Fixed
+- Open Site URLs even when startup refreshes the previously selected Simulation. (#1301)
 - Sync local-only Sites and Simulations saved before the upgrade. (#1298)
 - Recover conflicting Library Site edits as private copies while restoring the cloud Site. (#1295)
 - Protect newer cloud Simulation edits from stale writes. Keep conflicting edits on the device and offer to save them as a private copy before reloading the cloud version. (#1054)
