@@ -1341,9 +1341,12 @@ export function AppShell() {
                 setLegacyMigrationError(legacyMigrationExistingSessionErrorRef.current);
                 setLegacyMigrationStage("failed");
               }
-              const expiredSessionMessage = bootstrapState === "expired"
-                ? "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving."
-                : null;
+              let expiredSessionMessage: string | null = null;
+              if (bootstrapState === "expired") {
+                expiredSessionMessage = deepLinkParse.ok && !useAppStore.getState().syncPending
+                  ? "Your session expired. Sign in again to resume syncing any changes saved on this device."
+                  : "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.";
+              }
               console.info("[AppShell] Access check resolved to guest", {
                 reason,
                 deepLinkMode: deepLinkParse.ok,

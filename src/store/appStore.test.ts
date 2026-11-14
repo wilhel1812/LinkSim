@@ -309,6 +309,19 @@ describe("appStore auth guards", () => {
     expect(fetchElevations).not.toHaveBeenCalled();
   });
 
+  it("applies guest coverage settings without attempting to save the Simulation", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const presets = useAppStore.getState().simulationPresets;
+
+    useAppStore.getState().setSelectedOverlayRadiusOption("20");
+    useAppStore.getState().setSelectedCoverageResolution("84");
+
+    expect(useAppStore.getState().selectedOverlayRadiusOption).toBe("20");
+    expect(useAppStore.getState().selectedCoverageResolution).toBe("84");
+    expect(useAppStore.getState().simulationPresets).toBe(presets);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await useAppStore.getState().setCurrentUser({
