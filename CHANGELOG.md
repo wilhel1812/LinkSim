@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.32.0] - Unreleased
+
+### Added
+- Open a Site from a self-contained link and edit it in a temporary Simulation. Signed-in users can save a copy to their Library. (#1284)
+
+### Changed
+- Load 868.no nodes from the Nodes API. (#1283)
+- Update the Vite development dependency to 7.3.7. (#1289)
+
+### Fixed
+- Protect newer cloud Simulation edits from stale writes. Keep conflicting edits on the device and offer to save them as a private copy before reloading the cloud version. (#1054)
+- Wait for the map to resize before fitting Sites when the Path profile changes size. (#1281)
+- Restore missing place markers in the OpenFreeMap Fiord and Dark basemaps. (#1280)
+- Keep guest Simulation controls local and give users with expired sessions clear guidance on resuming sync. (#1279)
+
 ## [0.31.1] - Unreleased
 
 ### Fixed
