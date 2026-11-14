@@ -134,6 +134,48 @@ describe("appStore delta sync", () => {
     vi.useRealTimers();
   });
 
+  it("queues only owned local-only Library records from before revision tracking", async () => {
+    const base = cloneJson(baselinePayload.simulationPresets[0]);
+    const local = { ...base, id: "offline", name: "Offline Simulation", slug: "offline" };
+    const deleted = { ...base, id: "deleted", name: "Deleted Simulation" };
+    const foreign = { ...base, id: "foreign", ownerUserId: "other-user" };
+    const site = { id: "local-site", name: "Offline Site", ownerUserId: "owner-1", effectiveRole: "owner",
+      createdAt: base.updatedAt, position: { lat: 60, lon: 11 }, groundElevationM: 100,
+      antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 };
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify([base, local, deleted, foreign]));
+    storage.mock.setItem("rmw-site-library-v1", JSON.stringify([site]));
+    storage.mock.setItem("linksim-last-fetched-at-v1", base.updatedAt);
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    const cloud = { ...base, description: "Cloud version", cloudRevision: "2026-08-16T10:00:00.000Z" };
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      makeResponse(init?.method === "PUT"
+        ? { ok: true, conflicts: [], revisions: [
+            { kind: "site", id: site.id, revision: cloud.cloudRevision },
+            { kind: "simulation", id: local.id, revision: cloud.cloudRevision },
+          ] }
+        : { siteLibrary: [], simulationPresets: [cloud], deletedSimulationIds: [deleted.id] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAppStore: store } = await import("./appStore");
+    store.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    await store.getState().initializeCloudSync({ restoreWorkspace: false });
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("since=");
+    expect(store.getState().syncPending).toBe(true);
+    expect(JSON.parse(storage.mock.getItem("linksim-library-pending-v1")!)).toEqual({
+      sites: [site.id], simulations: [local.id],
+    });
+    expect(store.getState().simulationPresets.find(({ id }) => id === base.id)?.description).toBe("Cloud version");
+    const legacyQueue = storage.mock.getItem("linksim-library-pending-v1");
+    await store.getState().initializeCloudSync({ restoreWorkspace: false });
+    expect(storage.mock.getItem("linksim-library-pending-v1")).toBe(legacyQueue);
+    await vi.advanceTimersByTimeAsync(7500);
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body))).toEqual({
+      siteLibrary: [expect.objectContaining({ id: site.id })],
+      simulationPresets: [expect.objectContaining({ id: local.id })],
+    });
+    expect(store.getState().syncPending).toBe(false);
+  });
+
   it("loads a newer delta Simulation without uploading the merged Library", async () => {
     storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify(baselinePayload.simulationPresets));
     storage.mock.setItem("linksim-last-fetched-at-v1", "2026-08-16T10:00:00.000Z");

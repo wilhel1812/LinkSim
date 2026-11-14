@@ -1787,6 +1787,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       const deletedSites = [...cloud.deletedSiteIds, ...cloud.removedSiteIds];
       const deletedSimulations = [...cloud.deletedSimulationIds, ...cloud.removedSimulationIds];
       if (!await applyCloudRemovals(get, isCurrentAccount, deletedSites, deletedSimulations) || !isCurrentAccount()) return;
+      if (needsRevision && userId && !cloud.isDelta) {
+        const latest = get();
+        // Use the raw cloud IDs so even a quarantined server record prevents
+        // migration of an older local record with the same ID.
+        const queueLocalOnly = <T extends {
+          id: string; ownerUserId?: string; effectiveRole?: string; cloudRevision?: string | null;
+        }>(local: T[], cloudRecords: unknown[], dirty: Set<string>): string[] => {
+          const cloudIds = new Set(cloudRecords.flatMap((record) =>
+            record && typeof record === "object" && "id" in record ? [record.id] : [],
+          ));
+          return local.filter((record) =>
+            record.cloudRevision === undefined && record.ownerUserId === userId &&
+            canEditLibraryItem(record, latest.currentUser) && !cloudIds.has(record.id) && !dirty.has(record.id),
+          ).map(({ id }) => id);
+        };
+        const sites = queueLocalOnly(latest.siteLibrary, cloud.siteLibrary, dirtySiteIds);
+        const simulations = queueLocalOnly(latest.simulationPresets.filter(({ status }) => status !== "deleted"),
+          cloud.simulationPresets, dirtySimIds);
+        if (sites.length || simulations.length) {
+          if (!writeStorage(PENDING_LIBRARY_KEY, {
+            sites: [...dirtySiteIds, ...sites], simulations: [...dirtySimIds, ...simulations],
+          })) throw new Error("LinkSim could not queue local Library records. Free up browser storage and try again.");
+          sites.forEach((id) => dirtySiteIds.add(id));
+          simulations.forEach((id) => dirtySimIds.add(id));
+          localMutationRevision += sites.length + simulations.length;
+        }
+      }
       get().importLibraryData({
         siteLibrary: trusted.siteLibrary,
         simulationPresets: detachDeletedSiteReferencesFromPresets(trusted.simulationPresets, new Set(deletedSites)),
