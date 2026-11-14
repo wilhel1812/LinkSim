@@ -2598,7 +2598,7 @@ export const upsertLibrarySnapshot = async (
   actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
   { requireRevision = false } = {},
-): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[]; simulationConflictIds?: string[]; revisions?: Array<{ kind: "site" | "simulation"; id: string; revision: string }> }> => {
+): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[]; simulationConflictIds?: string[]; siteConflictIds?: string[]; revisions?: Array<{ kind: "site" | "simulation"; id: string; revision: string }> }> => {
   await ensureSchema(env);
   if (payload.siteLibrary.length + payload.simulationPresets.length > LIBRARY_BATCH_MAX_RECORDS) {
     throw new LibraryValidationError(`Library request may contain at most ${LIBRARY_BATCH_MAX_RECORDS} records.`);
@@ -2607,6 +2607,7 @@ export const upsertLibrarySnapshot = async (
   await preflightResourceQuotas(env, "simulation", actor, payload.simulationPresets);
   const conflicts: string[] = [];
   const simulationConflictIds: string[] = [];
+  const siteConflictIds: string[] = [];
   const revisions: Array<{ kind: "site" | "simulation"; id: string; revision: string }> = [];
   let upsertedSites = 0;
   let upsertedSimulations = 0;
@@ -2617,7 +2618,10 @@ export const upsertLibrarySnapshot = async (
       upsertedSites += 1;
       if (result.revision) revisions.push({ kind: "site", id: site.id, revision: result.revision });
     }
-    else if (result.reason) conflicts.push(result.reason);
+    else if (result.reason) {
+      conflicts.push(result.reason);
+      if (result.reason === "site_revision_conflict") siteConflictIds.push(site.id);
+    }
   }
 
   for (const simulation of payload.simulationPresets) {
@@ -2632,7 +2636,7 @@ export const upsertLibrarySnapshot = async (
     }
   }
 
-  return { upsertedSites, upsertedSimulations, conflicts, ...(requireRevision ? { revisions, ...(simulationConflictIds.length ? { simulationConflictIds } : {}) } : {}) };
+  return { upsertedSites, upsertedSimulations, conflicts, ...(requireRevision ? { revisions, ...(siteConflictIds.length ? { siteConflictIds } : {}), ...(simulationConflictIds.length ? { simulationConflictIds } : {}) } : {}) };
 };
 
 const canEditByRole = (role: string | null, visibility: Visibility, actorIsModerator: boolean): boolean => {

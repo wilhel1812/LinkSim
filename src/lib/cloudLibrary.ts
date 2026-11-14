@@ -18,14 +18,18 @@ type CloudPushResult = {
   conflicts?: string[];
   revisions?: LibraryWriteReceipt[];
   simulationConflictIds?: string[];
+  siteConflictIds?: string[];
 };
 
 export class LibraryRevisionConflict extends Error {
   readonly simulationIds: string[];
 
-  constructor(simulationIds: string[]) {
+  readonly siteIds: string[];
+
+  constructor(simulationIds: string[], siteIds: string[] = []) {
     super("The cloud Library changed. Your unsynced edits are still on this device.");
     this.simulationIds = simulationIds;
+    this.siteIds = siteIds;
   }
 }
 
@@ -256,7 +260,7 @@ export const pushCloudLibrary = async (
     const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
     if (!conflicts.length) continue;
     if (conflicts.some((reason) => reason === "simulation_revision_conflict" || reason === "site_revision_conflict")) {
-      throw new LibraryRevisionConflict(validIds(result.simulationConflictIds));
+      throw new LibraryRevisionConflict(validIds(result.simulationConflictIds), validIds(result.siteConflictIds));
     }
     if (conflicts.includes("simulation_name_taken")) {
       const simulationNames = listSimulationNames(payload);

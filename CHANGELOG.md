@@ -10,6 +10,7 @@
 - Update the Vite development dependency to 7.3.7. (#1289)
 
 ### Fixed
+- Recover conflicting Library Site edits as private copies while restoring the cloud Site. (#1295)
 - Protect newer cloud Simulation edits from stale writes. Keep conflicting edits on the device and offer to save them as a private copy before reloading the cloud version. (#1054)
 - Wait for the map to resize before fitting Sites when the Path profile changes size. (#1281)
 - Restore missing place markers in the OpenFreeMap Fiord and Dark basemaps. (#1280)
