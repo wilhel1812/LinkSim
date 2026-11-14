@@ -735,8 +735,8 @@ type AppState = {
   ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
-  loadSimulationPreset: (presetId: string) => void;
-  clearSimulationWorkspace: (launch?: SiteLaunch) => void;
+  loadSimulationPreset: (presetId: string, options?: { refresh?: boolean }) => void;
+  clearSimulationWorkspace: (launch?: SiteLaunch, options?: { refresh?: boolean }) => void;
   siteLaunch: { siteId: string; source?: SiteLaunch["source"]; needsElevation: boolean } | null;
   workspaceNavigationEpoch: number;
   renameSimulationPreset: (presetId: string, name: string) => void;
@@ -3321,7 +3321,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
-  loadSimulationPreset: (presetId) => {
+  loadSimulationPreset: (presetId, { refresh = false } = {}) => {
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
     if (!preset || preset.status === "deleted") return;
     get().cancelTerrainLoad();
@@ -3339,7 +3339,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         selectedScenarioId: preset.id,
         siteLaunch: null,
-        workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
+        workspaceNavigationEpoch: get().workspaceNavigationEpoch + (refresh ? 0 : 1),
         sites: [],
         links: [],
         systems: snapshotSystems,
@@ -3402,7 +3402,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       selectedScenarioId: preset.id,
       siteLaunch: null,
-      workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
+      workspaceNavigationEpoch: get().workspaceNavigationEpoch + (refresh ? 0 : 1),
       sites: recoveredSites,
       links: recovered.links,
       systems: recovered.systems,
@@ -3443,7 +3443,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
   },
-  clearSimulationWorkspace: (launch) => {
+  clearSimulationWorkspace: (launch, { refresh = false } = {}) => {
     get().cancelTerrainLoad();
     const currentUser = get().currentUser;
     const defaults = resolveUserSimulationDefaults(
@@ -3470,7 +3470,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedScenarioId: "",
       sites: site ? [site] : [],
       siteLaunch: site && launch ? { siteId: site.id, source: launch.source, needsElevation: launch.site.groundElevationM === undefined } : null,
-      workspaceNavigationEpoch: get().workspaceNavigationEpoch + 1,
+      workspaceNavigationEpoch: get().workspaceNavigationEpoch + (refresh ? 0 : 1),
       links: [],
       systems: defaultScenario.systems,
       networks: [],
@@ -3663,7 +3663,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     deletedIds.forEach((id) => dirtySimIds.delete(id));
     set((current) => ({ simulationConflictIds: current.simulationConflictIds.filter((id) => !deletedIds.has(id)) }));
     persistPendingLibrary();
-    if (deletingActiveSimulation) get().clearSimulationWorkspace();
+    if (deletingActiveSimulation) get().clearSimulationWorkspace(undefined, { refresh: true });
   },
   applyDeletedSiteTombstones: (siteIds) => {
     const deletedIds = new Set((siteIds ?? []).filter(Boolean));
@@ -3892,7 +3892,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextActive = nextSimulationPresets.find(({ id }) => id === current.selectedScenarioId);
     if (!recovery && source === "trusted-cloud" && previousActive && nextActive?.cloudRevision &&
         previousActive.cloudRevision !== nextActive.cloudRevision) {
-      get().loadSimulationPreset(nextActive.id);
+      get().loadSimulationPreset(nextActive.id, { refresh: true });
     } else {
       useCoverageStore.getState().recomputeCoverage();
     }

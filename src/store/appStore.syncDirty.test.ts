@@ -197,6 +197,46 @@ describe("appStore delta sync", () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
   });
 
+  it("refreshes an active Simulation at startup without recording workspace navigation", async () => {
+    const cached = cloneJson(baselinePayload.simulationPresets[0]);
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify([cached]));
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    const remote = { ...cached, cloudRevision: "2026-08-16T10:01:00.000Z",
+      snapshot: { ...cached.snapshot, selectedCoverageResolution: "42" } };
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({ siteLibrary: [], simulationPresets: [remote] })));
+    const { useAppStore: store } = await import("./appStore");
+    store.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    store.getState().loadSimulationPreset(cached.id);
+    const epoch = store.getState().workspaceNavigationEpoch;
+
+    await store.getState().initializeCloudSync({ restoreWorkspace: false });
+
+    expect(store.getState().selectedCoverageResolution).toBe("42");
+    expect(store.getState().workspaceNavigationEpoch).toBe(epoch);
+    store.getState().loadSimulationPreset(cached.id);
+    expect(store.getState().workspaceNavigationEpoch).toBe(epoch + 1);
+  });
+
+  it("clears an active cloud-deleted Simulation without recording workspace navigation", async () => {
+    const cached = cloneJson(baselinePayload.simulationPresets[0]);
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify([cached]));
+    storage.mock.setItem("linksim-migration-default-private-v2", "1");
+    vi.stubGlobal("fetch", vi.fn(async () => makeResponse({
+      siteLibrary: [], simulationPresets: [], deletedSimulationIds: [cached.id],
+    })));
+    const { useAppStore: store } = await import("./appStore");
+    store.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true });
+    store.getState().loadSimulationPreset(cached.id);
+    const epoch = store.getState().workspaceNavigationEpoch;
+
+    await store.getState().initializeCloudSync({ restoreWorkspace: false });
+
+    expect(store.getState().selectedScenarioId).toBe("");
+    expect(store.getState().workspaceNavigationEpoch).toBe(epoch);
+    store.getState().clearSimulationWorkspace();
+    expect(store.getState().workspaceNavigationEpoch).toBe(epoch + 1);
+  });
+
   it("recovers a stale Library Site as a private copy and restores the cloud Site", async () => {
     const base = "2026-08-16T10:00:00.000Z";
     const site = { id: "hill", name: "Hill", ownerUserId: "owner-1", effectiveRole: "owner",
