@@ -23,9 +23,12 @@ uses the default direct `staging` -> `main` path or the approved exact-tree
 - [ ] `package-lock.json` declares the same base version.
 - [ ] The release does not change patch, minor, or major lines implicitly during promotion.
 - [ ] `CHANGELOG.md` has a human-readable entry for this release.
-- [ ] Release tag `vX.Y.Z` points to the verified release tree that production will deploy.
+- [ ] The promotion candidate has the verified staging tree.
+- [ ] Before merge, required checks and conversations are clear and the newly published release tag `vX.Y.Z` points to that verified tree.
 
 ## PR attestation (required)
-Include this checked line in the production promotion PR body:
+Include this checked line in the production promotion PR body after completing
+the preparation checks. Record the final pre-merge tag verification in the PR
+before merging:
 
 `- [x] Milestone release checklist completed: docs/milestone-release-checklist.md`

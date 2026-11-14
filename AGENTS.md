@@ -57,6 +57,10 @@
   details. Use an operation-specific error helper where one exists and
   `getUiErrorMessage()` as the shared sanitizer or fallback.
 
+- When changing Site fields, defaults, validation, or import/save behavior, review
+  [the Site URL contract](docs/site-url.md) and update the document and its tests
+  whenever the public behavior changes.
+
 ## Native Codex Pull Request Review
 
 - Pull-request review uses the official Codex Cloud GitHub integration. Do not

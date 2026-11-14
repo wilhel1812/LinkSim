@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CARTO_KEY,
   DEFAULT_BASEMAP_STYLE_ID,
@@ -10,8 +10,28 @@ import {
   shouldAdvanceBasemapFallbackForError,
   transformCartoRequest,
   resolveBasemapSelection,
+  resolveOpenFreeMapCircleSprite,
 } from "./basemaps";
 import type { CustomBasemapSource } from "./basemapPreferences";
+
+describe("OpenFreeMap circle sprite", () => {
+  it("aliases only the legacy name in the affected provider styles", () => {
+    const sprite = "https://tiles.openfreemap.org/sprites/ofm_f384/ofm";
+    const data = { width: 1, height: 1, data: new Uint8Array(4) };
+    const getImage = vi.fn(() => ({ data, pixelRatio: 2, sdf: false }));
+    const addImage = vi.fn();
+    const map = { getStyle: () => ({ sprite }), getImage, addImage };
+    const fiord = "https://tiles.openfreemap.org/styles/fiord";
+
+    resolveOpenFreeMapCircleSprite(map, fiord, "other-icon");
+    resolveOpenFreeMapCircleSprite(map, "https://tiles.openfreemap.org/styles/positron", "circle-11");
+    expect(addImage).not.toHaveBeenCalled();
+
+    resolveOpenFreeMapCircleSprite(map, fiord, "circle-11");
+    expect(getImage).toHaveBeenCalledWith("circle_11");
+    expect(addImage).toHaveBeenCalledWith("circle-11", data, { pixelRatio: 2, sdf: false });
+  });
+});
 
 describe("resolveBasemapSelection — defaults and fallback", () => {
   it("resolves the default style without fallback", () => {

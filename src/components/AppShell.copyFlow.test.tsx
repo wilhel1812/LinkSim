@@ -336,7 +336,7 @@ describe("AppShell copy flow", () => {
       expect(pushCloudLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
         siteLibrary: [],
         simulationPresets: [expect.objectContaining({ visibility: "shared" })],
-      }));
+      }), expect.any(Function));
     } finally {
       view.unmount();
     }

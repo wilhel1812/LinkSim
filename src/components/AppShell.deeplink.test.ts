@@ -69,6 +69,7 @@ const hoisted = vi.hoisted(() => {
     setCurrentUser: () => {},
     setAuthState: () => {},
     authState: "checking",
+    syncPending: false,
     currentUser: null,
     isOnline: true,
     setIsOnline: () => {},
@@ -327,6 +328,7 @@ describe("AppShell deeplink cold-load flow", () => {
     installLocalStorageMock();
     vi.stubGlobal("React", React);
     Object.assign(hoisted.state, {
+      syncPending: false,
       simulationPresets: [],
       selectedScenarioId: "",
       selectedSiteIds: [],
@@ -1424,6 +1426,24 @@ describe("AppShell deeplink cold-load flow", () => {
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])("describes expired guest sessions without declaring a save failure when pending status is unknown (%s)", async (syncPending) => {
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    hoisted.fetchAuthStatus.mockResolvedValue({ authenticated: false, authState: "guest" });
+
+    hoisted.state.syncPending = syncPending;
+    const view = await renderAppShell();
+
+    try {
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+      expect(document.body.textContent?.includes("Cloud save is unavailable")).toBe(syncPending);
+      if (!syncPending) {
+        expect(document.body.textContent).toContain("Sign in again to resume syncing any changes saved on this device.");
+      }
+    } finally {
+      unmountAppShell(view);
     }
   });
 

@@ -36,6 +36,8 @@ const CLIENT_STORAGE_RULES: ClientStorageRule[] = [
   { scope: "localStorage", policy: "resetOnVersionChange", key: "linksim-sync-signature-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-sync-digest-v2" },
   { scope: "localStorage", policy: "preserve", key: "linksim-library-quarantine-v1" },
+  { scope: "localStorage", policy: "preserve", key: "linksim-library-pending-v1" },
+  { scope: "localStorage", policy: "preserve", prefix: "linksim-library-removed-edits-v1:" },
   { scope: "localStorage", policy: "preserve", key: "linksim-last-session-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-ui-theme-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-ui-color-theme-v1" },

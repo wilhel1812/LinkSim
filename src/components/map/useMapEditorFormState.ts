@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { httpsSourceUrl } from "../../lib/siteLaunch";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_DIRECTIONAL_ANTENNA, orientationBetweenPoints } from "../../lib/antennaPattern";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../../lib/siteGainFields";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../../lib/linkRadio";
@@ -50,6 +51,7 @@ const validateLongitude = (value: CoordinateDraft): { value: number | null; erro
 };
 
 export function useMapEditorFormState() {
+  const siteLaunch = useAppStore((state) => state.siteLaunch);
   const mapEditor = useAppStore((state) => state.mapEditor);
   const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
@@ -83,6 +85,7 @@ export function useMapEditorFormState() {
 
   // ─── Shared status ───────────────────────────────────────────────────────────
   const [status, setStatus] = useState("");
+  const [confirmTemporaryCopy, setConfirmTemporaryCopy] = useState(false);
 
   // ─── Site / Simulation shared drafts ─────────────────────────────────────────
   const [nameDraft, setNameDraft] = useState("");
@@ -115,6 +118,12 @@ export function useMapEditorFormState() {
   const [antennaMaxAttenuationDraft, setAntennaMaxAttenuationDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.maxAttenuationDb);
   const [antennaTargetSiteId, setAntennaTargetSiteId] = useState("");
   const [isElevationUserSet, setIsElevationUserSet] = useState(false);
+  const manualElevationPosition = useRef<{ lat: number; lon: number } | null>(null);
+  const hasManualElevation = mapEditor?.temporarySiteId
+    ? manualElevationPosition.current !== null &&
+      manualElevationPosition.current.lat === mapEditorSiteDraft?.lat &&
+      manualElevationPosition.current.lon === mapEditorSiteDraft?.lon
+    : isElevationUserSet;
   const [siteSourceMeta, setSiteSourceMeta] = useState<NonNullable<NonNullable<typeof mapEditor>["siteSeed"]>["sourceMeta"]>();
   const [insertSiteAfterSave, setInsertSiteAfterSave] = useState(false);
   const [siteSearchQuery, setSiteSearchQuery] = useState("");
@@ -157,7 +166,9 @@ export function useMapEditorFormState() {
   useEffect(() => {
     if (!mapEditor) return;
     setStatus("");
+    setConfirmTemporaryCopy(false);
     setIsElevationUserSet(false);
+    manualElevationPosition.current = null;
 
     if (mapEditor.kind === "site") {
       setLatError(null);
@@ -204,7 +215,7 @@ export function useMapEditorFormState() {
         } : null);
       } else {
         // Edit site
-        const entry = siteLibrary.find((e) => e.id === mapEditor.resourceId);
+        const entry = mapEditor.temporarySiteId ? activeSimulationSite : siteLibrary.find((e) => e.id === mapEditor.resourceId);
         const entryLat = entry?.position.lat ?? 0;
         const entryLon = entry?.position.lon ?? 0;
         const entryGround = entry?.groundElevationM ?? 0;
@@ -235,8 +246,8 @@ export function useMapEditorFormState() {
         if (activeSimulationSite?.antennaTargetDetachedReason === "target-deleted") {
           setStatus("The pointing target was deleted. The antenna kept its last orientation and is now manual.");
         }
-        setAccessVisibility(toAccessVisibility(entry?.visibility) as AccessVisibility);
-        const grants = (entry?.sharedWith ?? []).filter((g) => g.userId !== entry?.ownerUserId);
+        setAccessVisibility(toAccessVisibility(currentSiteEntry?.visibility) as AccessVisibility);
+        const grants = (currentSiteEntry?.sharedWith ?? []).filter((g) => g.userId !== currentSiteEntry?.ownerUserId);
         setCollaboratorUserIds(grants.map((g) => g.userId));
         setCollaboratorRoles(
           Object.fromEntries(
@@ -347,7 +358,7 @@ export function useMapEditorFormState() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew]);
+  }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew, mapEditor?.temporarySiteId]);
 
   useEffect(() => {
     if (mapEditor?.kind !== "simulation") {
@@ -375,6 +386,10 @@ export function useMapEditorFormState() {
     if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
     setLatDraft((current) => (current === mapEditorSiteDraft.lat ? current : mapEditorSiteDraft.lat));
     setLonDraft((current) => (current === mapEditorSiteDraft.lon ? current : mapEditorSiteDraft.lon));
+    const manualPosition = manualElevationPosition.current;
+    if (manualPosition && (manualPosition.lat !== mapEditorSiteDraft.lat || manualPosition.lon !== mapEditorSiteDraft.lon)) {
+      manualElevationPosition.current = null;
+    }
     if (typeof mapEditorSiteDraft.groundElevationM === "number") {
       const nextGround = mapEditorSiteDraft.groundElevationM;
       setGroundDraft((current) => (current === nextGround ? current : nextGround));
@@ -412,6 +427,7 @@ export function useMapEditorFormState() {
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
     const nextLat = lat.value;
     const nextLon = lon.value;
+    if (mapEditor.temporarySiteId) return;
     setIsElevationUserSet(false);
     const timer = setTimeout(() => {
       void loadTerrainForCoordinate(nextLat, nextLon);
@@ -419,21 +435,47 @@ export function useMapEditorFormState() {
     return () => clearTimeout(timer);
   }, [latDraft, lonDraft, mapEditor?.kind, loadTerrainForCoordinate]);
 
+  const requestedDraftTerrain = useRef("");
+  useEffect(() => {
+    if (!mapEditor?.temporarySiteId || !mapEditorSiteDraft || isEditorTerrainFetching) return;
+    const { lat, lon } = mapEditorSiteDraft;
+    const live = useAppStore.getState().sites.find(({ id }) => id === mapEditor.temporarySiteId);
+    if (!live || (live.position.lat === lat && live.position.lon === lon)) return;
+    if (sampleSrtmElevation(srtmTiles, lat, lon) !== null) return;
+    const key = `${mapEditor.temporarySiteId}:${lat}:${lon}`;
+    if (requestedDraftTerrain.current === key) return;
+    const timer = window.setTimeout(() => {
+      requestedDraftTerrain.current = key;
+      void loadTerrainForCoordinate(lat, lon).catch(() => undefined);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [mapEditor?.temporarySiteId, mapEditorSiteDraft?.lat, mapEditorSiteDraft?.lon, isEditorTerrainFetching, loadTerrainForCoordinate, srtmTiles]);
+
   // Auto-fill elevation from terrain when it loads (only if user hasn't manually set)
   useEffect(() => {
-    if (mapEditor?.kind !== "site" || isElevationUserSet) return;
+    if (mapEditor?.kind !== "site" || hasManualElevation) return;
     const lat = validateLatitude(latDraft);
     const lon = validateLongitude(lonDraft);
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
-    const elevation = Number(sampleSrtmElevation(srtmTiles, lat.value, lon.value));
-    if (Number.isFinite(elevation)) {
+    const launchedSite = sites.find((site) => site.id === mapEditor.temporarySiteId);
+    if (launchedSite?.position.lat === lat.value && launchedSite.position.lon === lon.value) return;
+    const elevation = sampleSrtmElevation(srtmTiles, lat.value, lon.value);
+    if (elevation !== null && Number.isFinite(elevation)) {
       const roundedElevation = Math.round(elevation);
       setGroundDraft(roundedElevation);
       if (mapEditorSiteDraft) {
-        setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: roundedElevation });
+        setMapEditorSiteDraft({ ...mapEditorSiteDraft, groundElevationM: roundedElevation });
       }
     }
-  }, [srtmTiles, isElevationUserSet, latDraft, lonDraft, mapEditor?.kind]);
+  }, [srtmTiles, hasManualElevation, latDraft, lonDraft, mapEditor?.kind, mapEditor?.temporarySiteId, sites]);
+
+  useEffect(() => {
+    if (!mapEditor?.temporarySiteId || siteLaunch?.needsElevation || hasManualElevation) return;
+    const site = sites.find(({ id }) => id === mapEditor.temporarySiteId);
+    if (!site || !mapEditorSiteDraft || site.position.lat !== mapEditorSiteDraft.lat ||
+        site.position.lon !== mapEditorSiteDraft.lon || site.groundElevationM === mapEditorSiteDraft.groundElevationM) return;
+    setMapEditorSiteDraft({ ...mapEditorSiteDraft, groundElevationM: site.groundElevationM });
+  }, [hasManualElevation, mapEditor?.temporarySiteId, mapEditorSiteDraft, setMapEditorSiteDraft, siteLaunch, sites]);
 
   // ─── Collaborator directory ───────────────────────────────────────────────────
   useEffect(() => {
@@ -472,10 +514,13 @@ export function useMapEditorFormState() {
   const activeSimulationPreset = selectedScenarioId
     ? simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null
     : null;
-  const activeSimulationSite =
-    mapEditor?.kind === "site" && mapEditor.resourceId
+  const temporarySite = mapEditor?.temporarySiteId && !selectedScenarioId
+    ? sites.find((site) => site.id === mapEditor.temporarySiteId)
+    : undefined;
+  const activeSimulationSite = temporarySite ??
+    (mapEditor?.kind === "site" && mapEditor.resourceId
       ? sites.find((site) => site.id === mapEditor.resourceId || site.libraryEntryId === mapEditor.resourceId) ?? null
-      : null;
+      : null);
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
@@ -567,6 +612,14 @@ export function useMapEditorFormState() {
           ),
         }
       : null;
+  const savedSource = currentSiteEntry?.sourceMeta;
+  const source = temporarySite ? siteLaunch?.source : savedSource?.sourceLabel
+    ? { label: savedSource.sourceLabel, url: savedSource.sourceUrl }
+    : undefined;
+  const siteAttribution = source ? {
+    label: source.label,
+    url: source.url ? httpsSourceUrl(source.url)?.href : undefined,
+  } : undefined;
   const simulationMetadata =
     mapEditor?.kind === "simulation" && currentSimulationPreset
       ? {
@@ -719,7 +772,7 @@ export function useMapEditorFormState() {
   }, [antennaTargetSiteId, antennaMode, latDraft, lonDraft, groundDraft, antennaDraft, sites]);
 
   // ─── Save handlers ─────────────────────────────────────────────────────────────
-  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
+  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean; saveTemporaryToLibrary?: boolean }): boolean => {
     const trimmedName = nameDraft.trim();
     if (!trimmedName) {
       setStatus("Name is required.");
@@ -773,7 +826,47 @@ export function useMapEditorFormState() {
       const saveLat = latValidation.value;
       const saveLon = lonValidation.value;
       const saveGround = mapEditorSiteDraft?.groundElevationM ?? groundDraft;
-      if (mapEditor?.isNew) {
+      if (temporarySite) {
+        if (!siteLaunch) return false;
+        if (options?.saveTemporaryToLibrary) {
+          if (mapEditor?.readOnly || !currentUser?.id) return false;
+          const duplicate = siteLibrary.find((entry) =>
+            Math.abs(entry.position.lat - saveLat) < 0.00001 && Math.abs(entry.position.lon - saveLon) < 0.00001,
+          );
+          if (duplicate && !confirmTemporaryCopy) {
+            setStatus(`A Site at these coordinates is already in the Library as "${duplicate.name}". Choose Create Copy to save these settings as a separate Site.`);
+            setConfirmTemporaryCopy(true);
+            return false;
+          }
+        }
+        updateSite(temporarySite.id, {
+          name: trimmedName,
+          description: descriptionDraft.trim(),
+          position: { lat: saveLat, lon: saveLon },
+          ...(hasManualElevation || (
+            (temporarySite.position.lat !== saveLat || temporarySite.position.lon !== saveLon) &&
+            sampleSrtmElevation(srtmTiles, saveLat, saveLon) !== null
+          ) ? { groundElevationM: saveGround } : {}),
+          antennaHeightM: antennaDraft,
+          txPowerDbm: txPowerDraft,
+          txGainDbi: txGainDraft,
+          rxGainDbi: rxGainDraft,
+          cableLossDb: cableLossDraft,
+          antennaMode,
+          antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+          antennaTiltDeg: antennaTiltDraft,
+          antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+          antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
+          antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
+          iconKey: iconDraft === "auto" ? undefined : iconDraft,
+        });
+        if (!options?.saveTemporaryToLibrary) {
+          closeMapEditor();
+          return true;
+        }
+      }
+      if (mapEditor?.isNew || temporarySite) {
+        const source = temporarySite ? siteLaunch?.source : undefined;
         const createdId = addSiteLibraryEntry(
           trimmedName,
           saveLat,
@@ -784,7 +877,7 @@ export function useMapEditorFormState() {
           txGainDraft,
           rxGainDraft,
           cableLossDraft,
-          siteSourceMeta,
+          source ? { sourceType: "url", sourceLabel: source.label, sourceUrl: source.url } : siteSourceMeta,
           normalizedVisibility,
           descriptionDraft.trim() || undefined,
           iconDraft === "auto" ? undefined : iconDraft,
@@ -804,7 +897,7 @@ export function useMapEditorFormState() {
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
-        if (options?.insertIntoSimulation ?? insertSiteAfterSave) {
+        if (!temporarySite && (options?.insertIntoSimulation ?? insertSiteAfterSave)) {
           insertSiteFromLibrary(createdId);
         }
       } else if (mapEditor?.resourceId) {
@@ -1014,6 +1107,10 @@ export function useMapEditorFormState() {
         : current,
     );
     if (lat.error || lon.error || lat.value === null || lon.value === null) return;
+    if (mapEditor?.temporarySiteId && (lat.value !== mapEditorSiteDraft?.lat || lon.value !== mapEditorSiteDraft?.lon)) {
+      manualElevationPosition.current = null;
+      setIsElevationUserSet(false);
+    }
     setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: nextGround });
   };
 
@@ -1049,6 +1146,7 @@ export function useMapEditorFormState() {
     ownerUserId,
     currentUserIsOwner,
     siteMetadata,
+    siteAttribution,
     simulationMetadata,
     canWrite,
     canAddToActiveSimulation,
@@ -1065,6 +1163,9 @@ export function useMapEditorFormState() {
       setGroundDraft(nextGround);
       if (mapEditorSiteDraft) {
         setMapEditorSiteDraft({ ...mapEditorSiteDraft, groundElevationM: nextGround });
+      }
+      if (mapEditor?.temporarySiteId && mapEditorSiteDraft) {
+        manualElevationPosition.current = { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon };
       }
       setIsElevationUserSet(true);
     },
@@ -1089,6 +1190,8 @@ export function useMapEditorFormState() {
     handleGainChange,
     handleSeparateGainToggle,
     handleSaveSite,
+    temporarySite,
+    confirmTemporaryCopy,
     // simulation
     simulationFrequencyPresetId,
     setSimulationFrequencyPresetId,
@@ -1132,14 +1235,15 @@ export function useMapEditorFormState() {
     sites,
     activeSimulationSiteId: activeSimulationSite?.id ?? null,
     activeSiteIconColor: activeSimulationSite ? activeSiteIconColors[activeSimulationSite.id] ?? null : null,
-    canEditActiveSimulation,
+    canEditActiveSimulation: Boolean(temporarySite) || canEditActiveSimulation,
     setActiveSiteIconColor: (value: string | null) => {
-      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulation) return;
+      if (!activeSimulationSite || (!temporarySite && (!selectedScenarioId || !canEditActiveSimulation))) return;
       const next = { ...activeSiteIconColors };
       const color = normalizeSimulationColor(value);
       if (color) next[activeSimulationSite.id] = color;
       else delete next[activeSimulationSite.id];
-      updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
+      if (temporarySite) useAppStore.setState({ siteIconColors: next });
+      else updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
     },
   };
 }

@@ -15,6 +15,8 @@ type MapCameraRef = RefObject<{
     duration?: number;
     essential?: boolean;
   }) => void;
+  getCanvas?: () => { style: Pick<CSSStyleDeclaration, "width" | "height"> };
+  getContainer?: () => Pick<HTMLElement, "clientWidth" | "clientHeight">;
   fitBounds?: (
     bounds: [[number, number], [number, number]],
     options: {
@@ -106,6 +108,15 @@ export const fitMapToBounds = (
 ): boolean => {
   const map = mapRef.current;
   if (!map?.fitBounds) return false;
+  const container = map.getContainer?.();
+  const canvas = map.getCanvas?.();
+  const horizontalPadding = padding.left + padding.right;
+  const verticalPadding = padding.top + padding.bottom;
+  // MapLibre can still be using the previous canvas size while the layout changes.
+  if (
+    (container && (container.clientWidth <= horizontalPadding || container.clientHeight <= verticalPadding)) ||
+    (canvas && (parseFloat(canvas.style.width) <= horizontalPadding || parseFloat(canvas.style.height) <= verticalPadding))
+  ) return false;
   map.fitBounds(bounds, {
     padding,
     animate: true,

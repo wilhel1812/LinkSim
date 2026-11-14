@@ -320,6 +320,7 @@ describe("api/library", () => {
       env,
       expect.objectContaining({ id: "u1" }),
       { siteLibrary: [site], simulationPresets: [] },
+      { requireRevision: true },
     );
   });
 
@@ -345,6 +346,7 @@ describe("api/library", () => {
       env,
       expect.objectContaining({ id: "u1" }),
       { siteLibrary: sites, simulationPresets: simulations },
+      { requireRevision: true },
     );
   });
 
@@ -374,6 +376,7 @@ describe("api/library", () => {
       env,
       expect.objectContaining({ id: "u1" }),
       { siteLibrary: [], simulationPresets: simulations },
+      { requireRevision: true },
     );
   });
 });

@@ -1608,3 +1608,105 @@ describe("MapEditorPanel", () => {
     expect(useAppStore.getState().mapEditor).toBeNull();
   });
 });
+
+describe("868.no temporary Site editor", () => {
+  const node = { site: { name: "Hill", position: { lat: 60, lon: 10 }, groundElevationM: 140 }, source: { label: "868.no", url: "https://map.868.no/" } };
+
+  const openLaunchedSiteEditor = (readOnly: boolean) => {
+    const state = useAppStore.getState();
+    const [site] = state.sites;
+    state.openMapEditor({ kind: "site", resourceId: null, temporarySiteId: site.id, label: site.name, isNew: false, readOnly, anchorRect });
+  };
+
+  beforeEach(() => {
+    storage.mock.clear();
+    useAppStore.setState(useAppStore.getInitialState(), true);
+    useAppStore.setState({ currentUser: null, siteLibrary: [] });
+    useAppStore.getState().clearSimulationWorkspace(node);
+  });
+
+  it("applies guest edits to the same Site and offers no Library save", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    expect(screen.queryByRole("button", { name: "Save to Library" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Adjusted Hill" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({ name: "Adjusted Hill", groundElevationM: 140 });
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+  });
+
+  it("uses terrain for edited coordinates while preserving the reported elevation on open", () => {
+    useAppStore.setState({
+      srtmTiles: [{
+        key: "N60E010", latStart: 60, lonStart: 10, size: 2, arcSecondSpacing: 3,
+        elevations: new Int16Array([325, 325, 325, 325]),
+      }],
+    });
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "60.5" } });
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(325);
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      position: { lat: 60.5, lon: 10 }, groundElevationM: 325,
+    });
+  });
+
+  it("uses the latest draft coordinates and preserves a manual elevation when terrain arrives", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "61.2" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "62.2" } });
+    const tile = (latStart: number, elevation: number) => ({
+      key: `N${latStart}E010`, latStart, lonStart: 10, size: 2, arcSecondSpacing: 3 as const,
+      elevations: new Int16Array(4).fill(elevation),
+    });
+    act(() => useAppStore.setState({ srtmTiles: [tile(61, 325)] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+    fireEvent.change(screen.getByLabelText("Ground elev (m)"), { target: { value: "460" } });
+    act(() => useAppStore.setState({ srtmTiles: [tile(61, 325), tile(62, 550)] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(460);
+    fireEvent.click(screen.getByRole("button", { name: "Apply Site Settings" }));
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      position: { lat: 62.2, lon: 10 }, groundElevationM: 460,
+    });
+  });
+
+  it("restores the live elevation after editing away from and back to its coordinates", () => {
+    openLaunchedSiteEditor(true);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Ground elev (m)"), { target: { value: "460" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "61.2" } });
+    act(() => useAppStore.setState({ srtmTiles: [{
+      key: "N61E010", latStart: 61, lonStart: 10, size: 2, arcSecondSpacing: 3,
+      elevations: new Int16Array(4).fill(325),
+    }] }));
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(325);
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "60" } });
+    expect(screen.getByLabelText("Ground elev (m)")).toHaveValue(140);
+  });
+
+  it("saves the edited Site with source metadata and asks before making a duplicate", () => {
+    useAppStore.setState({ currentUser });
+    openLaunchedSiteEditor(false);
+    render(<MapEditorPanel isMobile />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Adjusted Hill" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+    const [saved] = useAppStore.getState().siteLibrary;
+    expect(saved).toMatchObject({
+      name: "Adjusted Hill", visibility: "private", position: { lat: 60, lon: 10 },
+      sourceMeta: { sourceType: "url", sourceLabel: "868.no", sourceUrl: "https://map.868.no/" },
+    });
+    expect(useAppStore.getState().sites).toHaveLength(1);
+    expect(useAppStore.getState().sites[0].libraryEntryId).toBeUndefined();
+    act(() => openLaunchedSiteEditor(false));
+    fireEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+    expect(useAppStore.getState().siteLibrary).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Create Copy" }));
+    expect(useAppStore.getState().siteLibrary).toHaveLength(2);
+    act(() => useAppStore.getState().clearSimulationWorkspace(node));
+    expect(useAppStore.getState().sites[0].name).toBe("Hill");
+    expect(useAppStore.getState().siteLibrary).toContainEqual(saved);
+  });
+});

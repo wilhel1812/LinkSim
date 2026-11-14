@@ -1,3 +1,4 @@
+import { parseSiteLaunch } from "../lib/siteLaunch";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
@@ -29,7 +30,7 @@ const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
-  parseDeepLinkFromLocation({ search, pathname }).ok;
+  parseDeepLinkFromLocation({ search, pathname }).ok || parseSiteLaunch({ search, pathname }) !== undefined;
 
 type SidebarProps = {
   onOpenHelp?: () => void;
@@ -39,6 +40,7 @@ type SidebarProps = {
   showSignInForAccessPilot?: boolean;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
+  canSaveLaunchedSite?: boolean;
   authBootstrapPending?: boolean;
   panelToggleControl?: ReactNode;
   panelClassName?: string;
@@ -55,6 +57,7 @@ export function Sidebar({
   showSignInForAccessPilot = false,
   hideLibraryBrowsing = false,
   readOnly = false,
+  canSaveLaunchedSite = false,
   authBootstrapPending = false,
   panelToggleControl,
   panelClassName,
@@ -68,6 +71,7 @@ export function Sidebar({
   const buildLabel = buildLabelForChannel(buildChannel);
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
+  const launchedSiteId = useAppStore((state) => state.selectedScenarioId ? null : state.siteLaunch?.siteId ?? null);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -483,17 +487,18 @@ export function Sidebar({
               <div className="row-actions">
                 {readOnly ? (
                   <ActionButton
-                    aria-label={`View site details: ${site.name}. ${READ_ONLY_VIEW_DETAILS_HELP}`}
+                    aria-label={site.id === launchedSiteId ? `Edit site: ${site.name}` : `View site details: ${site.name}. ${READ_ONLY_VIEW_DETAILS_HELP}`}
                     size="icon"
-                    title={READ_ONLY_VIEW_DETAILS_HELP}
+                    title={site.id === launchedSiteId ? "Edit site" : READ_ONLY_VIEW_DETAILS_HELP}
                     onClick={(e) => {
                       openMapEditor({
                         kind: "site",
-                        resourceId: site.id,
+                        resourceId: site.id === launchedSiteId ? null : site.id,
+                        temporarySiteId: site.id === launchedSiteId ? site.id : undefined,
                         isNew: false,
                         label: site.name,
                         anchorRect: e.currentTarget.getBoundingClientRect(),
-                        readOnly: true,
+                        readOnly: site.id === launchedSiteId ? !canSaveLaunchedSite : true,
                       });
                     }}
                   >

@@ -47,6 +47,7 @@ type MeshmapNodeRaw = {
   lon?: unknown;
   updatedAt?: unknown;
   precision?: unknown;
+  positionPrecisionBits?: unknown;
   seenBy?: unknown;
   lastMapReport?: unknown;
   lastDeviceMetrics?: unknown;
@@ -177,7 +178,7 @@ const parseNode = (nodeId: string, node: MeshmapNodeRaw): MeshmapNode | null => 
     lat,
     lon,
     altitudeM: toNumber(node.altitudeM ?? node.altitude) ?? undefined,
-    positionPrecisionBits: toPositionPrecisionBits(node.precision),
+    positionPrecisionBits: toPositionPrecisionBits(node.positionPrecisionBits ?? node.precision),
     updatedAt: updatedAt ?? undefined,
   };
 };
@@ -288,7 +289,7 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
       sourceId: options.sourceId,
       sourceUrl,
     }));
-    if (!nodes.length) {
+    if (!nodes.length && !(options.sourceId === "868-no" && Array.isArray(payload) && payload.length === 0)) {
       throw new Error("Feed parsed but returned no usable nodes");
     }
     writeCache(sourceUrl, nodes);

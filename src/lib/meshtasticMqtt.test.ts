@@ -172,3 +172,34 @@ describe("node feed normalization", () => {
     }
   });
 });
+
+it("replaces a cached 868.no snapshot with authoritative emptiness but preserves it on failure", async () => {
+  const storage = new Map<string, string>();
+  const fetchMock = vi.fn();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const options = { sourceId: "868-no" as const, sourceUrl: "/node-sources/868-no" };
+  try {
+    fetchMock.mockResolvedValueOnce(Response.json([
+      { nodeId: "!02eb8e7c", lat: 60, lon: 10, positionPrecisionBits: 19 },
+    ]));
+    const fresh = await fetchMeshmapNodes(options);
+    expect(fresh.nodes).toMatchObject([{ nodeId: "!02eb8e7c", positionPrecisionBits: 19 }]);
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 502 }));
+    expect(await fetchMeshmapNodes(options)).toMatchObject({
+      nodes: [{ nodeId: "!02eb8e7c", positionPrecisionBits: 19 }], fromCache: true, networkError: true,
+    });
+
+    fetchMock.mockResolvedValueOnce(Response.json([]));
+    expect(await fetchMeshmapNodes(options)).toMatchObject({ nodes: [], fromCache: false });
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 502 }));
+    await expect(fetchMeshmapNodes(options)).rejects.toThrow("Feed error: 502");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

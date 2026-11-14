@@ -11,10 +11,27 @@ export type CloudLibraryPayload = {
   syncCutoff?: string;
 };
 
+export type LibraryWriteReceipt = { kind: "site" | "simulation"; id: string; revision: string };
+
 type CloudPushResult = {
   ok?: boolean;
   conflicts?: string[];
+  revisions?: LibraryWriteReceipt[];
+  simulationConflictIds?: string[];
+  siteConflictIds?: string[];
 };
+
+export class LibraryRevisionConflict extends Error {
+  readonly simulationIds: string[];
+
+  readonly siteIds: string[];
+
+  constructor(simulationIds: string[], siteIds: string[] = []) {
+    super("The cloud Library changed. Your unsynced edits are still on this device.");
+    this.simulationIds = simulationIds;
+    this.siteIds = siteIds;
+  }
+}
 
 type TaggedLibraryRecord = { kind: "site" | "simulation"; value: unknown };
 
@@ -225,7 +242,10 @@ export const fetchPublicSimulationLibrary = async (params: {
   };
 };
 
-export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
+export const pushCloudLibrary = async (
+  payload: CloudLibraryPayload,
+  onSaved?: (receipts: LibraryWriteReceipt[]) => void,
+): Promise<void> => {
   const records = [
     ...payload.siteLibrary.map((value) => ({ kind: "site" as const, value })),
     ...payload.simulationPresets.map((value) => ({ kind: "simulation" as const, value })),
@@ -236,8 +256,12 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
       method: "PUT",
       body: JSON.stringify(batch),
     });
+    if (Array.isArray(result.revisions)) onSaved?.(result.revisions);
     const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
     if (!conflicts.length) continue;
+    if (conflicts.some((reason) => reason === "simulation_revision_conflict" || reason === "site_revision_conflict")) {
+      throw new LibraryRevisionConflict(validIds(result.simulationConflictIds), validIds(result.siteConflictIds));
+    }
     if (conflicts.includes("simulation_name_taken")) {
       const simulationNames = listSimulationNames(payload);
       const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
