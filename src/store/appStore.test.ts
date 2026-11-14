@@ -42,6 +42,7 @@ vi.mock("../lib/cloudLibrary", async () => {
     deleteCloudSite: vi.fn(async () => undefined),
     deleteCloudSimulation: vi.fn(async () => undefined),
     restoreCloudSimulation: vi.fn(async () => undefined),
+    fetchCloudLibrary: vi.fn(),
   };
 });
 
@@ -49,7 +50,7 @@ import { defaultScenario } from "../lib/scenarios";
 import { useAppStore } from "./appStore";
 import { useCoverageStore } from "./coverageStore";
 import { fetchElevations } from "../lib/elevationService";
-import { deleteCloudSite, deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
+import { deleteCloudSite, deleteCloudSimulation, fetchCloudLibrary, restoreCloudSimulation } from "../lib/cloudLibrary";
 import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
 
 describe("appStore auth session state", () => {
@@ -992,6 +993,11 @@ describe("appStore unified Library state", () => {
 
     await useAppStore.getState().deleteSimulationPreset(createdId as string);
     expect(useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)?.status).toBe("deleted");
+    const deleted = useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)!;
+    vi.mocked(fetchCloudLibrary).mockResolvedValueOnce({
+      siteLibrary: [], simulationPresets: [{ ...deleted, status: "active", cloudRevision: "2026-08-16T10:00:00.000Z" }],
+      deletedSiteIds: [], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+    });
     await useAppStore.getState().restoreSimulationPreset(createdId as string);
 
     expect(restoreCloudSimulation).toHaveBeenCalledWith(createdId);
@@ -1453,8 +1459,8 @@ describe("appStore untrusted Library imports", () => {
       siteLibrary: [site("candidate-a", 60), site("candidate-b", 60), site("name-only", 61)],
     }, "merge");
     const linkedId = useAppStore.getState().sites[0]?.libraryEntryId;
-    expect(linkedId).toMatch(/^libsite-/);
-    expect(["candidate-a", "candidate-b", "name-only"]).not.toContain(linkedId);
+    expect(linkedId).toBeUndefined();
+    expect(useAppStore.getState().siteLibrary.map(({ id }) => id)).toEqual(["candidate-a", "candidate-b", "name-only"]);
   });
 });
 

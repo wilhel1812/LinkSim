@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { executeVerifiedIdentityEnsure, fetchLibraryForUser } from "./db";
+import { executeVerifiedIdentityEnsure, fetchLibraryForUser, upsertLibrarySnapshot } from "./db";
 import { SqliteD1 } from "./testSqliteD1";
 
 type Query = { sql: string; values: unknown[] };
@@ -377,3 +377,25 @@ it("keeps relevant revocation history linear rather than rescanning MAX(id) per 
   expect(large.results[0]).toHaveLength(10);
   expect(large.steps).toBeLessThan(small.steps * 15);
 }, 30000);
+
+
+it("rejects a concurrent Simulation replacement at the database write", async () => {
+  const db = fixture(0, 1);
+  const env = { DB: db } as never;
+  const actor = { id: "owner", isAdmin: false, isModerator: false };
+  const base = "2026-09-08T10:00:00.000Z";
+  await fetchLibraryForUser(env, actor.id);
+  db.beforeBatch = () => {
+    db.beforeBatch = null;
+    db.db.prepare("UPDATE simulations SET payload_json = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify({ snapshot: { sites: [{ id: "new-site" }] } }), "2026-09-08T11:00:00.000Z", "sim-000");
+  };
+  const result = await upsertLibrarySnapshot(env, actor, {
+    siteLibrary: [],
+    simulationPresets: [{ id: "sim-000", name: "Older", cloudRevision: base, snapshot: { sites: [] } }],
+  }, { requireRevision: true });
+  expect(result.conflicts).toEqual(["simulation_revision_conflict"]);
+  expect(result.simulationConflictIds).toEqual(["sim-000"]);
+  expect(db.db.prepare("SELECT payload_json FROM simulations WHERE id = 'sim-000'").get()?.payload_json)
+    .toBe(JSON.stringify({ snapshot: { sites: [{ id: "new-site" }] } }));
+});
