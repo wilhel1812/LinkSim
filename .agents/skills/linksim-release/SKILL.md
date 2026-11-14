@@ -36,8 +36,8 @@ verification.
 ## Establish the exact release tree
 
 1. Record the verified staging tree with `git rev-parse origin/staging^{tree}`.
-2. Confirm the intended `vX.Y.Z` tag targets that verified release tree and
-   that the application version changed from the prior release.
+2. Record the intended `vX.Y.Z` tag target and confirm its tree matches staging.
+   Verify the application version changed from the prior release.
 3. Prefer a `staging` to `main` promotion PR. If squash history causes a real
    conflict, use only the `release/vX.Y.Z` fallback documented in
    `docs/release-flow.md`; preserve the verified staging tree exactly.
@@ -52,8 +52,11 @@ Preparation stops here unless explicit production approval is present.
 
 After explicit approval in the current task:
 
-1. Re-fetch and prove the candidate, tag, PR head, and verified staging tree
-   have not changed. A mismatch invalidates approval and requires new sign-off.
+1. Wait for required PR checks to pass and review conversations to clear.
+   Re-fetch and verify the approved candidate, PR head, and staging tree. Any
+   candidate change requires new staging sign-off. Publish the final tag only
+   after these checks, immediately before the protected merge. Verify its
+   remote target and tree before merging.
 2. Use the protected GitHub PR and production-environment flow. Never push
    directly to `main`, bypass required reviewers, run raw Wrangler deployment,
    or use the disabled local release script.

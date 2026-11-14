@@ -42,6 +42,7 @@ vi.mock("../lib/cloudLibrary", async () => {
     deleteCloudSite: vi.fn(async () => undefined),
     deleteCloudSimulation: vi.fn(async () => undefined),
     restoreCloudSimulation: vi.fn(async () => undefined),
+    fetchCloudLibrary: vi.fn(),
   };
 });
 
@@ -49,7 +50,7 @@ import { defaultScenario } from "../lib/scenarios";
 import { useAppStore } from "./appStore";
 import { useCoverageStore } from "./coverageStore";
 import { fetchElevations } from "../lib/elevationService";
-import { deleteCloudSite, deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
+import { deleteCloudSite, deleteCloudSimulation, fetchCloudLibrary, restoreCloudSimulation } from "../lib/cloudLibrary";
 import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
 
 describe("appStore auth session state", () => {
@@ -306,6 +307,19 @@ describe("appStore auth guards", () => {
     await Promise.resolve();
 
     expect(fetchElevations).not.toHaveBeenCalled();
+  });
+
+  it("applies guest coverage settings without attempting to save the Simulation", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const presets = useAppStore.getState().simulationPresets;
+
+    useAppStore.getState().setSelectedOverlayRadiusOption("20");
+    useAppStore.getState().setSelectedCoverageResolution("84");
+
+    expect(useAppStore.getState().selectedOverlayRadiusOption).toBe("20");
+    expect(useAppStore.getState().selectedCoverageResolution).toBe("84");
+    expect(useAppStore.getState().simulationPresets).toBe(presets);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", async () => {
@@ -992,6 +1006,11 @@ describe("appStore unified Library state", () => {
 
     await useAppStore.getState().deleteSimulationPreset(createdId as string);
     expect(useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)?.status).toBe("deleted");
+    const deleted = useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)!;
+    vi.mocked(fetchCloudLibrary).mockResolvedValueOnce({
+      siteLibrary: [], simulationPresets: [{ ...deleted, status: "active", cloudRevision: "2026-08-16T10:00:00.000Z" }],
+      deletedSiteIds: [], deletedSimulationIds: [], removedSiteIds: [], removedSimulationIds: [],
+    });
     await useAppStore.getState().restoreSimulationPreset(createdId as string);
 
     expect(restoreCloudSimulation).toHaveBeenCalledWith(createdId);
@@ -1453,8 +1472,8 @@ describe("appStore untrusted Library imports", () => {
       siteLibrary: [site("candidate-a", 60), site("candidate-b", 60), site("name-only", 61)],
     }, "merge");
     const linkedId = useAppStore.getState().sites[0]?.libraryEntryId;
-    expect(linkedId).toMatch(/^libsite-/);
-    expect(["candidate-a", "candidate-b", "name-only"]).not.toContain(linkedId);
+    expect(linkedId).toBeUndefined();
+    expect(useAppStore.getState().siteLibrary.map(({ id }) => id)).toEqual(["candidate-a", "candidate-b", "name-only"]);
   });
 });
 
@@ -1588,4 +1607,31 @@ describe("appStore blank simulation loading", () => {
     expect(raw).toBeTruthy();
     expect(raw).toContain(createdId as string);
   });
+});
+
+it("keeps the launched node and edits in memory while preserving the previous session", () => {
+  const initial = useAppStore.getState();
+  const stored = new Map(storage.data);
+  const node = { site: { name: "Hill", position: { lat: 60, lon: 10 }, groundElevationM: 140 } };
+  try {
+    useAppStore.setState({ currentUser: null });
+    storage.mock.setItem("rmw-last-simulation-ref-v1", "saved:previous");
+    const beforeLaunch = new Map(storage.data);
+    initial.clearSimulationWorkspace(node);
+    const launched = useAppStore.getState();
+    expect(launched.sites).toHaveLength(1);
+    const [site] = launched.sites;
+    expect(launched.selectedSiteIds).toEqual([site.id]);
+    expect(launched.mapViewport?.center).toEqual(node.site.position);
+    expect(site).toMatchObject({ name: "Hill", groundElevationM: 140, antennaHeightM: 2 });
+    launched.updateSite(site.id, { position: { lat: 60.1, lon: 10 }, antennaHeightM: 4 });
+    expect(useAppStore.getState().sites[0]).toMatchObject({ position: { lat: 60.1, lon: 10 }, antennaHeightM: 4 });
+    expect(storage.data).toEqual(beforeLaunch);
+    initial.clearSimulationWorkspace(node);
+    expect(useAppStore.getState().sites[0]).toEqual({ ...site, id: expect.any(String) });
+  } finally {
+    useAppStore.setState(initial);
+    storage.mock.clear();
+    for (const [key, value] of stored) storage.mock.setItem(key, value);
+  }
 });
