@@ -63,6 +63,26 @@ describe("map camera helpers", () => {
     });
   });
 
+  it("defers fitting until the map has room for its insets", () => {
+    const fitBounds = vi.fn();
+    const container = { clientWidth: 320, clientHeight: 200 };
+    const canvas = { style: { width: "320px", height: "200px" } };
+    const mapRef = { current: { fitBounds, getContainer: () => container, getCanvas: () => canvas } };
+    const bounds: [[number, number], [number, number]] = [[10, 59], [12, 61]];
+    const options = { padding: { top: 30, right: 20, bottom: 170, left: 20 } };
+
+    expect(fitMapToBounds(mapRef, bounds, options)).toBe(false);
+    expect(fitBounds).not.toHaveBeenCalled();
+
+    container.clientHeight = 400;
+    expect(fitMapToBounds(mapRef, bounds, options)).toBe(false);
+    expect(fitBounds).not.toHaveBeenCalled();
+
+    canvas.style.height = "400px";
+    expect(fitMapToBounds(mapRef, bounds, options)).toBe(true);
+    expect(fitBounds).toHaveBeenCalledOnce();
+  });
+
   it("fits bounds through the shared animated fit options", () => {
     const fitBounds = vi.fn();
     const bounds: [[number, number], [number, number]] = [[10, 59], [12, 61]];
